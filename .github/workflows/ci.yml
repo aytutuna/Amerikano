@@ -31,6 +31,17 @@ jobs:
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100
+      # GitHub release downloads fail now and then, and a binary target is fetched here.
+      - name: Resolve packages
+        run: |
+          for i in 1 2 3 4; do
+            xcodebuild -resolvePackageDependencies \
+              -project ios/App/App.xcodeproj \
+              -scheme App \
+              -derivedDataPath "$RUNNER_TEMP/dd" && exit 0
+            sleep 20
+          done
+          exit 1
       - name: Build
         run: |
           set -o pipefail
@@ -110,17 +121,25 @@ jobs:
               await page.waitForSelector('#game:not([hidden]) .rc', { timeout: 15000 });
               await page.waitForTimeout(3000);
               await page.screenshot({ path: out + '/' + name + '-table.png' });
+              // game one starts with the human choosing, and the task sheet blocks the stock
+              await page.click('.tk');
+              await page.waitForFunction(() => !document.getElementById('ctl').inert);
               await page.click('#stock');
               await page.waitForTimeout(1500);
               await page.screenshot({ path: out + '/' + name + '-drew.png' });
             }
-            await run('portrait', devices['iPhone 14'], turn);
-            await run('landscape', devices['iPhone 14 landscape'], turn);
-            await browser.close();
-            if (errors.length) {
-              console.log(errors.join('\n'));
-              process.exit(1);
+            let failed = false;
+            for (const [name, dev] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
+              try {
+                await run(name, devices[dev], turn);
+              } catch (e) {
+                console.log(name + ': ' + e.message);
+                failed = true;
+              }
             }
+            await browser.close();
+            if (errors.length) console.log(errors.join('\n'));
+            if (failed || errors.length) process.exit(1);
           })();
           JS
           node "$RUNNER_TEMP/turn.js" "$RUNNER_TEMP/shots"
