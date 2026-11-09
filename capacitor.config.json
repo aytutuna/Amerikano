@@ -1,0 +1,26 @@
+{
+  "appId": "com.amerikano.amerikano",
+  "appName": "Amerikano",
+  "webDir": "www",
+  "backgroundColor": "#1F2B5B",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#1F2B5B"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "launchFadeOutDuration": 200,
+      "backgroundColor": "#1F2B5B",
+      "showSpinner": false
+    },
+    "SystemBars": {
+      "style": "DARK"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#161F44",
+      "overlaysWebView": true
+    }
+  }
+}
