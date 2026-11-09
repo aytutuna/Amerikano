@@ -16,13 +16,13 @@ jobs:
   upload:
     runs-on: macos-26
     timeout-minutes: 60
-    env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-      APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
     steps:
       - name: Check the secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           missing=""
           for name in APPLE_TEAM_ID APPSTORE_ISSUER_ID APPSTORE_KEY_ID APPSTORE_PRIVATE_KEY; do
@@ -39,16 +39,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npx cap sync ios
       - name: Write the API key
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           umask 077
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s\n' "$APPSTORE_PRIVATE_KEY" > "$RUNNER_TEMP/keys/AuthKey_$APPSTORE_KEY_ID.p8"
       # Archived unsigned and signed on export, so CI needs no registered device. The run number
       # is the build number, so every upload gets a new one.
+      - name: Resolve packages
+        run: |
+          for i in 1 2 3 4; do
+            xcodebuild -resolvePackageDependencies               -project ios/App/App.xcodeproj               -scheme App && exit 0
+            sleep 20
+          done
+          exit 1
       - name: Archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -61,6 +73,10 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGNING_ALLOWED=NO
       - name: Sign and upload
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
         run: |
           set -o pipefail
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
