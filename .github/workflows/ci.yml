@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'ci/**']
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The Swift package points into node_modules and the web assets are not committed.
+      - run: npx cap sync ios
+      - name: Pick a simulator
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes available
+          udid=$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | startswith("iPhone"))] | .[0].udid')
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Run and capture
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          app="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/App.app"
+          xcrun simctl install "$UDID" "$app"
+          xcrun simctl launch "$UDID" com.amerikano.amerikano
+          for i in 1 2 3; do
+            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/launch-$i.png"
+            sleep 1
+          done
+          sleep 8
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/home.png"
+          # A crashed app drops out of launchd's list or shows no pid.
+          pid=$(xcrun simctl spawn "$UDID" launchctl list | awk '/UIKitApplication:com.amerikano.amerikano/ {print $1}')
+          if [ -z "$pid" ] || [ "$pid" = "-" ]; then
+            echo "The app is not running"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-shots
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: warn
+
+  # Same web layer in Safari's engine, which is what the iOS web view runs.
+  webkit:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save playwright
+      - run: npx playwright install webkit
+      - name: Play a turn
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          python3 -m http.server 8080 --directory www &
+          sleep 2
+          cat > "$RUNNER_TEMP/turn.js" <<'JS'
+          const { webkit, devices } = require(process.cwd() + '/node_modules/playwright');
+          const out = process.argv[2];
+          (async () => {
+            const browser = await webkit.launch();
+            const errors = [];
+            async function run(name, opts, play) {
+              const ctx = await browser.newContext(opts);
+              const page = await ctx.newPage();
+              page.on('pageerror', e => errors.push(name + ': ' + e.message));
+              page.on('console', m => { if (m.type() === 'error') errors.push(name + ': ' + m.text()); });
+              await page.goto('http://localhost:8080/');
+              await page.waitForSelector('#home .btn.primary', { timeout: 15000 });
+              await page.waitForTimeout(1500);
+              await page.screenshot({ path: out + '/' + name + '-home.png' });
+              await play(page, name);
+              await ctx.close();
+            }
+            async function turn(page, name) {
+              await page.click('#home .btn.primary');
+              await page.waitForSelector('.sheet .btn.primary');
+              await page.screenshot({ path: out + '/' + name + '-setup.png' });
+              await page.click('.sheet .btn.primary');
+              await page.waitForSelector('#game:not([hidden]) .rc', { timeout: 15000 });
+              await page.waitForTimeout(3000);
+              await page.screenshot({ path: out + '/' + name + '-table.png' });
+              await page.click('#stock');
+              await page.waitForTimeout(1500);
+              await page.screenshot({ path: out + '/' + name + '-drew.png' });
+            }
+            await run('portrait', devices['iPhone 14'], turn);
+            await run('landscape', devices['iPhone 14 landscape'], turn);
+            await browser.close();
+            if (errors.length) {
+              console.log(errors.join('\n'));
+              process.exit(1);
+            }
+          })();
+          JS
+          node "$RUNNER_TEMP/turn.js" "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: webkit-shots
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: warn
