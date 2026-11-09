@@ -33,6 +33,7 @@ body.fourc { --c-h: #C0261E; --c-d: #B35309; --c-c: #1D6B35; }
 
 * { box-sizing: border-box; }
 html { font-size: 106.25%; height: 100%; background: var(--deep); }
+@supports (font: -apple-system-body) { html { font: -apple-system-body; } }
 body {
   margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
   background: var(--deep); color: var(--wool);
@@ -352,6 +353,7 @@ body[data-back=blue] .cv.bk { background-image: url(../img/blue.webp); }
 @media (orientation: landscape) and (max-height: 520px) {
   :root { --pw: 50px; }
   #game { max-width: none; left: 0; transform: none; }
+  #game { background: linear-gradient(90deg, var(--deep) var(--sal), var(--indigo) var(--sal) calc(100% - var(--sar)), var(--deep) calc(100% - var(--sar))); }
   #game { grid-template-columns: 176px minmax(0, 1fr) 206px; grid-template-rows: auto 12px minmax(0, 1fr) auto auto; }
   #top { grid-column: 1 / -1; min-height: calc(44px + var(--sat)); }
   .band { grid-column: 1 / -1; }
@@ -377,7 +379,7 @@ body[data-back=blue] .cv.bk { background-image: url(../img/blue.webp); }
   .mvb { padding: 0 10px; font-size: 15px; }
   #rinfo { margin: 0; }
   #hand { margin: 4px 0 4px; }
-  .sw.above .sheet { left: 176px; right: 0; width: auto; }
+  .sw.above .sheet { left: calc(176px + var(--sal)); right: var(--sar); width: auto; }
   .sheet, .sheet.tall { max-height: 94%; }
   .grab { display: none !important; }
   .sh-head { padding: 8px 0 6px; }
