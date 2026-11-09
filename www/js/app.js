@@ -715,11 +715,13 @@ var App = (function () {
     const text = ['start.title', 'start.go', 'start.cont', 'start.how', 'start.settings'].map(k => t(k)).join(' ');
     const faces = ['400 16px "Yeseva One"', '500 16px "Alegreya Sans"', '700 16px "Alegreya Sans"'];
     const fonts = Promise.all(faces.map(f => document.fonts.load(f, text))).catch(() => {});
+    // iOS reads the insets from env() and never sets the property, so there is nothing to wait for
+    const ios = !!(window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'ios');
     const bars = new Promise(res => {
       const t0 = performance.now();
       const poll = () => {
         // the bars set this property once they have reported, even when the top inset is 0
-        if (parseFloat(getComputedStyle(probe).paddingTop) > 0 || html.style.getPropertyValue('--safe-area-inset-top') || performance.now() - t0 > 1200) res();
+        if (ios || parseFloat(getComputedStyle(probe).paddingTop) > 0 || html.style.getPropertyValue('--safe-area-inset-top') || performance.now() - t0 > 1200) res();
         else requestAnimationFrame(poll);
       };
       poll();
