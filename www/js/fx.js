@@ -20,7 +20,8 @@ var Sfx = (function () {
 
   function play(n, delay) {
     if (!on || !ctx || !bufs[n]) return;
-    if (ctx.state === 'suspended') ctx.resume();
+    // an interrupted or suspended context queues sounds on a frozen clock, so skip this one
+    if (ctx.state !== 'running') { ctx.resume(); return; }
     const s = ctx.createBufferSource();
     s.buffer = bufs[n];
     s.connect(ctx.destination);
