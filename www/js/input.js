@@ -52,6 +52,8 @@ var Input = (function () {
   }
 
   game.addEventListener('pointerdown', e => {
+    // a lost pointerup (node replaced, app backgrounded) must not block every later press
+    if (g && e.isPrimary) end(e, true);
     if (g || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const el = e.target.closest('.card');
     if (!el || !el.dataset.id || el.classList.contains('dunder') || el.classList.contains('pc')) return;
