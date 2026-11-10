@@ -66,6 +66,7 @@ var Live = (function () {
   const loud = document.getElementById('alert');
   let buf = [];
   let timer = 0;
+  let late = 0;
 
   function flush() {
     timer = 0;
@@ -81,8 +82,18 @@ var Live = (function () {
   function urgent(text) {
     if (timer) { clearTimeout(timer); flush(); }
     loud.textContent = '';
-    setTimeout(() => { loud.textContent = text; }, 30);
+    clearTimeout(late);
+    late = setTimeout(() => { loud.textContent = text; }, 30);
   }
 
-  return { say: say, urgent: urgent };
+  function clear() {
+    clearTimeout(timer);
+    clearTimeout(late);
+    timer = 0;
+    buf = [];
+    polite.textContent = '';
+    loud.textContent = '';
+  }
+
+  return { say: say, urgent: urgent, clear: clear };
 })();

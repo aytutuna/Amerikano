@@ -557,6 +557,7 @@ var App = (function () {
     A.order = [];
     A.sel.clear();
     A.hist = [];
+    Live.clear();
     note = null;
     seen = 0;
     askKey = endKey = claimKey = alertKey = '';
@@ -601,6 +602,7 @@ var App = (function () {
   A.leave = drop => {
     clearTimeout(timer);
     Sheet.closeAll();
+    Live.clear();
     if (drop) {
       try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     }
