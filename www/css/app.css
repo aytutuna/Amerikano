@@ -156,6 +156,19 @@ body[data-back=blue] .pile::before { background-image: url(../img/blue.webp); }
   #game.big .si { display: none; }
 }
 
+/* a short portrait screen with scaled text: the rack's buttons share the piles row instead of taking a row of their own */
+@media (max-height: 700px) and (orientation: portrait) {
+  #game.big #seats { min-height: 0; padding-top: 1px; padding-bottom: 1px; }
+  #game.big #ctl { padding: 3px 8px 10px; gap: 3px 10px; }
+  #game.big #melds { padding-top: 1px; }
+  #game.big .grp h2 { margin: 1px 2px; font-size: min(.72rem, 17px); }
+  #game.big #tsub { display: none; }
+  #game.big #piles { order: 1; --pw: 40px; }
+  #game.big #acts { flex: 1 0 100%; }
+  #game.big #acts:empty { display: none; }
+  #game.big .lip { position: absolute; right: 8px; bottom: 100%; height: auto; padding: 0 0 10px; }
+}
+
 #rack { position: relative; z-index: 3; background: var(--walnut); border-top: 3px solid var(--lip); padding-bottom: var(--sab); }
 .lip { position: relative; pointer-events: none; height: 28px; display: flex; align-items: flex-start; gap: 8px; padding: 0 10px 0 8px; }
 #rinfo { margin: 5px 0 0 auto; font-size: max(15px, min(.82rem, 16px)); color: var(--wool); text-align: right; }
