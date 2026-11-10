@@ -353,14 +353,12 @@ var App = (function () {
     cv.style.setProperty('--w', '56px');
     body.appendChild(cv);
     body.appendChild(Cards.node('p', '', t('claimBody', { left: 4 - st.players[0].claims })));
-    const box = Cards.node('div');
-    box.appendChild(body);
-    box.appendChild(Cards.node('p', 'cost', t('costPill')));
     Live.urgent(t('ev.claimOffer', { card: Cards.label(c) }));
     prompt = Sheet.open({
       kind: 'above', modal: false, dismiss: false,
       title: t('claimTitle', { card: Cards.label(c) }),
-      body: box,
+      body: body,
+      note: Cards.node('p', 'cost', t('costPill')),
       actions: [
         { label: t('take'), kind: 'primary', fn: () => run(() => Game.claimTake(st)) },
         { label: t('pass'), kind: 'plain', fn: () => run(() => Game.claimPass(st)) }

@@ -101,6 +101,10 @@ var Sheet = (function () {
     if (o.body) body.appendChild(o.body);
     else body.hidden = true;
     el.appendChild(body);
+    if (o.note) {
+      el.classList.add('fn');
+      el.appendChild(o.note);
+    }
     const a = Cards.node('div', 'sh-acts');
     el.appendChild(a);
     wrap.appendChild(el);
