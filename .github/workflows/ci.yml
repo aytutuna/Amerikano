@@ -57,7 +57,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/shots"
           app="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/App.app"
           xcrun simctl install "$UDID" "$app"
-          xcrun simctl launch "$UDID" com.amerikano.amerikano
+          xcrun simctl launch "$UDID" com.aytutuna.amerikano
           for i in 1 2 3; do
             xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/launch-$i.png"
             sleep 1
@@ -65,7 +65,7 @@ jobs:
           sleep 8
           xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/home.png"
           # A crashed app drops out of launchd's list or shows no pid.
-          pid=$(xcrun simctl spawn "$UDID" launchctl list | awk '/UIKitApplication:com.amerikano.amerikano/ {print $1}')
+          pid=$(xcrun simctl spawn "$UDID" launchctl list | awk '/UIKitApplication:com.aytutuna.amerikano/ {print $1}')
           if [ -z "$pid" ] || [ "$pid" = "-" ]; then
             echo "The app is not running"
             exit 1

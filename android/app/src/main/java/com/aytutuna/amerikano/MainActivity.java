@@ -1,4 +1,4 @@
-package com.amerikano.amerikano;
+package com.aytutuna.amerikano;
 
 import android.os.Bundle;
 import android.view.View;

@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Amerikano</string>
     <string name="title_activity_main">Amerikano</string>
-    <string name="package_name">com.amerikano.amerikano</string>
-    <string name="custom_url_scheme">com.amerikano.amerikano</string>
+    <string name="package_name">com.aytutuna.amerikano</string>
+    <string name="custom_url_scheme">com.aytutuna.amerikano</string>
 </resources>
