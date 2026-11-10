@@ -398,9 +398,11 @@ body[data-back=blue] .cv.bk { background-image: url(../img/blue.webp); }
   .grab { display: none !important; }
   .sw.above .sheet { bottom: calc(var(--rackh) + 6px); padding-bottom: 8px; max-height: calc(100% - var(--rackh) - 6px - var(--seatt)); }
   .sw.above .sheet.fn { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto; align-content: start; column-gap: 16px; }
-  .sheet.fn .sh-head { grid-area: 1 / 1 / 2 / 3; }
+  .sw.above .sheet.fn { right: calc(var(--sar) + 72px); }
+  .sheet.fn .sh-head { grid-area: 1 / 1 / 2 / 3; padding: 4px 0 2px; }
+  .sheet.fn .sh-title { font-size: 1.05rem; }
   .sheet.fn .sh-body { grid-area: 2 / 1 / 4 / 2; height: 0; min-height: 100%; margin-bottom: 0; }
-  .sheet.fn > .cost { grid-area: 2 / 2; align-self: start; margin: 0 0 8px; }
+  .sheet.fn > .cost { grid-area: 2 / 2; align-self: start; margin: 0 0 4px; }
   .sheet.fn .sh-acts { grid-area: 3 / 2; }
   .sheet.fn .sh-acts .btn { flex: 1 1 0; }
   .sheet.fn .offer { align-items: flex-start; }
