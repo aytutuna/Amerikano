@@ -538,9 +538,10 @@ var Table = (function () {
 
   function measure() {
     const st = document.documentElement.style;
-    st.setProperty('--rackh', $('rack').offsetHeight + 'px');
+    const rr = $('rack').getBoundingClientRect(), lip = document.querySelector('.lip');
+    st.setProperty('--rackh', Math.ceil(rr.bottom - Math.min(rr.top, lip.getBoundingClientRect().top)) + 'px');
     st.setProperty('--seatt', $('seats').offsetTop + 'px');
-    st.setProperty('--liph', document.querySelector('.lip').offsetHeight + 'px');
+    st.setProperty('--liph', lip.offsetHeight + 'px');
   }
 
   function relayout() {
