@@ -279,6 +279,20 @@ body[data-back=blue] .cv.bk { background-image: url(../img/blue.webp); }
 .hm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 .form { display: grid; gap: 16px; }
+.lbl { display: block; margin-bottom: 6px; font-weight: 700; }
+.txt { display: block; width: 100%; min-height: 48px; padding: 0 18px; border: 2px solid var(--wool); border-radius: 24px; background: transparent; color: var(--wool); font: inherit; }
+.txt::placeholder { color: var(--mute); opacity: .7; }
+.txt.code { text-align: center; letter-spacing: .3em; text-transform: uppercase; }
+.joinrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.btn:disabled { opacity: .45; }
+.lobby { display: grid; gap: 14px; text-align: center; }
+.lobby .code { font: 400 min(3.4rem, 15vw)/1 'Yeseva One', Georgia, serif; letter-spacing: .12em; color: var(--saffron); }
+.lobby .lead { font-weight: 700; }
+.seatlist { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; text-align: left; }
+.seatlist li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 16px; border: 2px solid var(--wool); border-radius: 22px; font-weight: 700; }
+.seatlist li.free { border-color: rgba(246, 236, 210, .35); color: var(--mute); font-weight: 500; }
+.seatlist small { color: var(--saffron); font-weight: 700; }
+.seat.away .av, .seat.away .si { opacity: .55; }
 .fld { margin: 0; padding: 0; border: 0; min-width: 0; }
 .fld legend { padding: 0; margin-bottom: 6px; font-weight: 700; }
 .opts { display: flex; flex-wrap: wrap; gap: 8px; }

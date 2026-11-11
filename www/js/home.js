@@ -4,6 +4,7 @@ var UI = (function () {
   const NS = 'http://www.w3.org/2000/svg';
   const FAN = [23, 37, 104, 51, 12];
   let launched = false;
+  let wait = null;
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -71,6 +72,17 @@ var UI = (function () {
 
     const nav = node('div', 'hm-btns');
     const saved = App.saved();
+    const back = Net.recent();
+    if (back) {
+      const r = button('', 'primary big', () => {
+        Net.resume();
+        connecting();
+      });
+      r.appendChild(node('b', '', t('start.rejoin')));
+      r.appendChild(node('span', '', t('start.rejoinNote', back)));
+      r.dataset.k = 'back';
+      nav.appendChild(r);
+    }
     if (saved) {
       const c = button('', 'primary big', () => App.resume());
       c.appendChild(node('b', '', t('start.cont')));
@@ -78,9 +90,14 @@ var UI = (function () {
       c.dataset.k = 'cont';
       nav.appendChild(c);
     }
-    const n = button(t('start.go'), saved ? 'plain' : 'primary big', setup);
+    const play = node('div', 'hm-row');
+    const n = button(t('start.go'), saved || back ? 'plain big' : 'primary big', () => setup());
     n.dataset.k = 'go';
-    nav.appendChild(n);
+    const o = button(t('start.online'), 'plain big', () => online());
+    o.dataset.k = 'net';
+    play.appendChild(n);
+    play.appendChild(o);
+    nav.appendChild(play);
     const row = node('div', 'hm-row');
     const h = button(t('start.how'), 'quiet', howTo);
     h.dataset.k = 'how';
@@ -134,7 +151,7 @@ var UI = (function () {
     return out;
   }
 
-  function setup() {
+  function setup(room) {
     let n = Settings.get('players');
     if (![3, 4, 5].includes(n)) n = 4;
     let g = Settings.get('games');
@@ -157,7 +174,7 @@ var UI = (function () {
         { v: 'relaxed', label: t('setup.relaxed'), note: t('setup.relaxedNote') },
         { v: 'sharp', label: t('setup.sharp'), note: t('setup.sharpNote') }
       ], lv, v => { lv = v; }, 'rows'));
-      if (saved) form.appendChild(node('p', 'note', t('setup.replace')));
+      if (saved && !room) form.appendChild(node('p', 'note', t('setup.replace')));
     }
 
     function focusOn(key) {
@@ -168,14 +185,17 @@ var UI = (function () {
     fill();
 
     Sheet.open({
-      kind: 'bottom', tall: true, title: t('setup.title'), body: form,
+      kind: 'bottom', tall: true, title: t(room ? 'net.create' : 'setup.title'), body: form,
       actions: [
         {
-          label: t('setup.go'), kind: 'primary', fn: () => {
+          label: t(room ? 'net.createGo' : 'setup.go'), kind: 'primary', fn: () => {
             Settings.set('players', n, true);
             Settings.set('games', g, true);
             Settings.set('level', lv, true);
-            App.newMatch({ players: n, games: g, level: lv });
+            if (room) {
+              Net.create(who(), { players: n, games: g, level: lv });
+              connecting();
+            } else App.newMatch({ players: n, games: g, level: lv });
           }
         },
         { label: t('cancel'), kind: 'quiet' }
@@ -286,7 +306,8 @@ var UI = (function () {
 
   function pause() {
     const body = node('div', 'menu');
-    const h = Sheet.open({ kind: 'bottom', title: t('pause.title'), body: body });
+    const net = App.online();
+    const h = Sheet.open({ kind: 'bottom', title: t(net ? 'menu' : 'pause.title'), body: body });
     const item = (label, kind, fn) => {
       body.appendChild(button(label, kind, () => { h.close(); fn(); }));
     };
@@ -294,10 +315,164 @@ var UI = (function () {
     item(t('pause.how'), 'plain', howTo);
     item(t('pause.settings'), 'plain', settings);
     item(t('pause.leave'), 'plain', () => App.leave(false));
-    body.appendChild(node('p', 'note', t('pause.note')));
+    body.appendChild(node('p', 'note', t(net ? 'pause.onlineNote' : 'pause.note')));
   }
+
+  const who = () => Settings.get('name') || t('net.namePh');
+
+  function field(label, value, max) {
+    const l = node('label', 'fld');
+    l.appendChild(node('span', 'lbl', label));
+    const i = node('input', 'txt');
+    i.type = 'text';
+    i.value = value;
+    i.maxLength = max;
+    i.autocomplete = 'off';
+    l.appendChild(i);
+    return { el: l, input: i };
+  }
+
+  // code is set when a shared link opened this, so only the name is left to ask
+  function online(code) {
+    const body = node('div', 'form');
+    const name = field(t('net.name'), Settings.get('name') || '', 16);
+    name.input.placeholder = t('net.namePh');
+    body.appendChild(name.el);
+    const h = Sheet.open({
+      kind: 'bottom', tall: true, title: code ? t('net.joinTitle', { code: code }) : t('net.title'), body: body,
+      actions: [{ label: t('cancel'), kind: 'quiet' }]
+    });
+    const join = c => {
+      Net.join(c, who());
+      connecting();
+    };
+    const go = fn => () => {
+      Settings.set('name', name.input.value.trim(), true);
+      h.close();
+      fn();
+    };
+    const pick = (key, fn) => {
+      const b = button('', key === 'quick' ? 'primary big' : 'plain big', go(fn));
+      b.appendChild(node('b', '', t('net.' + key)));
+      b.appendChild(node('span', '', t('net.' + key + 'Note')));
+      return b;
+    };
+    if (code) {
+      body.appendChild(button(t('net.joinGo'), 'primary', go(() => join(code))));
+      return;
+    }
+    body.appendChild(pick('quick', () => Net.quick()));
+    body.appendChild(pick('create', () => setup(true)));
+    const row = node('div', 'fld');
+    row.appendChild(node('span', 'lbl', t('net.join')));
+    const line = node('div', 'joinrow');
+    const c = node('input', 'txt code');
+    c.type = 'text';
+    c.maxLength = 4;
+    c.placeholder = 'ABCD';
+    c.autocomplete = 'off';
+    c.autocapitalize = 'characters';
+    c.spellcheck = false;
+    c.setAttribute('aria-label', t('net.code'));
+    const j = button(t('net.joinGo'), 'primary', go(() => join(c.value)));
+    j.disabled = true;
+    c.addEventListener('input', () => {
+      c.value = c.value.toUpperCase().replace(/[^A-Z]/g, '');
+      j.disabled = c.value.length !== 4;
+    });
+    c.addEventListener('keydown', e => { if (e.key === 'Enter' && !j.disabled) j.click(); });
+    line.appendChild(c);
+    line.appendChild(j);
+    row.appendChild(line);
+    body.appendChild(row);
+  }
+
+  function queue(n) {
+    const text = n ? t('net.queue', { n: n }) : t('net.looking');
+    if (wait && document.contains(wait.h.wrap)) {
+      wait.p.textContent = text;
+      return;
+    }
+    const body = node('div', 'lobby');
+    const p = node('p', 'lead', text);
+    body.appendChild(p);
+    body.appendChild(node('p', 'note', t('net.queueNote')));
+    wait = { p: p, h: Sheet.open({ kind: 'center', title: t('net.waiting'), body: body, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => Net.cancel() }] }) };
+  }
+
+  function connecting() {
+    const p = node('p', 'lead', t('net.connecting'));
+    p.setAttribute('role', 'status');
+    wait = { h: Sheet.open({ kind: 'center', title: t('net.title'), body: p, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => Net.cancel() }] }) };
+  }
+
+  function share(code, out) {
+    const url = Net.link(code);
+    const copy = () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => { out.textContent = t('net.copied'); }, () => { out.textContent = url; });
+      else out.textContent = url;
+    };
+    if (navigator.share) navigator.share({ title: t('start.title'), text: t('net.shareText'), url: url }).catch(e => { if (e.name !== 'AbortError') copy(); });
+    else copy();
+  }
+
+  function lobby(m) {
+    if (!wait || !wait.body || !document.contains(wait.h.wrap)) {
+      close();
+      const body = node('div', 'lobby');
+      wait = { body: body, h: Sheet.open({ kind: 'bottom', tall: true, title: t('net.room'), body: body, dismiss: false, actions: [{ label: t('net.leave'), kind: 'plain', fn: () => Net.leave() }] }) };
+    }
+    const body = wait.body;
+    body.textContent = '';
+    const code = node('p', 'code', m.code);
+    code.setAttribute('aria-label', m.code.split('').join(' '));
+    body.appendChild(code);
+    const mine = m.you === m.host;
+    body.appendChild(node('p', 'note', t(mine ? 'net.hintHost' : 'net.hintGuest')));
+    const ul = node('ul', 'seatlist');
+    m.seats.forEach((s, i) => {
+      const li = node('li', s ? '' : 'free');
+      li.appendChild(node('span', '', s ? s.name + (i === m.you ? ' ' + t('net.you') : '') : t('net.bot')));
+      if (s && i === m.host) li.appendChild(node('small', '', t('net.hostTag')));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    const out = node('p', 'note');
+    out.setAttribute('role', 'status');
+    const row = node('div', 'menu');
+    if (mine) {
+      const go = button(t('net.start'), 'primary', () => {
+        go.disabled = true;
+        Net.send({ t: 'start' });
+      });
+      row.appendChild(go);
+    }
+    row.appendChild(button(t('net.share'), 'plain', () => share(m.code, out)));
+    body.appendChild(row);
+    body.appendChild(out);
+  }
+
+  // the lobby or the queue, whichever is up
+  function close() {
+    if (wait) wait.h.close();
+    wait = null;
+  }
+
+  function notice(text) {
+    Sheet.open({ kind: 'center', title: t('net.title'), body: node('p', '', text), actions: [{ label: t('close'), kind: 'primary' }] });
+  }
+
+  function link() {
+    const m = /^#([A-Za-z]{4})$/.exec(location.hash);
+    if (!m || Net.busy() || App.active()) return;
+    history.replaceState(history.state, '', location.pathname + location.search);
+    Sheet.closeAll();
+    online(m[1].toUpperCase());
+  }
+
+  window.addEventListener('hashchange', link);
 
   window.addEventListener('resize', () => { if (!$('home').hidden) kilimRows(); });
 
-  return { start: start, pause: pause, settings: settings, howTo: howTo };
+  return { start: start, pause: pause, settings: settings, howTo: howTo, lobby: lobby, queue: queue, close: close, notice: notice, link: link };
 })();

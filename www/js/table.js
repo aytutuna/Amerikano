@@ -30,8 +30,9 @@ var Table = (function () {
 
   function zones(st) {
     const z = new Map();
-    st.players.forEach((p, i) => { for (const c of p.hand) z.set(c.id, 'h' + i); });
-    for (const c of st.stock) z.set(c.id, 's');
+    // forEach skips the holes that stand for hidden cards in an online match
+    st.players.forEach((p, i) => p.hand.forEach(c => z.set(c.id, 'h' + i)));
+    st.stock.forEach(c => z.set(c.id, 's'));
     for (const c of st.discard) z.set(c.id, 'd');
     for (const m of st.melds) for (const c of m.cards) z.set(c.id, 'm' + m.id);
     return z;
@@ -162,8 +163,9 @@ var Table = (function () {
       e.querySelector('.cnt').textContent = p.hand.length;
       e.querySelector('.nm').textContent = p.name;
       e.querySelector('.sc').textContent = tight ? t('ptsShort', { n: p.score }) : t('points', { n: p.score });
-      e.querySelector('.tw').textContent = turn ? t('playing') : p.opened ? t('opened') : '';
-      e.setAttribute('aria-label', t('seat', { name: p.name, n: p.hand.length, turn: turn, opened: p.opened, score: p.score }));
+      e.classList.toggle('away', !!p.away);
+      e.querySelector('.tw').textContent = p.away ? t('away') : turn ? t('playing') : p.opened ? t('opened') : '';
+      e.setAttribute('aria-label', t('seat', { name: p.name, n: p.hand.length, turn: turn, opened: p.opened, score: p.score, away: p.away }));
     });
     for (const [i, e] of seatEls) {
       if (!keep.has(i)) { e.remove(); seatEls.delete(i); }
@@ -468,6 +470,17 @@ var Table = (function () {
     return true;
   }
 
+  // where a card came from when it was hidden before: an opponent's hand, or the stock for my own draw
+  function origin(st, id, zone) {
+    if (zone === 'h0') return 's';
+    if (zone[0] === 'm') {
+      const m = st.melds.find(x => x.id === +zone.slice(1));
+      return m && m.owner ? 'h' + m.owner : null;
+    }
+    const e = zone === 'd' && st.log.findLast(x => x.k === 'discard' && x.card === id);
+    return e && e.p ? 'h' + e.p : null;
+  }
+
   function flights(v, s, z, o) {
     const st = v.st;
     if (o.instant) {
@@ -480,8 +493,9 @@ var Table = (function () {
     const seen = new Map();
     const dealStep = 450 / (13 * st.n);
     for (const [id, zone] of z) {
-      const before = was.get(id);
+      const before = was.get(id) || origin(st, id, zone);
       const live = s.live.has(id);
+      if (!before) continue;
       if (before === zone && !live) continue;
       let delay = 0;
       if (o.deal) {

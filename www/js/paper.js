@@ -49,7 +49,7 @@
 
     const body = node('tbody');
     const hist = App.hist;
-    if (!hist.length) {
+    if (!hist.some(Boolean)) {
       const tr = node('tr');
       const td = node('td', 'empty', t('paper.none'));
       td.colSpan = st.n + 1;
@@ -57,6 +57,7 @@
       body.appendChild(tr);
     }
     for (const g of hist) {
+      if (!g) continue;
       const tr = node('tr');
       tr.appendChild(cell('th', String(g.n), 'rh'));
       g.rows.forEach((r, i) => {
@@ -189,7 +190,7 @@
     }
     if (notes.children.length) body.appendChild(notes);
 
-    Sheet.open({
+    return Sheet.open({
       kind: 'paper', tall: true, title: t('round.title', { n: st.gameNo }), body: body, dismiss: false,
       actions: [{ label: t(last ? 'round.result' : 'round.next'), kind: 'primary', fn: next }]
     });
@@ -245,12 +246,11 @@
     }
     body.appendChild(node('p', 'pline', sentence));
 
-    Sheet.open({
+    const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
+    const home = { label: t('end.home'), kind: App.online() ? 'primary' : 'plain', fn: () => App.leave(true) };
+    return Sheet.open({
       kind: 'paper', tall: true, title: t('end.won', v), body: body, dismiss: false,
-      actions: [
-        { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) },
-        { label: t('end.home'), kind: 'plain', fn: () => App.leave(true) }
-      ]
+      actions: App.online() ? [home] : [again, home]
     });
   }
 

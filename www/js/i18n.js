@@ -40,7 +40,8 @@ var I18n = (function () {
 
     playing: 'Playing',
     opened: 'Opened',
-    seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', playing' : '') + (v.opened ? ', opened' : '') + ', score ' + num(v.score),
+    away: 'Away',
+    seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', playing' : '') + (v.opened ? ', opened' : '') + (v.away ? ', away' : '') + ', score ' + num(v.score),
     ptsShort: v => num(v.n) + ' pts',
     points: v => v.n === 1 ? '1 point' : num(v.n) + ' points',
     rackInfo: v => cards(v.n) + ', ' + v.pts + ' points',
@@ -108,6 +109,8 @@ var I18n = (function () {
       fit: 'Those cards do not fit that meld.',
       pick: 'Select a card first.',
       whole: 'Too many cards would be left over.',
+      turn: 'It is not your turn.',
+      offline: 'Reconnecting. Try again in a moment.',
       other: 'That did not work.'
     },
 
@@ -158,7 +161,10 @@ var I18n = (function () {
       saved: v => 'Game ' + v.n + ' of ' + v.of + ', ' + v.players + ' players',
       how: 'How to play',
       settings: 'Settings',
-      fan: 'Playing cards'
+      fan: 'Playing cards',
+      online: 'Play online',
+      rejoin: 'Rejoin',
+      rejoinNote: v => 'Room ' + v.code
     },
 
     setup: {
@@ -198,7 +204,8 @@ var I18n = (function () {
       how: 'How to play',
       settings: 'Settings',
       leave: 'Leave match',
-      note: 'Your match is saved. Continue it from the home screen.'
+      note: 'Your match is saved. Continue it from the home screen.',
+      onlineNote: 'The match goes on without you. If you leave, a bot takes your seat.'
     },
 
     choice: {
@@ -253,6 +260,52 @@ var I18n = (function () {
       empty: v => (v.you ? 'You had' : v.name + ' had') + ' the lowest score. The pot was used up during the match, so there are no chips to share.',
       again: 'Play again',
       home: 'Home'
+    },
+
+    net: {
+      title: 'Play online',
+      name: 'Your name',
+      namePh: 'Player',
+      quick: 'Quick match',
+      quickNote: 'Join whoever is waiting. Bots fill the empty seats.',
+      create: 'Create a room',
+      createNote: 'Play with friends. Bots fill the empty seats.',
+      createGo: 'Create room',
+      join: 'Join with a code',
+      code: 'Room code',
+      joinGo: 'Join',
+      joinTitle: v => 'Join room ' + v.code,
+      connecting: 'Connecting.',
+      waiting: 'Looking for players',
+      looking: 'Looking for a table.',
+      queue: v => v.n === 1 ? '1 player is waiting.' : v.n + ' players are waiting.',
+      queueNote: 'The match starts with 4 players, or after a short wait with 2 or more. Bots fill the empty seats.',
+      room: 'Room',
+      hintHost: 'Share the code with your friends. Start when everyone is in; empty seats are played by bots.',
+      hintGuest: 'Waiting for the host to start.',
+      bot: 'A bot will play',
+      you: '(you)',
+      hostTag: 'Host',
+      start: 'Start',
+      share: 'Share',
+      shareText: 'Play Amerikano with me.',
+      copied: 'Link copied.',
+      leave: 'Leave',
+      retry: 'Connection lost. Reconnecting.',
+      waitNext: 'Waiting for the others.',
+      err: {
+        nocode: 'There is no room with that code.',
+        started: 'That match has already started.',
+        full: 'That room is full.',
+        taken: 'That code is in use. Try again.',
+        host: 'Only the host can start the match.',
+        opts: 'Those match settings are not allowed.',
+        join: 'Join a room first.',
+        lost: 'Could not connect. Check your connection and try again.',
+        replaced: 'You joined this match from another window.',
+        ended: 'The match has ended.',
+        other: 'That did not work.'
+      }
     },
 
     how: {
@@ -328,7 +381,8 @@ var I18n = (function () {
 
     playing: 'Sırada',
     opened: 'El açtı',
-    seat: v => v.name + ', ' + trCards(v.n) + (v.turn ? ', sırada' : '') + (v.opened ? ', el açtı' : '') + ', ' + num(v.score) + ' puan',
+    away: 'Uzakta',
+    seat: v => v.name + ', ' + trCards(v.n) + (v.turn ? ', sırada' : '') + (v.opened ? ', el açtı' : '') + (v.away ? ', uzakta' : '') + ', ' + num(v.score) + ' puan',
     ptsShort: v => num(v.n) + ' p.',
     points: v => num(v.n) + ' puan',
     rackInfo: v => trCards(v.n) + ', ' + v.pts + ' puan',
@@ -396,6 +450,8 @@ var I18n = (function () {
       fit: 'Bu kağıtlar oraya eklenemez.',
       pick: 'Önce bir kağıt seç.',
       whole: 'Elde çok fazla kağıt kalıyor.',
+      turn: 'Sıra sende değil.',
+      offline: 'Yeniden bağlanılıyor. Birazdan tekrar dene.',
       other: 'Olmadı.'
     },
 
@@ -448,7 +504,10 @@ var I18n = (function () {
       saved: v => 'Oyun ' + v.n + ' / ' + v.of + ', ' + v.players + ' oyuncu',
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
-      fan: 'İskambil kağıtları'
+      fan: 'İskambil kağıtları',
+      online: 'Çevrimiçi oyna',
+      rejoin: 'Maça dön',
+      rejoinNote: v => 'Oda ' + v.code
     },
 
     setup: {
@@ -488,7 +547,8 @@ var I18n = (function () {
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
       leave: 'Maçtan çık',
-      note: 'Maçın kaydedildi. Ana ekrandan devam edebilirsin.'
+      note: 'Maçın kaydedildi. Ana ekrandan devam edebilirsin.',
+      onlineNote: 'Maç sensiz devam eder. Ayrılırsan yerine bir bot oynar.'
     },
 
     choice: {
@@ -544,6 +604,52 @@ var I18n = (function () {
       empty: v => (v.you ? 'En düşük puanı sen yaptın' : v.name + ' en düşük puanı yaptı') + ', ama kasa maç sırasında boşaldı; paylaşılacak çip kalmadı.',
       again: 'Tekrar oyna',
       home: 'Ana ekran'
+    },
+
+    net: {
+      title: 'Çevrimiçi oyna',
+      name: 'Adın',
+      namePh: 'Oyuncu',
+      quick: 'Hızlı maç',
+      quickNote: 'Bekleyenlerle oyna. Boş yerleri botlar doldurur.',
+      create: 'Oda kur',
+      createNote: 'Arkadaşlarınla oyna. Boş yerleri botlar doldurur.',
+      createGo: 'Odayı kur',
+      join: 'Kodla katıl',
+      code: 'Oda kodu',
+      joinGo: 'Katıl',
+      joinTitle: v => v.code + ' odasına katıl',
+      connecting: 'Bağlanılıyor.',
+      waiting: 'Oyuncu aranıyor',
+      looking: 'Masa aranıyor.',
+      queue: v => v.n + ' oyuncu bekliyor.',
+      queueNote: 'Maç 4 kişi olunca ya da kısa bir beklemeden sonra en az 2 kişiyle başlar. Boş yerleri botlar doldurur.',
+      room: 'Oda',
+      hintHost: 'Kodu arkadaşlarınla paylaş. Herkes gelince başlat; boş yerlerde botlar oynar.',
+      hintGuest: 'Odayı kuranın başlatması bekleniyor.',
+      bot: 'Bot oynayacak',
+      you: '(sen)',
+      hostTag: 'Kurucu',
+      start: 'Başlat',
+      share: 'Paylaş',
+      shareText: 'Benimle Amerikano oyna.',
+      copied: 'Bağlantı kopyalandı.',
+      leave: 'Ayrıl',
+      retry: 'Bağlantı koptu. Yeniden bağlanılıyor.',
+      waitNext: 'Diğerleri bekleniyor.',
+      err: {
+        nocode: 'Bu kodla bir oda yok.',
+        started: 'Bu maç çoktan başladı.',
+        full: 'Oda dolu.',
+        taken: 'Bu kod kullanımda, tekrar dene.',
+        host: 'Maçı yalnızca odayı kuran başlatabilir.',
+        opts: 'Bu maç ayarları olmaz.',
+        join: 'Önce bir odaya katıl.',
+        lost: 'Bağlanılamadı. İnternetini kontrol edip tekrar dene.',
+        replaced: 'Bu maça başka bir pencereden girdin.',
+        ended: 'Maç sona erdi.',
+        other: 'Olmadı.'
+      }
     },
 
     how: {

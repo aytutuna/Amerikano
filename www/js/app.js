@@ -1,6 +1,6 @@
 var Settings = (function () {
   const KEY = 'amerikano.settings';
-  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', players: 4, games: 4, level: 'relaxed' };
+  const def = { name: '', lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', players: 4, games: 4, level: 'relaxed' };
   let s = Object.assign({}, def);
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
 
@@ -103,6 +103,8 @@ var App = (function () {
   let claimKey = '';
   let alertKey = '';
   let prompt = null;
+  let over = null;
+  let on = false;
 
   function human() {
     return st.turn === 0 && !st.players[0].bot;
@@ -295,19 +297,21 @@ var App = (function () {
   }
 
   function record() {
-    if (st.phase !== 'gameend' || !st.result || A.hist.length >= st.gameNo) return;
+    if (st.phase !== 'gameend' || !st.result || A.hist[st.gameNo - 1]) return;
     const r = st.result;
-    A.hist.push({
+    A.hist[st.gameNo - 1] = {
       n: st.gameNo,
       task: st.task.id,
       chooser: st.chooser,
       fin: r.finisher,
       got: r.finisher >= 0 ? potGain() : 0,
       rows: r.rows.map(x => ({ pts: x.pts, adj: x.adj, game: x.game, total: x.total, chips: x.chips }))
-    });
+    };
+    if (on) Net.keep(A.hist);
   }
 
   function save() {
+    if (on) return;
     try {
       if (st.phase === 'matchend') localStorage.removeItem(KEY);
       else localStorage.setItem(KEY, JSON.stringify({ v: 1, st: Game.dump(st), order: A.order, sort: sortMode, hist: A.hist }));
@@ -328,7 +332,7 @@ var App = (function () {
     const k = st.gameNo + ':' + st.turns;
     if (askKey === k || Sheet.count()) return;
     askKey = k;
-    prompt = UI.askTask(st, id => run(() => Game.chooseTask(st, id)));
+    prompt = UI.askTask(st, id => run(() => Game.chooseTask(st, id), null, { a: 'choose', id: id }));
   }
 
   function ended() {
@@ -338,8 +342,7 @@ var App = (function () {
     setTimeout(() => {
       if (!st || k !== st.gameNo + ':' + st.phase) return;
       Sheet.closeAll();
-      if (st.phase === 'gameend') UI.roundEnd(st, A.nextGame);
-      else UI.matchEnd(st);
+      over = st.phase === 'gameend' ? UI.roundEnd(st, A.nextGame) : UI.matchEnd(st);
     }, 900);
   }
 
@@ -360,8 +363,8 @@ var App = (function () {
       body: body,
       note: Cards.node('p', 'cost', t('costPill')),
       actions: [
-        { label: t('take'), kind: 'primary', fn: () => run(() => Game.claimTake(st)) },
-        { label: t('pass'), kind: 'plain', fn: () => run(() => Game.claimPass(st)) }
+        { label: t('take'), kind: 'primary', fn: () => run(() => Game.claimTake(st), null, { a: 'claim' }) },
+        { label: t('pass'), kind: 'plain', fn: () => run(() => Game.claimPass(st), null, { a: 'pass' }) }
       ]
     });
   }
@@ -369,7 +372,7 @@ var App = (function () {
   function schedule() {
     clearTimeout(timer);
     timer = 0;
-    if (!st || document.hidden || Sheet.count()) return;
+    if (on || !st || document.hidden || Sheet.count()) return;
     if (st.phase === 'gameend' || st.phase === 'matchend') return;
     const base = DELAY[Settings.get('speed')] || DELAY.normal;
     const w = st.phase === 'claim' ? 0.5 : st.phase === 'draw' ? 0.8 : 1;
@@ -396,7 +399,15 @@ var App = (function () {
     return s === 'err.' + r.err ? t('err.other') : s;
   }
 
-  function run(fn, o) {
+  // msg is what the server gets in an online match, where nothing is applied locally
+  function run(fn, o, msg) {
+    if (on) {
+      clearNote();
+      A.sel.clear();
+      Net.send(Object.assign({ t: 'act' }, msg));
+      render();
+      return { ok: true };
+    }
     const r = fn();
     if (!r.ok) {
       flash(errText(r));
@@ -416,23 +427,23 @@ var App = (function () {
   };
 
   A.tapStock = () => {
-    if (st.phase === 'draw' && human()) return run(() => Game.drawStock(st));
+    if (st.phase === 'draw' && human()) return run(() => Game.drawStock(st), null, { a: 'draw' });
     flash(t('err.phase'));
   };
 
   A.tapDiscard = () => {
-    if (st.phase === 'draw' && human()) return run(() => Game.takeDiscard(st));
+    if (st.phase === 'draw' && human()) return run(() => Game.takeDiscard(st), null, { a: 'take' });
     if (canDiscard()) return A.sel.size === 1 ? A.act('discard') : flash(t('st.pickOne'));
     flash(t('err.phase'));
   };
 
   A.addTo = (mid, ids) => {
     const c = ids ? cards(ids) : selCards();
-    run(() => Game.addToMeld(st, mid, c), { reveal: mid });
+    run(() => Game.addToMeld(st, mid, c), { reveal: mid }, { a: 'add', mid: mid, ids: c.map(x => x.id) });
   };
 
   function lay(c, type) {
-    run(() => Game.layMeld(st, c, type), { reveal: st.mid });
+    run(() => Game.layMeld(st, c, type), { reveal: st.mid }, { a: 'lay', ids: c.map(x => x.id), type: type });
   }
 
   A.act = k => {
@@ -440,11 +451,13 @@ var App = (function () {
     if (k === 'clear') { A.sel.clear(); clearNote(); return render(); }
     if (!human()) return;
     const sel = selCards();
-    if (k === 'discard') return run(() => Game.discard(st, sel[0]));
+    if (k === 'discard') return run(() => Game.discard(st, sel[0]), null, { a: 'discard', id: sel[0].id });
     if (k === 'open') {
       const plan = planFor();
       if (!plan) return flash(t('err.match'));
-      return run(() => st.task.id === 'ara' ? Game.finishHand(st, plan) : Game.open(st, plan), { reveal: st.mid });
+      const ara = st.task.id === 'ara';
+      const melds = plan.map(m => ({ t: m.t, ids: m.cards.map(c => c.id) }));
+      return run(() => ara ? Game.finishHand(st, plan) : Game.open(st, plan), { reveal: st.mid }, { a: ara ? 'finish' : 'open', melds: melds });
     }
     if (k === 'meld') {
       const types = Game.meldTypes(sel);
@@ -520,7 +533,7 @@ var App = (function () {
     const ok = targets();
     dragIds = null;
     A.dragOver(null);
-    if (o && o.discard && canDiscard()) return run(() => Game.discard(st, Game.CARDS[id]));
+    if (o && o.discard && canDiscard()) return run(() => Game.discard(st, Game.CARDS[id]), null, { a: 'discard', id: id });
     if (o && o.meld != null && ok.has(o.meld)) return A.addTo(o.meld, ids);
     if (o && o.meld != null) flash(errText(dropErr()));
     else if (o && o.discard) flash(t('err.phase'));
@@ -540,6 +553,10 @@ var App = (function () {
   };
 
   A.nextGame = () => {
+    if (on) {
+      Net.send({ t: 'act', a: 'next' });
+      return flash(t('net.waitNext'));
+    }
     Game.nextGame(st);
     A.order = [];
     A.sel.clear();
@@ -597,11 +614,90 @@ var App = (function () {
     return true;
   };
 
-  A.leave = drop => {
+  function hydrate(m, log) {
+    const card = i => Game.CARDS[i];
+    const task = id => Game.TASKS.find(x => x.id === id);
+    return {
+      n: m.n, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
+      task: m.task ? task(m.task) : null, tasksLeft: m.tasksLeft.map(task),
+      turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
+      // other hands and the stock are only counts, so those arrays stay holes with a length
+      stock: new Array(m.stock), discard: m.discard.map(card),
+      melds: m.melds.map(x => ({ id: x.id, t: x.t, cards: x.ids.map(card), owner: x.owner })),
+      claim: m.claim && { card: card(m.claim.card), queue: m.claim.queue, i: m.claim.i },
+      // bot reads "not you" in the renderers, and the server never marks a human as one
+      players: m.players.map((p, i) => Object.assign({}, p, { bot: i > 0, hand: i ? new Array(p.n) : p.hand.map(card) })),
+      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, log: log
+    };
+  }
+
+  // the meld to scroll to after the player's own last move in the new log entries
+  function touched() {
+    for (let i = st.log.length - 1; i >= seen; i--) {
+      const e = st.log[i];
+      if (e.p !== 0) continue;
+      if (e.k === 'add') return e.mid;
+      if (e.k === 'lay' || e.k === 'open' || e.k === 'finish') return Math.max(...st.melds.filter(x => x.owner === 0).map(x => x.id));
+    }
+  }
+
+  // a state message from the server; lb is how much of the log the client already has
+  A.sync = m => {
+    const prev = on ? st : null;
+    const log = prev && m.lb ? prev.log.slice(0, m.lb).concat(m.log) : m.log;
+    st = hydrate(m, log);
+    const first = !prev;
+    const deal = !first && prev.gameNo !== st.gameNo;
+    if (first || deal) {
+      A.order = [];
+      A.sel.clear();
+      sortMode = 'suit';
+      syncOrder();
+      A.order.sort((a, b) => sortKey('suit')(a) - sortKey('suit')(b));
+    }
+    note = null;
+    if (prompt && document.contains(prompt.wrap) && !(st.phase === 'choose' && human()) && !(st.phase === 'claim' && Game.claimer(st) === 0)) {
+      prompt.close();
+      prompt = null;
+    }
+    if (over && !['gameend', 'matchend'].includes(st.phase)) {
+      over.close();
+      over = null;
+    }
+    if (first) {
+      on = true;
+      A.hist = Net.hist();
+      Live.clear();
+      askKey = endKey = claimKey = alertKey = '';
+      Sheet.closeAll();
+      show();
+      Table.reset();
+    }
+    if (first || m.lb === 0) {
+      seen = st.log.length;
+      render({ instant: true });
+    } else render(deal ? { deal: true } : { reveal: touched() });
+    if (first && !$('game').contains(document.activeElement)) land();
+  };
+
+  A.fail = (k, more) => {
+    askKey = claimKey = '';
+    flash(errText({ err: k, ara: more && more.ara }));
+    if (st) after();
+  };
+
+  A.flash = flash;
+  A.online = () => on;
+
+  A.leave = (drop, keep) => {
     clearTimeout(timer);
     Sheet.closeAll();
     Live.clear();
-    if (drop) {
+    if (on) {
+      on = false;
+      over = null;
+      Net.leave(keep);
+    } else if (drop) {
       try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     }
     st = null;
@@ -681,7 +777,10 @@ var App = (function () {
     if (native()) {
       window.Capacitor.Plugins.App.addListener('backButton', A.back);
       launch();
-    } else UI.start();
+    } else {
+      UI.start();
+      UI.link();
+    }
   });
 
   // The native splash stays up until the faces are loaded and the system bars have
@@ -706,6 +805,7 @@ var App = (function () {
       shown = true;
       probe.remove();
       UI.start();
+      UI.link();
       // the timer covers a view that is not drawing yet, where rAF would never run
       requestAnimationFrame(free);
       setTimeout(free, 100);
