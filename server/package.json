@@ -1,0 +1,14 @@
+{
+  "name": "amerikano-server",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node test/play.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.160.0",
+    "ws": "^8.22.2"
+  }
+}

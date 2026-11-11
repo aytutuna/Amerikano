@@ -1129,3 +1129,5 @@ var Game = (function () {
     dump: dump, load: load
   };
 })();
+
+if (typeof module !== 'undefined') module.exports = Game;
