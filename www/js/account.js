@@ -49,6 +49,8 @@ var Account = (function () {
   A.has = () => !!acc;
   A.auth = () => acc && acc.id + '.' + acc.secret;
   A.me = () => me;
+  A.id = () => acc && acc.id;
+  A.call = call;
 
   A.refresh = async () => {
     const a = acc;

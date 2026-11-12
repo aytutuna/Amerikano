@@ -122,6 +122,10 @@ var Net = (function () {
         save();
         App.sync(m);
         break;
+      case 'invited': Social.invited(m); break;
+      case 'sent': Social.sent(m); break;
+      case 'said': if (App.online()) Social.said(m); break;
+      case 'gifted': if (App.online()) Social.gifted(m); break;
       case 'error': fail(m); break;
     }
   }

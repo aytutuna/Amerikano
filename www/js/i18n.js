@@ -111,6 +111,8 @@ var I18n = (function () {
       whole: 'Too many cards would be left over.',
       turn: 'It is not your turn.',
       offline: 'Reconnecting. Try again in a moment.',
+      broke: 'You do not have enough chips for that gift.',
+      blocked: 'You cannot send a gift to this player.',
       other: 'That did not work.'
     },
 
@@ -195,7 +197,17 @@ var I18n = (function () {
       speed: 'Opponent speed',
       slow: 'Slow',
       normal: 'Normal',
-      fast: 'Fast'
+      fast: 'Fast',
+      back: 'Card back',
+      felt: 'Table felt',
+      red: 'Red',
+      blue: 'Blue',
+      green: 'Green',
+      graphite: 'Graphite',
+      night: 'Night',
+      pine: 'Pine',
+      wine: 'Wine',
+      sea: 'Sea'
     },
 
     pause: {
@@ -263,6 +275,10 @@ var I18n = (function () {
       lobby: 'Back to the lobby',
       change: v => v.n > 0 ? 'You won ' + v.abs + ' chips.' : v.n < 0 ? 'You lost ' + v.abs + ' chips.' : 'You got your stake back.',
       xp: v => '+' + v.n + ' XP',
+      level: v => 'Level ' + v.n + '!',
+      bonus: v => '+' + v.n + ' chips',
+      winnings: 'Your chips this match',
+      scores: 'Score sheet',
       unit: v => 'Stake ' + v.stake + ': each chip on the table is worth ' + v.unit + '.'
     },
 
@@ -323,6 +339,8 @@ var I18n = (function () {
       stakeAt: v => 'Stake ' + v.n + ' chips',
       stakeNote: v => 'Your stake of ' + v.n + ' chips is set aside when the match starts and paid back with what you win.',
       friends: 'With friends',
+      min: v => 'Min ' + v.n,
+      locked: 'Locked',
       level: v => 'Lv ' + v.n
     },
 
@@ -336,6 +354,10 @@ var I18n = (function () {
       wins: 'Wins',
       daily: v => 'Daily bonus +' + v.n,
       streak: v => 'Day ' + v.n + ' of 7',
+      claim: 'Claim',
+      dailyTitle: 'Daily bonus',
+      dailyDone: 'Come back tomorrow for more.',
+      streakDay: v => 'Day ' + v.n,
       got: v => 'You got ' + v.n + ' chips.',
       reroll: 'New name',
       limit: 'You have used all of today’s new names.',
@@ -350,6 +372,74 @@ var I18n = (function () {
       deleteAsk: 'This removes your profile, chips and stats for good. It cannot be undone.',
       deleteGo: 'Delete for good',
       keep: 'Keep my account'
+    },
+
+    chat: {
+      title: 'Quick chat',
+      open: 'Chat',
+      phrases: 'Phrases',
+      emotes: 'Emotes',
+      say: {
+        hello: 'Hello!', luck: 'Good luck!', nice: 'Nice move!', thanks: 'Thanks!', oops: 'Oops!', hurry: 'Your turn, please.',
+        wow: 'Wow!', close: 'So close!', sorry: 'Sorry!', rematch: 'Again?', well: 'Well played!', bye: 'Bye!'
+      },
+      emo: { smile: 'Smile', laugh: 'Laugh', wink: 'Wink', love: 'Love', gasp: 'Surprised', sad: 'Sad', angry: 'Angry', cheer: 'Hooray' },
+      said: v => v.name + ': ' + v.what
+    },
+
+    gift: {
+      title: 'Send a gift',
+      note: 'A gift costs chips and nobody receives them.',
+      tea: 'Tea', sweet: 'Turkish delight', rose: 'Rose', crown: 'Crown',
+      cost: v => v.n + ' chips',
+      gifted: v => v.from + ' sent ' + v.to + ' a gift: ' + v.gift
+    },
+
+    pc: {
+      title: 'Player',
+      rate: 'Win rate',
+      week: 'This week',
+      add: 'Add friend',
+      sent: 'Request sent',
+      cancel: 'Cancel request',
+      accept: 'Accept',
+      decline: 'Decline',
+      friends: 'You are friends',
+      remove: 'Remove friend',
+      block: 'Block',
+      unblock: 'Unblock',
+      cap: 'The friends list is full.',
+      barred: 'You cannot add this player.',
+      bot: 'A bot plays this seat.'
+    },
+
+    fr: {
+      tab: 'Friends',
+      none: 'No friends yet. Tap a player at a table to add them.',
+      online: 'Online',
+      offline: 'Offline',
+      requests: 'Requests',
+      waiting: 'Waiting for an answer',
+      blocked: 'Blocked',
+      invite: 'Invite',
+      invited: 'Invited',
+      away: 'Not available',
+      inviteFriends: 'Invite friends',
+      inviteNote: 'Only friends in the lobby can be invited.',
+      invTitle: 'Invitation',
+      invText: v => v.name + ' invites you to a table. Stake ' + v.n + ' chips.',
+      join: 'Join',
+      later: 'Later'
+    },
+
+    top: {
+      tab: 'Leaderboard',
+      week: 'This week',
+      all: 'All time',
+      note: 'Chips won in matches with at least two people (bots don’t count). Resets every Monday.',
+      none: 'Nobody has won chips this week yet.',
+      you: 'You',
+      level: v => 'Level ' + v.n
     },
 
     how: {
@@ -392,6 +482,7 @@ var I18n = (function () {
   }
   const acc = s => isV(s[s.length - 1]) ? s + 'n' + four(lastV(s)) : s + four(lastV(s));
   const gen = s => s + '’' + (isV(s[s.length - 1]) ? 'n' : '') + four(lastV(s)) + 'n';
+  const to = s => s + '’' + (isV(s[s.length - 1]) ? 'y' : '') + ('aıou'.indexOf(lastV(s)) >= 0 ? 'a' : 'e');
   const dat = s => /seri$/.test(s) ? s + 'ye' : s + 'e';
   const up = s => s.charAt(0).toLocaleUpperCase('tr') + s.slice(1);
 
@@ -497,6 +588,8 @@ var I18n = (function () {
       whole: 'Elde çok fazla kağıt kalıyor.',
       turn: 'Sıra sende değil.',
       offline: 'Yeniden bağlanılıyor. Birazdan tekrar dene.',
+      broke: 'Bu hediye için yeterli çipin yok.',
+      blocked: 'Bu oyuncuya hediye gönderemezsin.',
       other: 'Olmadı.'
     },
 
@@ -583,7 +676,17 @@ var I18n = (function () {
       speed: 'Rakiplerin hızı',
       slow: 'Yavaş',
       normal: 'Normal',
-      fast: 'Hızlı'
+      fast: 'Hızlı',
+      back: 'Kağıt sırtı',
+      felt: 'Masa çuhası',
+      red: 'Kırmızı',
+      blue: 'Mavi',
+      green: 'Yeşil',
+      graphite: 'Grafit',
+      night: 'Gece',
+      pine: 'Çam',
+      wine: 'Şarap',
+      sea: 'Deniz'
     },
 
     pause: {
@@ -652,6 +755,10 @@ var I18n = (function () {
       lobby: 'Lobiye dön',
       change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Bahsin geri döndü.',
       xp: v => '+' + v.n + ' XP',
+      level: v => v.n + '. seviye!',
+      bonus: v => '+' + v.n + ' çip',
+      winnings: 'Bu maçtaki çipin',
+      scores: 'Skor kâğıdı',
       unit: v => 'Bahis ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
     },
 
@@ -712,6 +819,8 @@ var I18n = (function () {
       stakeAt: v => v.n + ' çip bahis',
       stakeNote: v => v.n + ' çiplik bahsin maç başlarken ayrılır, kazandıklarınla birlikte geri ödenir.',
       friends: 'Arkadaşlarla',
+      min: v => 'En az ' + v.n,
+      locked: 'Kilitli',
       level: v => v.n + '. sv'
     },
 
@@ -725,6 +834,10 @@ var I18n = (function () {
       wins: 'Galibiyet',
       daily: v => 'Günlük ödül +' + v.n,
       streak: v => '7 günün ' + v.n + '. günü',
+      claim: 'Al',
+      dailyTitle: 'Günlük ödül',
+      dailyDone: 'Daha fazlası için yarın gel.',
+      streakDay: v => v.n + '. gün',
       got: v => v.n + ' çip kazandın.',
       reroll: 'Yeni ad',
       limit: 'Bugünkü yeni ad hakkın bitti.',
@@ -739,6 +852,74 @@ var I18n = (function () {
       deleteAsk: 'Profilin, çiplerin ve istatistiklerin kalıcı olarak silinir. Geri alınamaz.',
       deleteGo: 'Kalıcı olarak sil',
       keep: 'Hesabımı koru'
+    },
+
+    chat: {
+      title: 'Hızlı sohbet',
+      open: 'Sohbet',
+      phrases: 'Sözler',
+      emotes: 'İfadeler',
+      say: {
+        hello: 'Merhaba!', luck: 'İyi şanslar!', nice: 'Güzel hamle!', thanks: 'Teşekkürler!', oops: 'Eyvah!', hurry: 'Sıra sende, hadi.',
+        wow: 'Vay canına!', close: 'Ucu ucuna!', sorry: 'Pardon!', rematch: 'Bir daha?', well: 'Eline sağlık!', bye: 'Hoşça kal!'
+      },
+      emo: { smile: 'Gülümseme', laugh: 'Kahkaha', wink: 'Göz kırpma', love: 'Aşk', gasp: 'Şaşkın', sad: 'Üzgün', angry: 'Kızgın', cheer: 'Yaşasın' },
+      said: v => v.name + ': ' + v.what
+    },
+
+    gift: {
+      title: 'Hediye gönder',
+      note: 'Hediye çipe mal olur, çipi kimse almaz.',
+      tea: 'Çay', sweet: 'Lokum', rose: 'Gül', crown: 'Taç',
+      cost: v => v.n + ' çip',
+      gifted: v => v.from + ', ' + to(v.to) + ' ' + low(v.gift) + ' gönderdi'
+    },
+
+    pc: {
+      title: 'Oyuncu',
+      rate: 'Kazanma oranı',
+      week: 'Bu hafta',
+      add: 'Arkadaş ekle',
+      sent: 'İstek gönderildi',
+      cancel: 'İsteği geri çek',
+      accept: 'Kabul et',
+      decline: 'Reddet',
+      friends: 'Arkadaşsınız',
+      remove: 'Arkadaşlıktan çıkar',
+      block: 'Engelle',
+      unblock: 'Engeli kaldır',
+      cap: 'Arkadaş listen dolu.',
+      barred: 'Bu oyuncuyu ekleyemezsin.',
+      bot: 'Bu yeri bir bot oynuyor.'
+    },
+
+    fr: {
+      tab: 'Arkadaşlar',
+      none: 'Henüz arkadaşın yok. Masada bir oyuncuya dokunarak ekleyebilirsin.',
+      online: 'Çevrimiçi',
+      offline: 'Çevrimdışı',
+      requests: 'İstekler',
+      waiting: 'Yanıt bekleyenler',
+      blocked: 'Engellenenler',
+      invite: 'Davet et',
+      invited: 'Davet edildi',
+      away: 'Ulaşılamıyor',
+      inviteFriends: 'Arkadaşlarını çağır',
+      inviteNote: 'Yalnızca lobideki arkadaşlar davet edilebilir.',
+      invTitle: 'Davet',
+      invText: v => v.name + ' seni bir masaya çağırıyor. Bahis ' + v.n + ' çip.',
+      join: 'Katıl',
+      later: 'Sonra'
+    },
+
+    top: {
+      tab: 'Sıralama',
+      week: 'Bu hafta',
+      all: 'Tüm zamanlar',
+      note: 'En az iki kişinin oynadığı maçlarda kazanılan çip, botlar sayılmaz. Her pazartesi sıfırlanır.',
+      none: 'Bu hafta henüz kimse çip kazanmadı.',
+      you: 'Sen',
+      level: v => v.n + '. seviye'
     },
 
     how: {

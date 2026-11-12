@@ -151,6 +151,7 @@ var UI = (function () {
       inp.addEventListener('change', () => fn(o.v));
       lab.appendChild(inp);
       const face = node('span', 'face');
+      if (o.pic) face.appendChild(o.pic());
       face.appendChild(node('b', '', o.label));
       if (o.note) face.appendChild(node('small', '', o.note));
       lab.appendChild(face);
@@ -258,6 +259,19 @@ var UI = (function () {
     return row;
   }
 
+  function backSwatch(v) {
+    const e = node('span', 'sbk');
+    e.dataset.back = v;
+    e.appendChild(Cards.backEl());
+    return e;
+  }
+
+  function feltSwatch(v) {
+    const e = node('span', 'sfelt');
+    e.dataset.felt = v;
+    return e;
+  }
+
   function settings() {
     const form = node('div', 'form');
     let h = null;
@@ -277,6 +291,8 @@ var UI = (function () {
       for (const s of ['s', 'h', 'd', 'c']) sw.appendChild(Cards.icon('su-' + s, 'su sx-' + s));
       form.appendChild(toggle('fourc', t('set.fourc'), t('set.fourcNote'), sw));
       form.appendChild(choice('speed', t('set.speed'), ['slow', 'normal', 'fast'].map(v => ({ v: v, label: t('set.' + v) })), Settings.get('speed'), v => Settings.set('speed', v), 'seg'));
+      form.appendChild(choice('back', t('set.back'), ['red', 'blue', 'green', 'graphite'].map(v => ({ v: v, label: t('set.' + v), pic: () => backSwatch(v) })), Settings.get('back'), v => Settings.set('back', v), 'seg pics'));
+      form.appendChild(choice('felt', t('set.felt'), ['night', 'pine', 'wine', 'sea'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => Settings.set('felt', v), 'seg pics'));
       if (was) {
         const e = form.querySelector('[data-f="' + was + '"]');
         if (e) e.focus({ preventScroll: true });
@@ -356,42 +372,83 @@ var UI = (function () {
     return bar;
   }
 
-  // the profile strip on the home screen, and the daily bonus under it when it can be claimed
-  function strip(me) {
+  function chipsLine(n) {
+    const c = node('span', 'chips');
+    c.appendChild(Cards.icon('i-chip', 'chip'));
+    c.appendChild(node('b', '', fmt(n)));
+    c.setAttribute('aria-label', t('pf.chips') + ' ' + fmt(n));
+    return c;
+  }
+
+  // the profile on the home screen, big in the lobby, with the daily bonus under it when it can be claimed
+  function strip(me, big) {
     const box = node('div', 'hm-me');
-    const b = node('button', 'me');
+    const b = node('button', 'me' + (big ? ' big' : ''));
     b.type = 'button';
     b.dataset.k = 'me';
-    b.appendChild(Avatar.el(me.avatar, 56));
+    const pic = node('span', 'mypic');
+    pic.appendChild(Avatar.pic(me.avatar, big ? 120 : 60, big));
+    pic.appendChild(node('em', 'lv', me.level));
+    pic.setAttribute('aria-hidden', 'true');
+    b.appendChild(pic);
     const tx = node('span', 'tx');
     tx.appendChild(node('b', '', who(me.seed)));
-    tx.appendChild(node('small', '', t('pf.level', { n: me.level })));
+    tx.appendChild(node('small', '', t('pf.level', { n: me.level }) + (big ? ', ' + t('pf.xpOf', { a: fmt(me.xp), b: fmt(me.to) }) : '')));
     tx.appendChild(xpBar(me));
+    if (big) tx.appendChild(chipsLine(me.chips));
     b.appendChild(tx);
-    const c = node('span', 'chips');
-    c.appendChild(node('b', '', fmt(me.chips)));
-    c.appendChild(node('small', '', t('pf.chips')));
-    b.appendChild(c);
+    if (!big) b.appendChild(chipsLine(me.chips));
     b.addEventListener('click', profile);
     box.appendChild(b);
-    if (me.daily.ready) {
-      const d = button('', 'primary big', () => {
-        d.disabled = true;
-        Account.daily().then(() => {
-          $('live').textContent = t('pf.got', { n: fmt(me.daily.reward) });
-          start(true);
-        }, e => {
-          d.disabled = false;
-          if (e.status !== 409) return notice(t('net.err.lost'));
-          Account.refresh().then(() => start(true), () => {});
-        });
+    if (big) box.appendChild(daily(me));
+    else if (me.daily.ready) box.appendChild(claim(me, 'primary big', true));
+    return box;
+  }
+
+  function claim(me, cls, note) {
+    const d = button('', cls, () => {
+      d.disabled = true;
+      Account.daily().then(() => {
+        $('live').textContent = t('pf.got', { n: fmt(me.daily.reward) });
+        start(true);
+      }, e => {
+        d.disabled = false;
+        if (e.status !== 409) return notice(t('net.err.lost'));
+        Account.refresh().then(() => start(true), () => {});
       });
-      d.dataset.k = 'daily';
+    });
+    d.dataset.k = 'daily';
+    if (note) {
       d.appendChild(node('b', '', t('pf.daily', { n: fmt(me.daily.reward) })));
       d.appendChild(node('span', '', t('pf.streak', { n: Math.min(me.daily.streak + 1, 7) })));
-      box.appendChild(d);
+    } else d.textContent = t('pf.claim');
+    return d;
+  }
+
+  // seven days in a row; a missed day starts the count again
+  function daily(me) {
+    const d = me.daily;
+    const card = node('section', 'daily' + (d.ready ? ' ready' : ''));
+    const head = node('div', 'dl-head');
+    head.appendChild(node('b', '', t('pf.dailyTitle')));
+    const rew = node('span', 'chips');
+    rew.appendChild(Cards.icon('i-chip', 'chip'));
+    rew.appendChild(node('b', '', '+' + fmt(d.reward)));
+    head.appendChild(rew);
+    card.appendChild(head);
+    const days = node('ol', 'days');
+    const done = d.ready ? Math.min(d.streak + 1, 7) - 1 : d.streak;
+    for (let i = 0; i < 7; i++) {
+      const li = node('li', i < done ? 'got' : d.ready && i === done ? 'now' : '');
+      if (i < done) li.appendChild(Cards.icon('i-check', 'ic'));
+      else li.appendChild(node('span', '', i + 1));
+      li.setAttribute('aria-label', t('pf.streakDay', { n: i + 1 }));
+      days.appendChild(li);
     }
-    return box;
+    card.appendChild(days);
+    if (d.ready) card.appendChild(claim(me, 'primary', false));
+    else card.appendChild(node('p', 'note', t('pf.dailyDone')));
+    return card;
   }
 
   const LOOK = ['skin', 'eyes', 'hair', 'acc'];
@@ -414,9 +471,7 @@ var UI = (function () {
       const was = document.activeElement && body.contains(document.activeElement) ? document.activeElement.dataset.f : null;
       body.textContent = '';
       const top = node('div', 'pf-top');
-      const pic = Avatar.el(me.avatar, 132);
-      pic.classList.add('big');
-      top.appendChild(pic);
+      top.appendChild(Avatar.pic(me.avatar, 132, true));
       const tx = node('div', 'tx');
       tx.appendChild(node('h3', '', who(me.seed)));
       tx.appendChild(node('p', '', t('pf.level', { n: me.level })));
@@ -468,7 +523,7 @@ var UI = (function () {
           b.dataset.f = part + ':' + i;
           b.setAttribute('aria-pressed', on);
           b.setAttribute('aria-label', part === 'acc' && !i ? t('pf.none') : t('pf.' + part) + ' ' + (i + 1));
-          b.appendChild(Avatar.el(swap(me, k, i), 44));
+          b.appendChild(Avatar.pic(swap(me, k, i), 44));
           b.addEventListener('click', () => {
             const cur = Account.me();
             if (!cur || cur.avatar[k] === i) return;
@@ -588,7 +643,7 @@ var UI = (function () {
     m.seats.forEach((s, i) => {
       const li = node('li', s ? '' : 'free');
       const line = node('span', 'sit');
-      if (s && s.av) line.appendChild(Avatar.el(s.av, 33));
+      if (s && s.av) line.appendChild(Avatar.pic(s.av, 44));
       const nm = s ? who(s.seed) : t('net.bot');
       line.appendChild(node('span', '', nm + (s && i === m.you ? ' ' + t('net.you') : '')));
       li.appendChild(line);
@@ -597,6 +652,7 @@ var UI = (function () {
       ul.appendChild(li);
     });
     body.appendChild(ul);
+    if (m.seats.includes(null)) body.appendChild(button(t('fr.inviteFriends'), 'plain', Social.invite));
     if (m.pub) return;
     const out = node('p', 'note');
     out.setAttribute('role', 'status');
@@ -626,7 +682,7 @@ var UI = (function () {
   }
 
   function enter(stake) {
-    at = { stake: stake, stakes: null, entry: 10, n: {}, tables: [] };
+    at = { stake: stake, stakes: null, entry: 10, n: {}, tables: [], tab: 'rooms' };
     draw();
     Account.ensure().then(() => Account.refresh()).then(() => {
       if (at) Net.hub();
@@ -682,6 +738,15 @@ var UI = (function () {
     draw();
   }
 
+  // a small round table with a dot per player that is in, and a lock when the player is short
+  function miniTable(n, lock) {
+    const m = node('span', 'mini');
+    m.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 4; i++) m.appendChild(node('i', i < n ? 'on' : ''));
+    if (lock) m.appendChild(Cards.icon('i-lock', 'lock'));
+    return m;
+  }
+
   function stakeRooms(box, me) {
     const list = node('div', 'rooms');
     for (const s of at.stakes) {
@@ -695,8 +760,13 @@ var UI = (function () {
       });
       b.disabled = !ok;
       b.dataset.k = 'room' + s;
-      b.appendChild(node('b', '', fmt(s)));
-      b.appendChild(node('span', '', ok ? t('hall.here', { n: at.n[s] || 0 }) : t('hall.need', { n: fmt(need) })));
+      const top = node('b', 'stk');
+      top.appendChild(Cards.icon('i-chip', 'chip'));
+      top.appendChild(document.createTextNode(fmt(s)));
+      b.appendChild(top);
+      b.appendChild(miniTable(at.n[s] || 0, !ok));
+      b.appendChild(node('span', 'min', t('hall.min', { n: fmt(need) })));
+      b.appendChild(node('span', 'here', ok ? t('hall.here', { n: at.n[s] || 0 }) : t('hall.locked')));
       list.appendChild(b);
     }
     box.appendChild(list);
@@ -734,13 +804,18 @@ var UI = (function () {
   }
 
   function inRoom(box) {
-    const q = button('', 'primary big', () => {
+    const q = button('', 'qp', () => {
       connecting();
       Net.play(at.stake);
     });
     q.dataset.k = 'quick';
-    q.appendChild(node('b', '', t('hall.quick')));
-    q.appendChild(node('span', '', t('hall.quickNote')));
+    const m = miniTable(4, false);
+    m.classList.add('lit');
+    q.appendChild(m);
+    const qt = node('span', 'qt');
+    qt.appendChild(node('b', '', t('hall.quick')));
+    qt.appendChild(node('span', '', t('hall.quickNote')));
+    q.appendChild(qt);
     box.appendChild(q);
     box.appendChild(node('p', 'note', t('hall.fill')));
     box.appendChild(node('h3', '', t('hall.tables')));
@@ -756,7 +831,7 @@ var UI = (function () {
         Net.sit(x.code);
       });
       const faces = node('span', 'faces');
-      for (const s of x.seats) faces.appendChild(s ? Avatar.el(s.av, 33) : node('span', 'none'));
+      for (const s of x.seats) faces.appendChild(s ? Avatar.pic(s.av, 44) : node('span', 'none'));
       b.appendChild(faces);
       const tx = node('span', 'tx');
       tx.appendChild(node('b', '', t('hall.seated', { n: x.seats.filter(Boolean).length })));
@@ -771,6 +846,35 @@ var UI = (function () {
       ul.appendChild(li);
     }
     box.appendChild(ul);
+  }
+
+  const redraw = () => { if (at) draw(); };
+
+  function tabs(box) {
+    const bar = node('div', 'pills');
+    bar.setAttribute('role', 'tablist');
+    for (const [k, label] of [['rooms', t('hall.rooms')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
+      const b = node('button', 'pill', label);
+      b.type = 'button';
+      b.dataset.k = 'tab' + k;
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', at.tab === k);
+      b.addEventListener('click', () => {
+        at.tab = k;
+        if (k === 'friends') Social.refresh().then(redraw, () => {});
+        if (k === 'top') Social.top().then(redraw, () => {});
+        draw();
+      });
+      bar.appendChild(b);
+    }
+    box.appendChild(bar);
+  }
+
+  // an invitation from a friend, taken up from the lobby
+  function accept(m) {
+    connecting();
+    if (m.pub) Net.sit(m.code);
+    else Net.join(m.code);
   }
 
   // The lobby is a screen of its own in the home container: the stake rooms, and inside one its open tables.
@@ -795,13 +899,18 @@ var UI = (function () {
     bar.appendChild(node('h2', '', at.stake ? t('hall.room', { n: fmt(at.stake) }) : t('net.title')));
     box.appendChild(bar);
     const me = Account.me();
-    if (me) box.appendChild(strip(me));
+    if (me) box.appendChild(strip(me, !at.stake));
     if (!at.stakes) {
       const p = node('p', 'lead', t('net.connecting'));
       p.setAttribute('role', 'status');
       box.appendChild(p);
     } else if (at.stake) inRoom(box);
-    else stakeRooms(box, me);
+    else {
+      tabs(box);
+      if (at.tab === 'friends') Social.friends(box.appendChild(node('div', 'frs')), { again: redraw });
+      else if (at.tab === 'top') Social.leaders(box.appendChild(node('div', 'frs')), redraw);
+      else stakeRooms(box, me);
+    }
     main.appendChild(box);
     home.appendChild(main);
     countdown(home);
@@ -844,6 +953,6 @@ var UI = (function () {
 
   return {
     start: start, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, link: link,
-    hall: enter, exit: exit, resume: resume, up: up, inHall: () => !!at, hub: hub, rooms: rooms, tables: tables
+    hall: enter, exit: exit, accept: accept, resume: resume, up: up, inHall: () => !!at, hub: hub, rooms: rooms, tables: tables
   };
 })();
