@@ -9,8 +9,8 @@ let payout;
 const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
-  'chooser', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
-const SEAT = new Set(['name', 'seed', 'av', 'level', 'bot', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
+  'chooser', 'clock', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
+const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'bot', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
 
 let ips = 0;
 
@@ -71,6 +71,7 @@ function client(path, origin) {
 function leakCheck(m) {
   for (const k of Object.keys(m)) assert(TOP.has(k), 'unexpected key ' + k);
   assert.strictEqual(typeof m.stock, 'number');
+  if (m.clock) assert(m.clock.p >= 0 && m.clock.p < m.n && m.clock.left >= 0 && m.clock.left <= m.clock.span, 'bad clock');
   m.players.forEach((p, k) => {
     for (const x of Object.keys(p)) assert(SEAT.has(x), 'unexpected player key ' + x);
     assert.strictEqual('hand' in p, k === 0, 'hand on seat ' + k);
@@ -477,6 +478,7 @@ async function solo() {
   await new Promise(r => setTimeout(r, 500));
   const p = (await call('GET', '/api/me', acc)).body;
   assert.strictEqual(p.games + p.xp, 0, 'a room with one human pays no xp');
+  assert.strictEqual(sql("SELECT week_won AS n FROM players WHERE id = '" + acc.id + "'")[0].n, 0, 'nor weekly chips');
   c.ws.close();
   console.log('solo room against bots earns nothing');
 }
@@ -559,6 +561,255 @@ async function accounts() {
   console.log('account deleted with its rows');
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const WEEK = () => Math.floor((Date.now() - 4 * 86400000) / (7 * 86400000));
+const who = acc => "'" + acc.id + "'";
+
+// two humans in a private room; begin() starts it
+async function pair(n, games) {
+  const accA = await guest();
+  const accB = await guest();
+  const a = client('/ws/new');
+  await a.ready;
+  a.send({ t: 'create', auth: accA.auth, players: n, games: games, level: 'relaxed' });
+  const ja = await a.next(m => m.t === 'joined');
+  const b = client('/ws/' + ja.code);
+  await b.ready;
+  b.send({ t: 'join', auth: accB.auth });
+  await b.next(m => m.t === 'joined');
+  return { accA, accB, a, b, ja, code: ja.code };
+}
+
+async function begin(g) {
+  const sa = g.a.next(m => m.t === 'state');
+  const sb = g.b.next(m => m.t === 'state');
+  g.a.send({ t: 'start' });
+  return [await sa, await sb];
+}
+
+async function friendRules() {
+  const [a, b, c, d] = [await guest(), await guest(), await guest(), await guest()];
+  const list = async acc => (await call('GET', '/api/friends', acc)).body;
+  const ids = xs => xs.map(x => x.id);
+  const rows = (x, y) => sql('SELECT count(*) AS n FROM friends WHERE (a = ' + who(x) + ' AND b = ' + who(y) + ') OR (a = ' + who(y) + ' AND b = ' + who(x) + ')')[0].n;
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: a.id })).status, 400);
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: 'x' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: '0'.repeat(32) })).status, 404);
+  assert.strictEqual((await call('GET', '/api/friends')).status, 401);
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: b.id })).status, 200);
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: b.id })).status, 200);
+  assert.deepStrictEqual(ids((await list(a)).outgoing), [b.id]);
+  assert.deepStrictEqual(ids((await list(b)).incoming), [a.id]);
+  assert.strictEqual((await list(a)).friends.length, 0);
+  assert.strictEqual(rows(a, b), 1, 'asking twice keeps one row');
+  assert.strictEqual((await call('POST', '/api/friend', b, { id: a.id })).status, 200);
+  assert.deepStrictEqual(ids((await list(a)).friends), [b.id]);
+  assert.deepStrictEqual(ids((await list(b)).friends), [a.id]);
+  assert.strictEqual((await list(b)).incoming.length, 0);
+  const prof = (await call('GET', '/api/player/' + b.id, a)).body;
+  assert.strictEqual(prof.rel, 'friend');
+  assert.strictEqual(prof.games, 0);
+  assert.strictEqual('chips' in prof, false, 'the public profile shows no chips');
+  assert.strictEqual((await call('GET', '/api/player/' + a.id, a)).body.rel, 'you');
+  console.log('friends: request, accept, public profile');
+
+  await call('DELETE', '/api/friend/' + a.id, b);
+  assert.strictEqual(rows(a, b), 0, 'either side can remove a friend');
+  await call('POST', '/api/friend', a, { id: b.id });
+  await call('DELETE', '/api/friend/' + a.id, b);
+  assert.strictEqual((await list(a)).outgoing.length, 0, 'a declined request is gone');
+  await call('POST', '/api/friend', a, { id: b.id });
+  await call('POST', '/api/friend', b, { id: a.id });
+
+  await call('POST', '/api/block/' + b.id, a);
+  assert.strictEqual((await list(a)).friends.length, 0, 'blocking ends the friendship');
+  assert.deepStrictEqual(ids((await list(a)).blocked), [b.id]);
+  assert.strictEqual((await list(b)).blocked.length, 0, 'the blocked player is not told');
+  assert.strictEqual((await call('POST', '/api/friend', b, { id: a.id })).status, 200, 'the blocked player is not told');
+  assert.strictEqual((await list(a)).incoming.length, 0, 'and nothing reaches the blocker');
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: b.id })).status, 403);
+  assert.strictEqual((await call('GET', '/api/player/' + a.id, b)).body.rel, 'none');
+  await call('DELETE', '/api/block/' + b.id, a);
+  assert.strictEqual((await call('POST', '/api/friend', b, { id: a.id })).status, 200);
+  sql("INSERT INTO friends (a, b, state) VALUES (" + who(a) + ", " + who(b) + ", 'req')");
+  assert.strictEqual((await call('POST', '/api/friend', a, { id: b.id })).status, 200);
+  assert.strictEqual(rows(a, b), 1, 'requests that crossed become one friendship');
+  assert.deepStrictEqual(ids((await list(a)).friends), [b.id]);
+  console.log('friends: remove, decline, block stops requests, unblock, crossed requests');
+
+  sql("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 199) INSERT INTO friends (a, b, state) SELECT " + who(c) + ", substr('00000000000000000000000000000000' || i, -32), 'friend' FROM n");
+  assert.strictEqual((await call('POST', '/api/friend', c, { id: d.id })).status, 200, 'the 200th is allowed');
+  assert.strictEqual((await call('POST', '/api/friend', c, { id: a.id })).status, 409, 'the 201st is not');
+  console.log('friends: capped at 200');
+
+  assert.strictEqual((await call('DELETE', '/api/me', b)).status, 200);
+  assert.strictEqual((await list(a)).incoming.length, 0, 'a deleted account leaves no requests');
+  assert.strictEqual(rows(a, b), 0);
+}
+
+async function chat() {
+  const g = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  assert.strictEqual(sa.players[0].pid, g.accA.id);
+  assert.strictEqual(sb.players[0].pid, g.accB.id);
+  assert.strictEqual(sa.players.filter(p => p.pid).length, 2);
+  assert(sa.players.filter(p => p.bot).every(p => !('pid' in p)), 'bots carry no id');
+  const got = [];
+  g.b.handlers.push(m => { if (m.t === 'said') got.push(m); });
+  const mine = g.a.next(m => m.t === 'said');
+  g.a.send({ t: 'say', k: 'nope' });
+  g.a.send({ t: 'say', k: 'hello' });
+  const e = await mine;
+  assert.deepStrictEqual([e.p, e.k], [0, 'hello']);
+  await sleep(200);
+  assert.strictEqual(got.length, 1, 'an unknown phrase is dropped');
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  assert.deepStrictEqual([got[0].p, got[0].k], [seatA, 'hello'], 'the other player sees the seat as theirs');
+  g.a.send({ t: 'say', k: 'smile' });
+  for (let i = 0; i < 6; i++) g.a.send({ t: 'say', k: 'luck' });
+  await sleep(500);
+  assert.strictEqual(got.length, 3, 'a burst of 3 passes, the rest is dropped: ' + got.length);
+  console.log('chat: relayed with the seat rotated, unknown keys and floods dropped');
+  g.a.ws.close();
+  g.b.ws.close();
+}
+
+async function gifts() {
+  const g = await pair(3, 3);
+  await begin(g);
+  const sent = [];
+  g.b.handlers.push(m => { if (m.t === 'gifted') sent.push(m); });
+  const chips = async acc => (await call('GET', '/api/me', acc)).body.chips;
+  assert.strictEqual(await chips(g.accA), 4900);
+  const seen = g.a.next(m => m.t === 'gifted');
+  const bank = g.a.next(m => m.t === 'state' && m.players[0].bank === 4850);
+  g.a.send({ t: 'gift', to: 1, k: 'tea' });
+  const e = await seen;
+  assert.deepStrictEqual([e.from, e.to, e.k], [0, 1, 'tea']);
+  await bank;
+  await sleep(100);
+  // B sits after A, so B counts A as the last seat and itself as 0
+  assert.deepStrictEqual([sent[0].from, sent[0].to], [2, 0], 'the target sees the gift as sent to them');
+  assert.strictEqual(await chips(g.accA), 4850);
+  assert.strictEqual(await chips(g.accB), 4900, 'nobody receives the chips');
+  assert.deepStrictEqual(sql('SELECT delta, reason FROM chip_log WHERE player = ' + who(g.accA) + " AND reason = 'gift'"), [{ delta: -50, reason: 'gift' }]);
+  console.log('gift: 50 chips charged once, shown to both, not paid to the target');
+
+  g.a.send({ t: 'gift', to: 0, k: 'tea' });
+  g.a.send({ t: 'gift', to: 3, k: 'tea' });
+  g.a.send({ t: 'gift', to: 1, k: 'gold' });
+  await sleep(300);
+  assert.strictEqual(sent.length, 1, 'self, out of range and unknown gifts are dropped');
+  assert.strictEqual(await chips(g.accA), 4850);
+  const bot = g.a.next(m => m.t === 'gifted' && m.to === 2);
+  g.a.send({ t: 'gift', to: 2, k: 'tea' });
+  await bot;
+  assert.strictEqual(await chips(g.accA), 4800, 'a bot seat is charged too');
+
+  await sleep(2100);
+  await call('POST', '/api/block/' + g.accB.id, g.accA);
+  const no = g.a.next(m => m.t === 'error');
+  g.a.send({ t: 'gift', to: 1, k: 'tea' });
+  assert.strictEqual((await no).k, 'blocked');
+  await call('DELETE', '/api/block/' + g.accB.id, g.accA);
+  sql('UPDATE players SET chips = 40 WHERE id = ' + who(g.accA));
+  const poor = g.a.next(m => m.t === 'error');
+  g.a.send({ t: 'gift', to: 1, k: 'tea' });
+  assert.strictEqual((await poor).k, 'broke');
+  assert.strictEqual(await chips(g.accA), 40);
+  console.log('gift: refused to a player who blocked the sender, refused when poor');
+  g.a.ws.close();
+  g.b.ws.close();
+}
+
+async function invites() {
+  const g = await pair(3, 3);
+  const f = await guest();
+  const n = await guest();
+  await call('POST', '/api/friend', g.accA, { id: f.id });
+  await call('POST', '/api/friend', f, { id: g.accA.id });
+  const hf = await hub(f);
+  const hn = await hub(n);
+  const fl = (await call('GET', '/api/friends', g.accA)).body.friends;
+  assert.deepStrictEqual(fl.map(x => [x.id, x.online]), [[f.id, true]], 'a friend in the lobby shows as online');
+  g.b.ws.close();
+
+  sql('UPDATE players SET chips = 500 WHERE id = ' + who(f));
+  const poor = g.a.next(m => m.t === 'sent');
+  g.a.send({ t: 'invite', to: f.id });
+  assert.strictEqual((await poor).ok, false, 'a friend who cannot cover the stake is not invited');
+  sql('UPDATE players SET chips = 5000 WHERE id = ' + who(f));
+  await sleep(2100);
+
+  const inv = hf.next(m => m.t === 'invited');
+  const ack = g.a.next(m => m.t === 'sent');
+  g.a.send({ t: 'invite', to: f.id });
+  const m = await inv;
+  assert.deepStrictEqual([m.code, m.stake, m.pub, m.from.pid], [g.code, 100, false, g.accA.id]);
+  assert.deepStrictEqual(await ack, { t: 'sent', to: f.id, ok: true });
+  let twice = 0;
+  hf.handlers.push(x => { if (x.t === 'invited') twice++; });
+  const dup = g.a.next(x => x.t === 'sent');
+  g.a.send({ t: 'invite', to: f.id });
+  assert.deepStrictEqual(await dup, { t: 'sent', to: f.id, ok: true });
+  assert.strictEqual(twice, 0, 'the same friend is not invited twice within a few seconds');
+  const miss = g.a.next(x => x.t === 'sent');
+  g.a.send({ t: 'invite', to: n.id });
+  assert.strictEqual((await miss).ok, false, 'a stranger gets nothing');
+  hf.ws.close();
+  await sleep(300);
+  assert.strictEqual((await call('GET', '/api/friends', g.accA)).body.friends[0].online, false);
+  hn.ws.close();
+  console.log('invite: delivered to a friend in the lobby, once, nothing to a stranger');
+  g.a.ws.close();
+}
+
+async function board() {
+  const [a, b, c, old] = [await guest(), await guest(), await guest(), await guest()];
+  const w = WEEK();
+  const base = Math.floor(Date.now() / 1000) * 10;
+  const set = (x, wk, won, lv) => sql('UPDATE players SET week = ' + wk + ', week_won = ' + won + ', xp = ' + (base + lv) + ', level = ' + (base + lv) + ' WHERE id = ' + who(x));
+  set(a, w, base + 5, 5);
+  set(b, w, base + 3, 3);
+  set(c, w, base + 1, 1);
+  set(old, w - 1, base + 9, 0);
+  const top = (await call('GET', '/api/top', c)).body;
+  assert.deepStrictEqual(top.week.slice(0, 3).map(x => x.id), [a.id, b.id, c.id]);
+  assert(!top.week.some(x => x.id === old.id), 'last week does not count');
+  assert.deepStrictEqual(top.you, { won: base + 1, rank: 3 });
+  assert.strictEqual(top.week[0].won, base + 5);
+  assert.strictEqual(top.week[0].avatar.length, 4);
+  assert.strictEqual('secret_hash' in top.week[0], false);
+  assert.deepStrictEqual(top.level.slice(0, 3).map(x => x.id), [a.id, b.id, c.id]);
+  assert.strictEqual(top.up, 3);
+  assert(top.week.length <= 50 && top.level.length <= 50);
+  assert.deepStrictEqual((await call('GET', '/api/top', old)).body.you, { won: 0, rank: null });
+  assert.strictEqual((await call('GET', '/api/player/' + old.id, a)).body.rank, null);
+  console.log('leaderboard: ordered by chips won this week and by level, last week left out, own rank');
+
+  // two humans: the winner's net is counted, and a player from an earlier week starts again
+  const g = await pair(2, 2);
+  sql('UPDATE players SET week = ' + (w - 1) + ', week_won = 999 WHERE id IN (' + who(g.accA) + ', ' + who(g.accB) + ')');
+  const fin = [];
+  const finished = new Promise(res => { fin.res = res; });
+  const o = { finish: x => { if (!fin.includes(x)) fin.push(x); if (fin.length === 2) fin.res(); } };
+  Object.assign(g.a, { seat: g.ja.seat });
+  play(g.a, o);
+  play(g.b, o);
+  g.a.send({ t: 'start' });
+  await Promise.race([finished, new Promise((r, j) => setTimeout(() => j(new Error('timeout')), 60000))]);
+  await sleep(600);
+  for (const [acc, x] of [[g.accA, g.a], [g.accB, g.b]]) {
+    const net = x.st.res.net;
+    const p = (await call('GET', '/api/player/' + acc.id, acc)).body;
+    assert.strictEqual(p.won, net > 0 ? net : 0, 'weekly chips ' + p.won + ' for net ' + net);
+    assert.strictEqual(sql('SELECT week AS n FROM players WHERE id = ' + who(acc))[0].n, net > 0 ? w : w - 1);
+    console.log('two humans: net', net, 'counted', p.won);
+  }
+  g.a.ws.close();
+  g.b.ws.close();
+}
+
 (async () => {
   await math();
   await accounts();
@@ -570,6 +821,11 @@ async function accounts() {
   await busy();
   await lone();
   await forfeit();
+  await friendRules();
+  await chat();
+  await gifts();
+  await invites();
+  await board();
   console.log('ok');
   process.exit(0);
 })().catch(e => {

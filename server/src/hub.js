@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { freeCode } from './room.js';
 import { verify, player, seat, STAKES, ENTRY } from './account.js';
+import { rel } from './social.js';
 
 const LIFE = 3 * 3600000;
 
@@ -71,6 +72,24 @@ export class Hub extends DurableObject {
 
   room(code) {
     return this.env.ROOM.get(this.env.ROOM.idFromName(code));
+  }
+
+  // which of these players are in the lobby or at a public table
+  online(ids) {
+    const here = new Set(this.ctx.getWebSockets().filter(w => w.readyState === 1).map(w => w.deserializeAttachment().pid));
+    for (const t of Object.values(this.tables)) for (const pid of t.pids) if (pid) here.add(pid);
+    return ids.filter(id => here.has(id));
+  }
+
+  // A table sends this for one of its players. Only a friend in the lobby gets it, and the sender cannot tell why one is missing.
+  async invite(from, to, code, stake, pub) {
+    const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid === to);
+    if (!socks.length || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
+    const p = await player(this.env.DB, to);
+    if (!p || p.chips < ENTRY * stake) return false;
+    const msg = JSON.stringify({ t: 'invited', from: from, code: code, stake: stake, pub: pub });
+    for (const w of socks) w.send(msg);
+    return true;
   }
 
   // The Room objects call this when a public table changes or closes.

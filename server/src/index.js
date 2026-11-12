@@ -1,10 +1,12 @@
 import { Room, freeCode } from './room.js';
 import { Hub } from './hub.js';
 import { api } from './account.js';
+import { social } from './social.js';
 
 export { Room, Hub };
 
 const ORIGIN = /^(https:\/\/([a-z0-9-]+\.)?amerikano\.pages\.dev|https?:\/\/localhost(:\d+)?|capacitor:\/\/localhost|http:\/\/127\.0\.0\.1(:\d+)?)$/;
+const SOCIAL = /^\/api\/(friends?|block|player|top)(\/|$)/;
 
 async function account(request, env, origin) {
   const cors = {
@@ -14,7 +16,7 @@ async function account(request, env, origin) {
     'Vary': 'Origin'
   };
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-  const res = await api(request, env);
+  const res = await (SOCIAL.test(new URL(request.url).pathname) ? social : api)(request, env);
   for (const k in cors) res.headers.set(k, cors[k]);
   return res;
 }

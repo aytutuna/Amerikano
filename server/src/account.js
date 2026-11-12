@@ -92,8 +92,8 @@ function profile(p) {
   };
 }
 
-const json = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
-const fail = (error, status) => json({ error: error }, status || 400);
+export const json = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
+export const fail = (error, status) => json({ error: error }, status || 400);
 
 async function body(request) {
   try {
