@@ -1,6 +1,6 @@
 var Settings = (function () {
   const KEY = 'amerikano.settings';
-  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', players: 4, games: 4, level: 'relaxed' };
+  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', felt: 'night', players: 4, games: 4, level: 'relaxed' };
   let s = Object.assign({}, def);
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
 
@@ -10,6 +10,7 @@ var Settings = (function () {
     Haptic.set(s.haptics);
     document.body.classList.toggle('fourc', !!s.fourc);
     document.body.dataset.back = s.back;
+    document.body.dataset.felt = s.felt;
   }
 
   function set(k, v, quiet) {
@@ -339,6 +340,7 @@ var App = (function () {
     const k = st.gameNo + ':' + st.phase;
     if (endKey === k) return;
     endKey = k;
+    if (on && st.phase === 'matchend') Table.chips(st.final.low);
     setTimeout(() => {
       if (!st || k !== st.gameNo + ':' + st.phase) return;
       Sheet.closeAll();
@@ -569,6 +571,13 @@ var App = (function () {
 
   A.newMatch = o => {
     st = Game.newMatch({ players: o.players, games: o.games, level: o.level, name: t('you') });
+    const base = Date.now() + ':' + Math.random();
+    st.players.forEach((p, i) => {
+      if (!p.bot) return;
+      p.seed = Names.at(Names.hash(base + 'n' + i));
+      p.name = Names.text(p.seed, I18n.lang());
+      p.av = Avatar.at(Names.hash(base + 'a' + i));
+    });
     A.order = [];
     A.sel.clear();
     A.hist = [];
@@ -585,6 +594,14 @@ var App = (function () {
     if (!$('game').contains(document.activeElement)) land();
   };
 
+  // names follow the language in use, not the one the match began in
+  function rename() {
+    for (const p of st.players) {
+      if (p.seed !== undefined) p.name = Names.text(p.seed, I18n.lang());
+      else if (!p.bot && !on) p.name = t('you');
+    }
+  }
+
   // what Continue offers, or null when nothing usable is saved
   A.saved = () => {
     const r = read();
@@ -595,6 +612,7 @@ var App = (function () {
     const r = read();
     if (!r) return false;
     st = r.st;
+    rename();
     A.order = r.d.order;
     A.hist = r.d.hist;
     A.sel.clear();
@@ -623,6 +641,7 @@ var App = (function () {
       turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
       // other hands and the stock are only counts, so those arrays stay holes with a length
       stock: new Array(m.stock), discard: m.discard.map(card),
+      clock: m.clock && { p: m.clock.p, due: Date.now() + m.clock.left, span: m.clock.span },
       melds: m.melds.map(x => ({ id: x.id, t: x.t, cards: x.ids.map(card), owner: x.owner })),
       claim: m.claim && { card: card(m.claim.card), queue: m.claim.queue, i: m.claim.i },
       // bot reads "not you" in the renderers, and the server never marks a human as one
@@ -669,6 +688,7 @@ var App = (function () {
     if (first) {
       on = true;
       A.hist = Net.hist();
+      Social.refresh().catch(() => {});
       Live.clear();
       askKey = endKey = claimKey = alertKey = '';
       Sheet.closeAll();
@@ -688,6 +708,14 @@ var App = (function () {
     if (st) after();
   };
 
+  // seats without a picture of their own get one that stays the same for that name
+  A.look = (p, i) => {
+    if (p.av) return p.av;
+    const me = Account.me();
+    if (i === 0 && !p.bot && me) return me.avatar;
+    return Avatar.at(Names.hash(i === 0 && !p.bot ? 'you' : p.name));
+  };
+
   A.flash = flash;
   A.online = () => on;
 
@@ -698,6 +726,7 @@ var App = (function () {
     if (on) {
       on = false;
       over = null;
+      Table.reset();
       Net.leave(keep);
     } else if (drop) {
       try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
@@ -715,7 +744,10 @@ var App = (function () {
       prompt = null;
       askKey = claimKey = '';
     }
-    if (st && !$('game').hidden) render({ instant: true });
+    if (st && !$('game').hidden) {
+      rename();
+      render({ instant: true });
+    }
     else if (!$('home').hidden) UI.start(true);
   };
 

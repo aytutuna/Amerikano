@@ -1,6 +1,7 @@
 (function () {
   const node = Cards.node;
 
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
   const num = I18n.num;
   const signed = n => n > 0 ? '+' + n : n < 0 ? '−' + -n : '0';
   const who = (st, i) => st.players[i].bot ? st.players[i].name : t('you');
@@ -8,7 +9,7 @@
 
   function person(st, i, out) {
     const s = node('span', 'who');
-    s.appendChild(node('span', 'av2', who(st, i).charAt(0).toLocaleUpperCase(I18n.lang())));
+    s.appendChild(Avatar.pic(App.look(st.players[i], i), 30));
     s.appendChild(node('span', 'pn', who(st, i)));
     if (out) {
       s.appendChild(Cards.icon('jk-star', 'fin'));
@@ -209,11 +210,121 @@
     return f;
   }
 
+  const fmt = n => Math.abs(n).toLocaleString(I18n.lang());
+  const sgn = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(n);
+
+  function count(el, from, to, ms, text) {
+    if (still.matches || from === to) {
+      el.textContent = text(to);
+      return;
+    }
+    const t0 = performance.now();
+    const step = now => {
+      const k = Math.min(1, (now - t0) / ms);
+      el.textContent = text(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+      if (k < 1 && document.contains(el)) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  const wait = ms => new Promise(r => setTimeout(r, still.matches ? 0 : ms));
+
+  function kilim() {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('class', 'hk');
+    s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = '<rect width="100%" height="12" fill="url(#kilim)"/>';
+    return s;
+  }
+
+  // xp starts at 50n(n-1) for level n; each level gained pays 1,000 times the level, as the server does
+  function xpRun(bar, label, bonus, me, add) {
+    const lo = l => 50 * l * (l - 1);
+    const hi = l => 50 * l * (l + 1);
+    const fill = bar.firstChild;
+    const frac = (l, x) => Math.max(0, Math.min(1, (x - lo(l)) / (hi(l) - lo(l)))) * 100 + '%';
+    const put = (e, text) => { e.textContent = text; };
+    fill.style.width = frac(me.level, me.xp);
+    (async () => {
+      let l = me.level;
+      let x = me.xp;
+      const to = me.xp + add;
+      await wait(900);
+      while (document.contains(bar)) {
+        const end = Math.min(to, hi(l));
+        const a = fill.animate([{ width: frac(l, x) }, { width: frac(l, end) }], { duration: still.matches ? 0 : 900, easing: 'ease-out', fill: 'forwards' });
+        await a.finished.catch(() => {});
+        fill.style.width = frac(l, end);
+        a.cancel();
+        x = end;
+        if (to < hi(l)) return;
+        l++;
+        put(label, t('end.level', { n: l }));
+        put(bonus, t('end.bonus', { n: fmt(1000 * l) }));
+        bonus.classList.add('pop');
+        label.classList.remove('pop');
+        void label.offsetWidth;
+        label.classList.add('pop');
+        await wait(900);
+        fill.style.width = '0%';
+        x = lo(l);
+      }
+    })();
+  }
+
+  // the winner large over a kilim burst, then what the match did to my chips and xp
+  function hero(st, f) {
+    const w = f.low;
+    const box = node('div', 'hero');
+    box.appendChild(node('div', 'rays'));
+    box.appendChild(kilim());
+    const pic = node('div', 'hpic');
+    pic.appendChild(Avatar.pic(App.look(st.players[w], w), 132, true));
+    box.appendChild(pic);
+    box.appendChild(node('h3', '', who(st, w)));
+    box.appendChild(node('p', 'hpts', t('ptsShort', { n: st.players[w].score })));
+    const r = st.res;
+    if (r) {
+      const me = Account.me();
+      const res = node('div', 'hres');
+      res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : ''));
+      const row = node('div', 'hwin' + (r.net < 0 ? ' lose' : ''));
+      row.appendChild(Cards.icon('i-chip', 'chip'));
+      const amount = node('b', '', sgn(0));
+      row.appendChild(amount);
+      res.appendChild(node('p', 'hlbl', t('end.winnings')));
+      res.appendChild(row);
+      count(amount, 0, r.net, 1100, sgn);
+      if (r.xp && me) {
+        // the profile may already include this match, so start from the xp the server saw at the deal
+        let lv = 1;
+        while (r.from >= 50 * lv * (lv + 1)) lv++;
+        const start = r.from === undefined ? me : { xp: r.from, level: lv };
+        const head = node('div', 'xph');
+        const label = node('span', 'lvl', t('pf.level', { n: start.level }));
+        head.appendChild(label);
+        head.appendChild(node('span', '', t('end.xp', { n: r.xp })));
+        res.appendChild(head);
+        const bar = node('div', 'xpbar');
+        bar.appendChild(node('i'));
+        res.appendChild(bar);
+        const bonus = node('p', 'bonus');
+        res.appendChild(bonus);
+        xpRun(bar, label, bonus, start, r.xp);
+      } else if (r.xp) res.appendChild(node('p', 'hlbl', t('end.xp', { n: r.xp })));
+      box.appendChild(res);
+    }
+    box.appendChild(kilim());
+    box.lastChild.classList.add('bot');
+    return box;
+  }
+
   function matchEnd(st) {
     const f = st.final;
     const won = mine(st, f.low);
     const body = node('div', 'pap');
     if (won) body.appendChild(flourish());
+    body.appendChild(hero(st, f));
 
     const tbl = node('table', 'ptbl et');
     tbl.appendChild(node('caption', 'sr', t('end.cap')));
@@ -228,7 +339,8 @@
       td.appendChild(person(st, p, p === f.finisher));
       tr.appendChild(td);
       tr.appendChild(node('td', 'num', num(st.players[p].score)));
-      tr.appendChild(node('td', 'num', signed(st.players[p].chips)));
+      // online the pot is in chips of stake/10, as in the result above
+      tr.appendChild(node('td', 'num', signed(st.res ? st.players[p].chips * st.stake / 10 : st.players[p].chips)));
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
@@ -246,9 +358,13 @@
     }
     body.appendChild(node('p', 'pline', sentence));
     if (st.res) {
-      body.appendChild(node('p', 'pline strong', t('end.change', { n: st.res.net, abs: Math.abs(st.res.net).toLocaleString(I18n.lang()) }) + (st.res.xp ? ' ' + t('end.xp', { n: st.res.xp }) : '')));
       body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.lang()), unit: (st.stake / 10).toLocaleString(I18n.lang()) })));
     }
+
+    const sheet = node('button', 'btn quiet', t('end.scores'));
+    sheet.type = 'button';
+    sheet.addEventListener('click', score);
+    body.appendChild(sheet);
 
     const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
     const home = App.online()

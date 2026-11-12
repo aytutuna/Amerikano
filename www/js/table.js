@@ -2,6 +2,8 @@ var Table = (function () {
   const $ = id => document.getElementById(id);
   const game = $('game');
   const seatsEl = $('seats');
+  const ctlEl = $('ctl');
+  const tableEl = $('table');
   const meldsEl = $('melds');
   const mlist = $('mlist');
   const hand = $('hand');
@@ -12,6 +14,9 @@ var Table = (function () {
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const wide = matchMedia('(orientation: landscape) and (max-height: 520px)');
   const HR = Cards.RATIO;
+  const DASH = 2 * Math.PI * 29.5;
+  // where each opponent sits, by how many opponents there are
+  const SPOTS = [[], ['t'], ['tl', 'tr'], ['l', 't', 'r'], ['l', 'tl', 'tr', 'r']];
 
   const rackEls = new Map();
   const meldEls = new Map();
@@ -25,6 +30,7 @@ var Table = (function () {
   let discTop = -1;
   let discUnder = -1;
   let hide = [];
+  let ring = null;
 
   const T = { drag: null };
 
@@ -138,46 +144,107 @@ var Table = (function () {
     });
   }
 
+  const short = n => n >= 1e6 ? +(n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? +(n / 1e3).toFixed(1) + 'K' : n.toLocaleString(I18n.lang());
+
+  function seatEl(i) {
+    const e = Cards.node('div', 'seat');
+    e.setAttribute('role', 'group');
+    e.dataset.p = i;
+    e.innerHTML = '<span class="av" aria-hidden="true"><svg class="rg" viewBox="0 0 64 64"><circle class="rt" cx="32" cy="32" r="29.5"/><circle class="rf" cx="32" cy="32" r="29.5" transform="rotate(-90 32 32)"/></svg><span class="pf"></span><i class="cnt"></i><em class="lv"></em></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sc"></span><span class="bk"></span><span class="tw"></span></span><button class="tap" type="button"></button>';
+    e.querySelector('.av').appendChild(Cards.icon('i-check', 'ok'));
+    e.querySelector('.bk').appendChild(Cards.icon('i-chip', 'chip'));
+    e.querySelector('.bk').appendChild(document.createTextNode(''));
+    e.querySelector('.tap').addEventListener('click', () => Social.seat(+e.dataset.p));
+    return e;
+  }
+
   function seats(v) {
     const st = v.st;
     const live = st.phase !== 'gameend' && st.phase !== 'matchend';
     const keep = new Set();
     const tight = st.n > 4;
-    st.players.forEach((p, i) => {
-      if (i === 0 && !p.bot) return;
+    const order = st.players.map((p, i) => i);
+    seatsEl.classList.toggle('tight', tight);
+    let at = 0;
+    for (const i of order) {
+      const p = st.players[i];
       keep.add(i);
       let e = seatEls.get(i);
       if (!e) {
-        e = Cards.node('div', 'seat');
-        e.setAttribute('role', 'group');
-        e.dataset.p = i;
-        e.innerHTML = '<span class="av" aria-hidden="true"><b></b><i class="cnt"></i></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sc"></span><span class="tw"></span></span>';
-        e.querySelector('.av').appendChild(Cards.icon('i-check', 'ok'));
-        seatsEl.appendChild(e);
+        e = seatEl(i);
         seatEls.set(i, e);
       }
-      const turn = live && st.turn === i;
+      const mine = i === 0 && !p.bot;
+      const host = i === 0 && !wide.matches ? ctlEl : seatsEl;
+      if (host === ctlEl) {
+        if (e.parentNode !== ctlEl) ctlEl.appendChild(e);
+      } else if (seatsEl.children[at] !== e) seatsEl.insertBefore(e, seatsEl.children[at] || null);
+      if (host === seatsEl) at++;
+      e.classList.toggle('mine', i === 0);
+      e.dataset.at = i ? SPOTS[st.n - 1][i - 1] : 'b';
+      const turn = live && (st.clock ? st.clock.p === i : st.turn === i);
       e.classList.toggle('turn', turn);
+      e.classList.toggle('ring', turn && (!!st.clock || mine));
       e.classList.toggle('open', p.opened);
-      e.querySelector('b').textContent = p.name[0];
-      const av = e.querySelector('.av');
-      const look = p.av ? p.av.join() : '';
+      const av = e.querySelector('.pf');
+      const parts = App.look(p, i);
+      const box = wide.matches ? 34 : 52;
+      const look = parts.join() + ':' + box;
       if (av.dataset.look !== look) {
         av.dataset.look = look;
-        const old = av.querySelector('.avt');
-        if (old) old.remove();
-        if (p.av) av.insertBefore(Avatar.el(p.av, 48), av.firstChild);
-        av.classList.toggle('pic', !!p.av);
+        av.textContent = '';
+        av.appendChild(Avatar.pic(parts, box));
       }
+      const lv = e.querySelector('.lv');
+      lv.textContent = p.level || '';
+      lv.hidden = !p.level;
       e.querySelector('.cnt').textContent = p.hand.length;
       e.querySelector('.nm').textContent = p.name;
-      e.querySelector('.sc').textContent = tight ? t('ptsShort', { n: p.score }) : t('points', { n: p.score });
+      e.querySelector('.sc').textContent = t('ptsShort', { n: p.score });
+      const bk = e.querySelector('.bk');
+      bk.hidden = p.bank === undefined || tight;
+      if (!bk.hidden) bk.lastChild.textContent = short(p.bank);
+      const tap = e.querySelector('.tap');
+      tap.hidden = !App.online();
+      tap.setAttribute('aria-label', t('pc.title') + ': ' + p.name);
       e.classList.toggle('away', !!p.away);
-      e.querySelector('.tw').textContent = p.away ? t('away') : turn ? t('playing') : p.opened ? t('opened') : '';
+      e.querySelector('.tw').textContent = p.away ? t('away') : '';
       e.setAttribute('aria-label', t('seat', { name: p.name, n: p.hand.length, turn: turn, opened: p.opened, score: p.score, away: p.away }));
-    });
+    }
     for (const [i, e] of seatEls) {
       if (!keep.has(i)) { e.remove(); seatEls.delete(i); }
+    }
+    timer(st, live);
+  }
+
+  function stopRing() {
+    if (!ring) return;
+    ring.anim && ring.anim.cancel();
+    ring.tm.forEach(clearTimeout);
+    ring.rf.classList.remove('hot');
+    ring = null;
+  }
+
+  // the ring drains to the moment the server plays for a stalled human; the last 5 s go red and tick on my own turn
+  function timer(st, live) {
+    const c = live && st.clock;
+    if (!c) return stopRing();
+    if (ring && ring.p === c.p && Math.abs(ring.due - c.due) < 400) return;
+    stopRing();
+    const e = seatEls.get(c.p);
+    if (!e) return;
+    const rf = e.querySelector('.rf');
+    const left = Math.max(0, c.due - Date.now());
+    ring = { p: c.p, due: c.due, rf: rf, anim: null, tm: [] };
+    if (!still.matches) {
+      ring.anim = rf.animate([{ strokeDashoffset: DASH * (1 - Math.min(1, left / c.span)) }, { strokeDashoffset: DASH }], { duration: left, easing: 'linear', fill: 'forwards' });
+    }
+    const warn = left - 5000;
+    const mine = c.p === 0 && !st.players[0].bot;
+    ring.tm.push(setTimeout(() => rf.classList.add('hot'), Math.max(0, warn)));
+    if (!mine) return;
+    for (let k = 5; k > 0; k--) {
+      if (left > k * 1000) ring.tm.push(setTimeout(Sfx.tick, left - k * 1000));
     }
   }
 
@@ -201,6 +268,8 @@ var Table = (function () {
     $('scl').textContent = t('score');
     $('pot').textContent = t('pot', { n: st.pot });
     $('menu').setAttribute('aria-label', t('menu'));
+    $('chat').hidden = !App.online();
+    $('chat').setAttribute('aria-label', t('chat.open'));
     seatsEl.setAttribute('aria-label', t('seatsLabel'));
     $('rack').setAttribute('aria-label', t('hand'));
     $('ctl').setAttribute('aria-label', t('ctlLabel'));
@@ -546,6 +615,8 @@ var Table = (function () {
     view = v;
     const s = snapshot();
     seats(v);
+    // seats drawn for the first time still give the deal something to fly to
+    for (const [i, e] of seatEls) if (!s.seat.has(i)) s.seat.set(i, e.querySelector('.av').getBoundingClientRect());
     topbar(v);
     piles(v);
     melds(v);
@@ -563,12 +634,26 @@ var Table = (function () {
     const st = document.documentElement.style;
     const rr = $('rack').getBoundingClientRect(), lip = document.querySelector('.lip');
     st.setProperty('--rackh', Math.ceil(rr.bottom - Math.min(rr.top, lip.getBoundingClientRect().top)) + 'px');
-    st.setProperty('--seatt', $('seats').offsetTop + 'px');
+    st.setProperty('--seatt', $('seats').offsetTop + (wide.matches ? 0 : game.classList.contains('big') ? 116 : 136) + 'px');
     st.setProperty('--liph', lip.offsetHeight + 'px');
+  }
+
+  function rim() {
+    const w = tableEl.clientWidth, h = tableEl.clientHeight;
+    if (!w || !h) return;
+    const el = $('rim');
+    const band = 'height="12" fill="url(#kilim)" transform="';
+    el.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    el.innerHTML = '<rect width="' + w * 2 + '" ' + band + 'scale(.5)"/>' +
+      '<rect width="' + w * 2 + '" ' + band + 'translate(0,' + (h - 6) + ') scale(.5)"/>' +
+      '<rect width="' + h * 2 + '" ' + band + 'translate(6,0) rotate(90) scale(.5)"/>' +
+      '<rect width="' + h * 2 + '" ' + band + 'translate(' + w + ',0) rotate(90) scale(.5)"/>';
   }
 
   function relayout() {
     if (!view || game.hidden) return;
+    seats(view);
+    rim();
     rack(view, null, true);
     melds(view);
     measure();
@@ -589,15 +674,45 @@ var Table = (function () {
 
   window.addEventListener('resize', relayout);
   new ResizeObserver(relayout).observe(hand);
+  new ResizeObserver(rim).observe(tableEl);
 
   T.render = render;
   T.relayout = relayout;
   T.slotAt = slotAt;
   T.rackEl = id => rackEls.get(id);
+  T.seat = i => seatEls.get(i);
   T.reset = () => {
     for (const f of flying.values()) { f.anim.cancel(); f.g.remove(); }
     flying.clear();
     prev = new Map();
+    stopRing();
+  };
+
+  // chips fly from every other seat to the winner's
+  T.chips = to => {
+    const dest = seatEls.get(to);
+    if (still.matches || !dest) return;
+    const d = dest.querySelector('.av').getBoundingClientRect();
+    let n = 0;
+    for (const [i, e] of seatEls) {
+      if (i === to) continue;
+      const r = e.querySelector('.av').getBoundingClientRect();
+      for (let k = 0; k < 6; k++, n++) {
+        const c = Cards.icon('i-chip', 'coin');
+        const x0 = r.left + r.width / 2 - 11, y0 = r.top + r.height / 2 - 11;
+        const dx = d.left + d.width / 2 - 11 - x0, dy = d.top + d.height / 2 - 11 - y0;
+        c.style.left = x0 + 'px';
+        c.style.top = y0 + 'px';
+        fl.appendChild(c);
+        const a = c.animate([
+          { transform: 'translate(0,0) scale(.6)', opacity: 0 },
+          { transform: 'translate(' + dx * .5 + 'px,' + (dy * .5 - 36) + 'px) scale(1.1)', opacity: 1, offset: .5 },
+          { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.8)', opacity: 0 }
+        ], { duration: 650, delay: n * 55, easing: 'ease-in-out', fill: 'backwards' });
+        a.onfinish = () => c.remove();
+      }
+    }
+    Sfx.play('place', 300);
   };
   return T;
 })();

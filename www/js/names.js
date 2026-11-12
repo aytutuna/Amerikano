@@ -34,7 +34,18 @@ var Names = (function () {
     return (r[0] % ADJ.length) * 100 + r[1] % NOUN.length;
   }
 
-  return { text: text, pick: pick };
+  // fixed picks for bots: the same number always gives the same name
+  function at(n) {
+    return (n % ADJ.length) * 100 + Math.floor(n / ADJ.length) % NOUN.length;
+  }
+
+  function hash(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h >>> 0;
+  }
+
+  return { text: text, pick: pick, at: at, hash: hash };
 })();
 
 if (typeof module !== 'undefined') module.exports = Names;

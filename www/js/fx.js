@@ -28,10 +28,25 @@ var Sfx = (function () {
     s.start(ctx.currentTime + (delay || 0) / 1000);
   }
 
+  // a soft blip made on the spot, so it needs no sound file
+  function tick() {
+    if (!on || !ctx || ctx.state !== 'running') return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.09);
+  }
+
   document.addEventListener('pointerdown', init, { once: true });
   document.addEventListener('keydown', init, { once: true });
 
-  return { play: play, set: v => { on = v; } };
+  return { play: play, tick: tick, set: v => { on = v; } };
 })();
 
 var Haptic = (function () {
