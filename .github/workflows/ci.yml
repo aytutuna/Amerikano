@@ -123,19 +123,33 @@ jobs:
               await page.screenshot({ path: out + '/' + name + '-table.png' });
               // game one starts with the human choosing, and the task sheet blocks the stock
               await page.click('.tk');
-              await page.waitForFunction(() => !document.getElementById('ctl').inert);
+              await page.waitForFunction(() => !document.getElementById('piles').closest('[inert]'));
               await page.click('#stock');
               await page.waitForTimeout(1500);
               await page.screenshot({ path: out + '/' + name + '-drew.png' });
             }
             let failed = false;
-            for (const [name, dev] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
+            for (const [name, dev] of [['landscape', 'iPhone 14 landscape']]) {
               try {
                 await run(name, devices[dev], turn);
               } catch (e) {
                 console.log(name + ': ' + e.message);
                 failed = true;
               }
+            }
+            try {
+              const ctx = await browser.newContext(devices['iPhone 14']);
+              const page = await ctx.newPage();
+              page.on('pageerror', e => errors.push('portrait: ' + e.message));
+              page.on('console', m => { if (m.type() === 'error') errors.push('portrait: ' + m.text()); });
+              await page.goto('http://localhost:8080/');
+              await page.waitForSelector('#rot', { state: 'visible', timeout: 15000 });
+              await page.waitForSelector('#home .btn.primary', { state: 'attached', timeout: 15000 });
+              await page.screenshot({ path: out + '/portrait-rot.png' });
+              await ctx.close();
+            } catch (e) {
+              console.log('portrait: ' + e.message);
+              failed = true;
             }
             await browser.close();
             if (errors.length) console.log(errors.join('\n'));
