@@ -90,3 +90,7 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+
+Avatar portraits in www/img/avatar
+Character portrait parts by LimeZu (https://limezu.itch.io), used under the Modern User Interface licence with credit. Only the parts the game uses are included.
