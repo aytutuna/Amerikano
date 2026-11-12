@@ -114,7 +114,7 @@ jobs:
               await ctx.close();
             }
             async function turn(page, name) {
-              await page.click('#home .btn.primary');
+              await page.getByRole('button', { name: 'Practice' }).click();
               await page.waitForSelector('.sheet .btn.primary');
               await page.screenshot({ path: out + '/' + name + '-setup.png' });
               await page.click('.sheet .btn.primary');
