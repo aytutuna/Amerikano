@@ -2,8 +2,9 @@ var Net = (function () {
   const KEY = 'amerikano.online';
   const SITE = 'https://amerikano.pages.dev/';
   const FRESH = 15 * 60000;
-  const REFUSED = ['nocode', 'started', 'full', 'taken'];
+  const REFUSED = ['nocode', 'started', 'full', 'taken', 'auth', 'poor'];
   let sock = null;
+  let hub = false;
   let ses = null;
   let tries = 0;
   let retry = 0;
@@ -52,6 +53,7 @@ var Net = (function () {
 
   function open(path, hello) {
     detach();
+    hub = path === '/ws/hub';
     const ws = new WebSocket(host() + path);
     sock = ws;
     ws.onopen = () => {
@@ -72,6 +74,7 @@ var Net = (function () {
   // session so Rejoin still works once the network is back; a replaced one belongs to the other window.
   function gone(k) {
     const live = App.online();
+    const lobby = hub;
     detach();
     clearTimeout(retry);
     if (k === 'replaced') ses = null;
@@ -79,10 +82,13 @@ var Net = (function () {
     UI.close();
     if (live) App.leave(false, true);
     UI.notice(msg(k));
+    if (lobby) UI.exit();
+    else UI.resume();
   }
 
   function lost(e) {
     sock = null;
+    if (hub) return gone('lost');
     // 4000 means the seat was taken over from another window, 1000 that the server ended it
     if (e.code === 4000) return gone('replaced');
     if (e.code === 1000) return ses ? gone('ended') : undefined;
@@ -98,8 +104,10 @@ var Net = (function () {
     let m;
     try { m = JSON.parse(d); } catch (e) { return; }
     switch (m.t) {
-      case 'queue': UI.queue(m.n); break;
-      case 'matched':
+      case 'hub': UI.hub(m); break;
+      case 'rooms': UI.rooms(m.n); break;
+      case 'tables': UI.tables(m.stake, m.tables); break;
+      case 'seated':
         save({ code: m.code, token: m.token, hist: [] });
         open('/ws/' + m.code, { t: 'join', token: m.token });
         break;
@@ -119,13 +127,21 @@ var Net = (function () {
   }
 
   function fail(m) {
+    if (hub && m.k !== 'auth') {
+      UI.close();
+      return UI.notice(msg(m.k));
+    }
     if (REFUSED.includes(m.k)) {
+      if (m.k === 'auth') Account.forget();
       const live = App.online();
       detach();
       drop();
       UI.close();
       if (live) App.leave(false);
-      return UI.notice(msg(m.k));
+      if (m.k === 'auth') UI.exit();
+      UI.notice(msg(m.k));
+      if (m.k !== 'auth') UI.resume();
+      return;
     }
     if (App.online()) App.fail(m.k, m);
     else UI.notice(msg(m.k));
@@ -162,20 +178,25 @@ var Net = (function () {
   N.hist = () => (ses && ses.hist) || [];
   N.keep = hist => { if (ses) { ses.hist = hist; store(); } };
 
-  N.quick = () => {
+  N.hub = () => {
     drop();
-    UI.queue(null);
-    open('/ws/quick', { t: 'quick' });
+    open('/ws/hub', { t: 'hello', auth: Account.auth() });
   };
 
-  N.create = (name, o) => {
+  const say = m => { if (sock && sock.readyState === 1) sock.send(JSON.stringify(m)); };
+
+  N.watch = stake => say({ t: 'watch', stake: stake });
+  N.sit = code => say({ t: 'sit', code: code });
+  N.play = stake => say({ t: 'quick', stake: stake });
+
+  N.create = o => {
     drop();
-    open('/ws/new', Object.assign({ t: 'create', name: name }, o));
+    open('/ws/new', Object.assign({ t: 'create', auth: Account.auth() }, o));
   };
 
-  N.join = (code, name) => {
+  N.join = code => {
     drop();
-    open('/ws/' + code, { t: 'join', name: name });
+    open('/ws/' + code, { t: 'join', auth: Account.auth() });
   };
 
   N.resume = () => {

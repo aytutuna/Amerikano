@@ -160,6 +160,15 @@ var Table = (function () {
       e.classList.toggle('turn', turn);
       e.classList.toggle('open', p.opened);
       e.querySelector('b').textContent = p.name[0];
+      const av = e.querySelector('.av');
+      const look = p.av ? p.av.join() : '';
+      if (av.dataset.look !== look) {
+        av.dataset.look = look;
+        const old = av.querySelector('.avt');
+        if (old) old.remove();
+        if (p.av) av.insertBefore(Avatar.el(p.av, 48), av.firstChild);
+        av.classList.toggle('pic', !!p.av);
+      }
       e.querySelector('.cnt').textContent = p.hand.length;
       e.querySelector('.nm').textContent = p.name;
       e.querySelector('.sc').textContent = tight ? t('ptsShort', { n: p.score }) : t('points', { n: p.score });

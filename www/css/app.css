@@ -293,6 +293,58 @@ body[data-back=blue] .cv.bk { background-image: url(../img/blue.webp); }
 .seatlist li.free { border-color: rgba(246, 236, 210, .35); color: var(--mute); font-weight: 500; }
 .seatlist small { color: var(--saffron); font-weight: 700; }
 .seat.away .av, .seat.away .si { opacity: .55; }
+.avt { position: relative; display: inline-block; flex: none; }
+.avt i { position: absolute; inset: 0; background-repeat: no-repeat; image-rendering: pixelated; }
+.avt.down i { image-rendering: auto; }
+.av.pic { width: 48px; height: 48px; background: none; }
+.av.pic b { display: none; }
+#game.big .av .avt { display: none; }
+.seatlist .sit { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.seatlist .sit .avt { margin: -4px 0; }
+
+.hm-main.hall { display: flex; justify-content: flex-start; align-items: center; }
+.hl { width: min(100%, 420px); display: grid; gap: 14px; align-content: start; }
+.hl-bar { display: flex; align-items: center; gap: 12px; }
+.hl-bar h2 { font: 400 min(1.5rem, 30px)/1.15 'Yeseva One', Georgia, serif; }
+.hl h3 { font-weight: 700; }
+.hl .lead, .hl .note { text-align: center; }
+.rooms { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.room { display: grid; gap: 2px; min-height: 76px; padding: 10px 12px; border: 2px solid var(--wool); border-radius: 20px; background: none; color: var(--wool); text-align: center; }
+.room b { font: 400 min(1.5rem, 30px)/1.1 'Yeseva One', Georgia, serif; color: var(--saffron); }
+.room span { font-size: max(15px, min(.85rem, 17px)); }
+.room.locked { border-color: rgba(246, 236, 210, .35); color: var(--mute); }
+.room.locked b { color: var(--mute); }
+.room:disabled { opacity: 1; }
+.tbls { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tbl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; min-height: 60px; padding: 6px 14px 6px 8px; border: 2px solid var(--wool); border-radius: 30px; background: none; color: var(--wool); text-align: left; }
+.tbl .faces { flex: none; display: flex; gap: 2px; }
+.tbl .none { width: 33px; height: 33px; border: 2px dashed rgba(246, 236, 210, .35); border-radius: 50%; }
+.tbl .tx { flex: 1 1 8rem; min-width: 0; display: grid; gap: 1px; }
+.tbl .tx small { color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbl .cd { flex: none; margin-left: auto; color: var(--saffron); font-weight: 700; }
+.lobby .stake { font-weight: 700; color: var(--saffron); }
+.hm-me { display: grid; gap: 10px; }
+.me { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px; padding: 6px 16px 6px 8px; border: 2px solid var(--wool); border-radius: 36px; background: none; color: var(--wool); text-align: left; }
+.me .tx { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.me .tx b { font-size: min(1.05rem, 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me small { font-size: max(15px, min(.8rem, 16px)); color: var(--mute); }
+.me .chips { flex: none; display: grid; text-align: right; line-height: 1.1; }
+.me .chips b { color: var(--saffron); font-size: min(1.1rem, 22px); }
+.xpbar { height: 8px; border-radius: 4px; background: rgba(246, 236, 210, .2); overflow: hidden; }
+.xpbar i { display: block; height: 100%; background: var(--sky); }
+
+.prof { gap: 18px; }
+.pf-top { display: flex; align-items: center; gap: 14px; }
+.pf-top .tx { flex: 1 1 auto; min-width: 0; display: grid; gap: 6px; }
+.pf-top h3 { font: 400 min(1.5rem, 30px)/1.15 'Yeseva One', Georgia, serif; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; text-align: center; }
+.stats div { padding: 8px 4px; border: 2px solid rgba(246, 236, 210, .35); border-radius: 16px; }
+.stats dt { font-size: max(15px, min(.8rem, 16px)); color: var(--mute); }
+.stats dd { margin: 0; font-weight: 700; font-size: min(1.15rem, 24px); }
+.looks { display: flex; flex-wrap: wrap; gap: 6px; }
+.look { flex: none; width: 52px; height: 52px; padding: 0; display: grid; place-items: center; border: 2px solid rgba(246, 236, 210, .35); border-radius: 14px; background: none; }
+.look.on { border-color: var(--saffron); background: rgba(242, 207, 99, .16); }
+.danger { display: grid; gap: 10px; padding-top: 6px; }
 .fld { margin: 0; padding: 0; border: 0; min-width: 0; }
 .fld legend { padding: 0; margin-bottom: 6px; font-weight: 700; }
 .opts { display: flex; flex-wrap: wrap; gap: 8px; }

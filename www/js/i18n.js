@@ -156,7 +156,7 @@ var I18n = (function () {
 
     start: {
       title: 'Amerikano',
-      go: 'New match',
+      go: 'Practice',
       cont: 'Continue',
       saved: v => 'Game ' + v.n + ' of ' + v.of + ', ' + v.players + ' players',
       how: 'How to play',
@@ -259,27 +259,22 @@ var I18n = (function () {
       split: v => (v.you ? 'You had the lowest score and take ' : v.name + ' had the lowest score and takes ') + chips(v.lowPay) + '. ' + (v.finYou ? 'You' : v.fin) + ' went out in the last game and ' + (v.finYou ? 'take ' : 'takes ') + chips(v.finPay) + '.',
       empty: v => (v.you ? 'You had' : v.name + ' had') + ' the lowest score. The pot was used up during the match, so there are no chips to share.',
       again: 'Play again',
-      home: 'Home'
+      home: 'Home',
+      lobby: 'Back to the lobby',
+      change: v => v.n > 0 ? 'You won ' + v.abs + ' chips.' : v.n < 0 ? 'You lost ' + v.abs + ' chips.' : 'You got your stake back.',
+      xp: v => '+' + v.n + ' XP',
+      unit: v => 'Stake ' + v.stake + ': each chip on the table is worth ' + v.unit + '.'
     },
 
     net: {
       title: 'Play online',
-      name: 'Your name',
-      namePh: 'Player',
-      quick: 'Quick match',
-      quickNote: 'Join whoever is waiting. Bots fill the empty seats.',
       create: 'Create a room',
-      createNote: 'Play with friends. Bots fill the empty seats.',
       createGo: 'Create room',
       join: 'Join with a code',
       code: 'Room code',
       joinGo: 'Join',
       joinTitle: v => 'Join room ' + v.code,
       connecting: 'Connecting.',
-      waiting: 'Looking for players',
-      looking: 'Looking for a table.',
-      queue: v => v.n === 1 ? '1 player is waiting.' : v.n + ' players are waiting.',
-      queueNote: 'The match starts with 4 players, or after a short wait with 2 or more. Bots fill the empty seats.',
       room: 'Room',
       hintHost: 'Share the code with your friends. Start when everyone is in; empty seats are played by bots.',
       hintGuest: 'Waiting for the host to start.',
@@ -298,6 +293,9 @@ var I18n = (function () {
         started: 'That match has already started.',
         full: 'That room is full.',
         taken: 'That code is in use. Try again.',
+        auth: 'Your account could not be checked. Try again.',
+        poor: 'You do not have enough chips for that.',
+        busy: 'You already have a seat at another table.',
         host: 'Only the host can start the match.',
         opts: 'Those match settings are not allowed.',
         join: 'Join a room first.',
@@ -306,6 +304,52 @@ var I18n = (function () {
         ended: 'The match has ended.',
         other: 'That did not work.'
       }
+    },
+
+    hall: {
+      back: 'Back',
+      rooms: 'Rooms',
+      room: v => v.n + ' chip room',
+      need: v => 'Needs ' + v.n + ' chips',
+      here: v => v.n === 1 ? '1 player here' : v.n + ' players here',
+      quick: 'Quick play',
+      quickNote: 'Take a seat at the fullest open table, or open a new one.',
+      tables: 'Open tables',
+      none: 'No open tables yet.',
+      seated: v => v.n + ' of 4 seated',
+      starts: v => 'Starts in ' + v.n + ' s',
+      fill: 'A table starts when 4 players have sat down, or 20 seconds after the second one. If nobody else comes, bots take the empty seats.',
+      stake: 'Stake',
+      stakeAt: v => 'Stake ' + v.n + ' chips',
+      stakeNote: v => 'Your stake of ' + v.n + ' chips is set aside when the match starts and paid back with what you win.',
+      friends: 'With friends',
+      level: v => 'Lv ' + v.n
+    },
+
+    pf: {
+      title: 'Profile',
+      level: v => 'Level ' + v.n,
+      xp: 'Experience',
+      xpOf: v => v.a + ' of ' + v.b + ' XP',
+      chips: 'Chips',
+      games: 'Matches',
+      wins: 'Wins',
+      daily: v => 'Daily bonus +' + v.n,
+      streak: v => 'Day ' + v.n + ' of 7',
+      got: v => 'You got ' + v.n + ' chips.',
+      reroll: 'New name',
+      limit: 'You have used all of today’s new names.',
+      bailout: 'Top up to 1,000 chips',
+      bailoutNote: 'You are low on chips. This is free once a day.',
+      skin: 'Skin',
+      eyes: 'Eyes',
+      hair: 'Hair',
+      acc: 'Extra',
+      none: 'None',
+      delete: 'Delete account',
+      deleteAsk: 'This removes your profile, chips and stats for good. It cannot be undone.',
+      deleteGo: 'Delete for good',
+      keep: 'Keep my account'
     },
 
     how: {
@@ -331,7 +375,8 @@ var I18n = (function () {
         { h: 'Chips', p: [
           ['Everyone puts 10 chips in the pot (kasa). Going out wins 5 chips. At the end the pot is split in three: two parts to the lowest score, one part to whoever went out in the last game.', 1],
           ['If the stock runs out, the game ends and nobody wins it.', 1]
-        ] }
+        ] },
+        { h: 'Credits', p: [['Avatar portraits by LimeZu (limezu.itch.io).']] }
       ]
     }
   };
@@ -500,7 +545,7 @@ var I18n = (function () {
     start: {
       title: 'Amerikano',
       cont: 'Devam et',
-      go: 'Yeni maç',
+      go: 'Alıştırma',
       saved: v => 'Oyun ' + v.n + ' / ' + v.of + ', ' + v.players + ' oyuncu',
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
@@ -603,27 +648,22 @@ var I18n = (function () {
         (v.finYou ? 'Son oyunu sen bitirdin, ' + v.finPay + ' çip aldın.' : 'Son oyunu bitiren ' + v.fin + ' ' + v.finPay + ' çip aldı.'),
       empty: v => (v.you ? 'En düşük puanı sen yaptın' : v.name + ' en düşük puanı yaptı') + ', ama kasa maç sırasında boşaldı; paylaşılacak çip kalmadı.',
       again: 'Tekrar oyna',
-      home: 'Ana ekran'
+      home: 'Ana ekran',
+      lobby: 'Lobiye dön',
+      change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Bahsin geri döndü.',
+      xp: v => '+' + v.n + ' XP',
+      unit: v => 'Bahis ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
     },
 
     net: {
       title: 'Çevrimiçi oyna',
-      name: 'Adın',
-      namePh: 'Oyuncu',
-      quick: 'Hızlı maç',
-      quickNote: 'Bekleyenlerle oyna. Boş yerleri botlar doldurur.',
       create: 'Oda kur',
-      createNote: 'Arkadaşlarınla oyna. Boş yerleri botlar doldurur.',
       createGo: 'Odayı kur',
       join: 'Kodla katıl',
       code: 'Oda kodu',
       joinGo: 'Katıl',
       joinTitle: v => v.code + ' odasına katıl',
       connecting: 'Bağlanılıyor.',
-      waiting: 'Oyuncu aranıyor',
-      looking: 'Masa aranıyor.',
-      queue: v => v.n + ' oyuncu bekliyor.',
-      queueNote: 'Maç 4 kişi olunca ya da kısa bir beklemeden sonra en az 2 kişiyle başlar. Boş yerleri botlar doldurur.',
       room: 'Oda',
       hintHost: 'Kodu arkadaşlarınla paylaş. Herkes gelince başlat; boş yerlerde botlar oynar.',
       hintGuest: 'Odayı kuranın başlatması bekleniyor.',
@@ -642,6 +682,9 @@ var I18n = (function () {
         started: 'Bu maç çoktan başladı.',
         full: 'Oda dolu.',
         taken: 'Bu kod kullanımda, tekrar dene.',
+        auth: 'Hesabın doğrulanamadı. Tekrar dene.',
+        poor: 'Bunun için yeterli çipin yok.',
+        busy: 'Başka bir masada zaten yerin var.',
         host: 'Maçı yalnızca odayı kuran başlatabilir.',
         opts: 'Bu maç ayarları olmaz.',
         join: 'Önce bir odaya katıl.',
@@ -650,6 +693,52 @@ var I18n = (function () {
         ended: 'Maç sona erdi.',
         other: 'Olmadı.'
       }
+    },
+
+    hall: {
+      back: 'Geri',
+      rooms: 'Odalar',
+      room: v => v.n + ' çiplik oda',
+      need: v => v.n + ' çip gerekir',
+      here: v => v.n + ' oyuncu burada',
+      quick: 'Hızlı oyna',
+      quickNote: 'En dolu açık masaya otur ya da yeni bir masa aç.',
+      tables: 'Açık masalar',
+      none: 'Henüz açık masa yok.',
+      seated: v => '4 yerden ' + v.n + ' dolu',
+      starts: v => v.n + ' sn sonra başlar',
+      fill: 'Masa 4 kişi oturunca ya da ikinci kişiden 20 saniye sonra başlar. Kimse gelmezse boş yerleri botlar doldurur.',
+      stake: 'Bahis',
+      stakeAt: v => v.n + ' çip bahis',
+      stakeNote: v => v.n + ' çiplik bahsin maç başlarken ayrılır, kazandıklarınla birlikte geri ödenir.',
+      friends: 'Arkadaşlarla',
+      level: v => v.n + '. sv'
+    },
+
+    pf: {
+      title: 'Profil',
+      level: v => v.n + '. seviye',
+      xp: 'Deneyim',
+      xpOf: v => v.a + ' / ' + v.b + ' XP',
+      chips: 'Çip',
+      games: 'Maç',
+      wins: 'Galibiyet',
+      daily: v => 'Günlük ödül +' + v.n,
+      streak: v => '7 günün ' + v.n + '. günü',
+      got: v => v.n + ' çip kazandın.',
+      reroll: 'Yeni ad',
+      limit: 'Bugünkü yeni ad hakkın bitti.',
+      bailout: '1.000 çipe tamamla',
+      bailoutNote: 'Çipin azaldı. Günde bir kez ücretsiz.',
+      skin: 'Ten',
+      eyes: 'Göz',
+      hair: 'Saç',
+      acc: 'Ekstra',
+      none: 'Yok',
+      delete: 'Hesabı sil',
+      deleteAsk: 'Profilin, çiplerin ve istatistiklerin kalıcı olarak silinir. Geri alınamaz.',
+      deleteGo: 'Kalıcı olarak sil',
+      keep: 'Hesabımı koru'
     },
 
     how: {
@@ -675,7 +764,8 @@ var I18n = (function () {
         { h: 'Çipler', p: [
           ['Herkes kasaya 10 çip koyar. Oyunu bitiren kasadan 5 çip alır. Maç sonunda kasa üçe bölünür: iki payı en düşük puanlı oyuncu, bir payı son oyunu bitiren alır.', 1],
           ['Deste biterse oyun kimse kazanmadan sona erir.', 1]
-        ] }
+        ] },
+        { h: 'Teşekkürler', p: [['Avatar portreleri LimeZu’nun eseridir (limezu.itch.io).']] }
       ]
     }
   };

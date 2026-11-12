@@ -1,6 +1,6 @@
 var Settings = (function () {
   const KEY = 'amerikano.settings';
-  const def = { name: '', lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', players: 4, games: 4, level: 'relaxed' };
+  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', players: 4, games: 4, level: 'relaxed' };
   let s = Object.assign({}, def);
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
 
@@ -618,7 +618,7 @@ var App = (function () {
     const card = i => Game.CARDS[i];
     const task = id => Game.TASKS.find(x => x.id === id);
     return {
-      n: m.n, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
+      n: m.n, stake: m.stake, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
       task: m.task ? task(m.task) : null, tasksLeft: m.tasksLeft.map(task),
       turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
       // other hands and the stock are only counts, so those arrays stay holes with a length
@@ -626,8 +626,10 @@ var App = (function () {
       melds: m.melds.map(x => ({ id: x.id, t: x.t, cards: x.ids.map(card), owner: x.owner })),
       claim: m.claim && { card: card(m.claim.card), queue: m.claim.queue, i: m.claim.i },
       // bot reads "not you" in the renderers, and the server never marks a human as one
-      players: m.players.map((p, i) => Object.assign({}, p, { bot: i > 0, hand: i ? new Array(p.n) : p.hand.map(card) })),
-      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, log: log
+      players: m.players.map((p, i) => Object.assign({}, p, {
+        name: p.seed === undefined ? p.name : Names.text(p.seed, I18n.lang()), bot: i > 0, hand: i ? new Array(p.n) : p.hand.map(card)
+      })),
+      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, res: m.res, log: log
     };
   }
 
@@ -729,7 +731,7 @@ var App = (function () {
   // The native shell calls this from its back button. It closes the top sheet,
   // else opens the pause menu in a match, else leaves the app.
   A.back = () => {
-    if (Sheet.back()) return;
+    if (Sheet.back() || (!A.active() && UI.up())) return;
     if (A.active()) UI.pause();
     else {
       const c = window.Capacitor;

@@ -245,9 +245,15 @@
       sentence = t('end.split', v);
     }
     body.appendChild(node('p', 'pline', sentence));
+    if (st.res) {
+      body.appendChild(node('p', 'pline strong', t('end.change', { n: st.res.net, abs: Math.abs(st.res.net).toLocaleString(I18n.lang()) }) + (st.res.xp ? ' ' + t('end.xp', { n: st.res.xp }) : '')));
+      body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.lang()), unit: (st.stake / 10).toLocaleString(I18n.lang()) })));
+    }
 
     const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
-    const home = { label: t('end.home'), kind: App.online() ? 'primary' : 'plain', fn: () => App.leave(true) };
+    const home = App.online()
+      ? { label: t('end.lobby'), kind: 'primary', fn: () => { App.leave(true); UI.hall(st.stake); } }
+      : { label: t('end.home'), kind: 'plain', fn: () => App.leave(true) };
     return Sheet.open({
       kind: 'paper', tall: true, title: t('end.won', v), body: body, dismiss: false,
       actions: App.online() ? [home] : [again, home]

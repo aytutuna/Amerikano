@@ -5,6 +5,8 @@ var UI = (function () {
   const FAN = [23, 37, 104, 51, 12];
   let launched = false;
   let wait = null;
+  let at = null;
+  let tick = 0;
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -30,8 +32,16 @@ var UI = (function () {
   // whole kilim rows (36px each) so the band never ends on a cut motif
   function kilimRows() {
     const land = matchMedia('(orientation: landscape) and (max-height: 520px)').matches;
-    const rows = land ? 2 : Math.max(4, Math.min(7, Math.floor(innerHeight * 0.27 / 36)));
+    const rows = land || at ? 2 : Math.max(4, Math.min(7, Math.floor(innerHeight * 0.27 / 36)));
     document.documentElement.style.setProperty('--kh', rows * 36 + 'px');
+  }
+
+  function band() {
+    const top = node('div', 'hm-top');
+    top.setAttribute('aria-hidden', 'true');
+    top.appendChild(kilim());
+    top.appendChild(node('div', 'fringe'));
+    return top;
   }
 
   // The one orchestrated moment: the fan opens once per launch, later visits show it open.
@@ -49,6 +59,11 @@ var UI = (function () {
   }
 
   function start(quiet) {
+    if (at && quiet) return draw();
+    if (!quiet) {
+      at = null;
+      clearInterval(tick);
+    }
     const home = $('home');
     const keep = quiet && home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
     const go = !launched && !quiet;
@@ -57,11 +72,7 @@ var UI = (function () {
     home.textContent = '';
 
     kilimRows();
-    const top = node('div', 'hm-top');
-    top.setAttribute('aria-hidden', 'true');
-    top.appendChild(kilim());
-    top.appendChild(node('div', 'fringe'));
-    home.appendChild(top);
+    home.appendChild(band());
 
     const main = node('main', 'hm-main');
     const brand = node('div', 'hm-brand');
@@ -71,6 +82,12 @@ var UI = (function () {
     main.appendChild(brand);
 
     const nav = node('div', 'hm-btns');
+    const mine = Account.me();
+    if (Account.has() && mine) nav.appendChild(strip(mine));
+    if (!quiet && Account.has()) {
+      const redo = () => { if (!$('home').hidden) start(true); };
+      Account.refresh().then(redo, redo);
+    }
     const saved = App.saved();
     const back = Net.recent();
     if (back) {
@@ -90,14 +107,12 @@ var UI = (function () {
       c.dataset.k = 'cont';
       nav.appendChild(c);
     }
-    const play = node('div', 'hm-row');
-    const n = button(t('start.go'), saved || back ? 'plain big' : 'primary big', () => setup());
-    n.dataset.k = 'go';
-    const o = button(t('start.online'), 'plain big', () => online());
+    const o = button(t('start.online'), saved || back ? 'plain big' : 'primary big', () => enter(0));
     o.dataset.k = 'net';
-    play.appendChild(n);
-    play.appendChild(o);
-    nav.appendChild(play);
+    const n = button(t('start.go'), 'plain big', () => setup());
+    n.dataset.k = 'go';
+    nav.appendChild(o);
+    nav.appendChild(n);
     const row = node('div', 'hm-row');
     const h = button(t('start.how'), 'quiet', howTo);
     h.dataset.k = 'how';
@@ -156,6 +171,9 @@ var UI = (function () {
     if (![3, 4, 5].includes(n)) n = 4;
     let g = Settings.get('games');
     let lv = Settings.get('level') === 'sharp' ? 'sharp' : 'relaxed';
+    const me = Account.me();
+    const stakes = room && at && at.stakes ? at.stakes.filter(x => me && me.chips >= at.entry * x) : [];
+    let sk = stakes[0];
     const form = node('div', 'form');
     const saved = App.saved();
 
@@ -174,6 +192,10 @@ var UI = (function () {
         { v: 'relaxed', label: t('setup.relaxed'), note: t('setup.relaxedNote') },
         { v: 'sharp', label: t('setup.sharp'), note: t('setup.sharpNote') }
       ], lv, v => { lv = v; }, 'rows'));
+      if (room) {
+        form.appendChild(choice('stake', t('hall.stake'), stakes.map(v => ({ v: v, label: fmt(v) })), sk, v => { sk = v; fill(); focusOn('stake:' + v); }, 'seg'));
+        form.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(sk) })));
+      }
       if (saved && !room) form.appendChild(node('p', 'note', t('setup.replace')));
     }
 
@@ -193,7 +215,7 @@ var UI = (function () {
             Settings.set('games', g, true);
             Settings.set('level', lv, true);
             if (room) {
-              Net.create(who(), { players: n, games: g, level: lv });
+              Net.create({ players: n, games: g, level: lv, stake: sk });
               connecting();
             } else App.newMatch({ players: n, games: g, level: lv });
           }
@@ -318,92 +340,211 @@ var UI = (function () {
     body.appendChild(node('p', 'note', t(net ? 'pause.onlineNote' : 'pause.note')));
   }
 
-  const who = () => Settings.get('name') || t('net.namePh');
+  const fmt = n => n.toLocaleString(I18n.lang());
+  const who = seed => Names.text(seed, I18n.lang());
 
-  function field(label, value, max) {
-    const l = node('label', 'fld');
-    l.appendChild(node('span', 'lbl', label));
-    const i = node('input', 'txt');
-    i.type = 'text';
-    i.value = value;
-    i.maxLength = max;
-    i.autocomplete = 'off';
-    l.appendChild(i);
-    return { el: l, input: i };
+  function xpBar(me) {
+    const bar = node('div', 'xpbar');
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', t('pf.xp'));
+    bar.setAttribute('aria-valuemin', me.from);
+    bar.setAttribute('aria-valuemax', me.to);
+    bar.setAttribute('aria-valuenow', me.xp);
+    const fill = node('i');
+    fill.style.width = Math.min(100, Math.max(0, (me.xp - me.from) / (me.to - me.from) * 100)) + '%';
+    bar.appendChild(fill);
+    return bar;
   }
 
-  // code is set when a shared link opened this, so only the name is left to ask
+  // the profile strip on the home screen, and the daily bonus under it when it can be claimed
+  function strip(me) {
+    const box = node('div', 'hm-me');
+    const b = node('button', 'me');
+    b.type = 'button';
+    b.dataset.k = 'me';
+    b.appendChild(Avatar.el(me.avatar, 56));
+    const tx = node('span', 'tx');
+    tx.appendChild(node('b', '', who(me.seed)));
+    tx.appendChild(node('small', '', t('pf.level', { n: me.level })));
+    tx.appendChild(xpBar(me));
+    b.appendChild(tx);
+    const c = node('span', 'chips');
+    c.appendChild(node('b', '', fmt(me.chips)));
+    c.appendChild(node('small', '', t('pf.chips')));
+    b.appendChild(c);
+    b.addEventListener('click', profile);
+    box.appendChild(b);
+    if (me.daily.ready) {
+      const d = button('', 'primary big', () => {
+        d.disabled = true;
+        Account.daily().then(() => {
+          $('live').textContent = t('pf.got', { n: fmt(me.daily.reward) });
+          start(true);
+        }, e => {
+          d.disabled = false;
+          if (e.status !== 409) return notice(t('net.err.lost'));
+          Account.refresh().then(() => start(true), () => {});
+        });
+      });
+      d.dataset.k = 'daily';
+      d.appendChild(node('b', '', t('pf.daily', { n: fmt(me.daily.reward) })));
+      d.appendChild(node('span', '', t('pf.streak', { n: Math.min(me.daily.streak + 1, 7) })));
+      box.appendChild(d);
+    }
+    return box;
+  }
+
+  const LOOK = ['skin', 'eyes', 'hair', 'acc'];
+
+  function profile() {
+    if (!Account.me()) return;
+    const body = node('div', 'form prof');
+    let sure = false;
+    let h = null;
+
+    function swap(me, k, v) {
+      const a = me.avatar.slice();
+      a[k] = v;
+      return a;
+    }
+
+    function fill() {
+      const me = Account.me();
+      if (!me) return h && h.close();
+      const was = document.activeElement && body.contains(document.activeElement) ? document.activeElement.dataset.f : null;
+      body.textContent = '';
+      const top = node('div', 'pf-top');
+      const pic = Avatar.el(me.avatar, 132);
+      pic.classList.add('big');
+      top.appendChild(pic);
+      const tx = node('div', 'tx');
+      tx.appendChild(node('h3', '', who(me.seed)));
+      tx.appendChild(node('p', '', t('pf.level', { n: me.level })));
+      tx.appendChild(xpBar(me));
+      tx.appendChild(node('p', 'note', t('pf.xpOf', { a: fmt(me.xp), b: fmt(me.to) })));
+      top.appendChild(tx);
+      body.appendChild(top);
+
+      const stats = node('dl', 'stats');
+      for (const [k, v] of [['chips', fmt(me.chips)], ['games', fmt(me.games)], ['wins', fmt(me.wins)]]) {
+        const d = node('div');
+        d.appendChild(node('dt', '', t('pf.' + k)));
+        d.appendChild(node('dd', '', v));
+        stats.appendChild(d);
+      }
+      body.appendChild(stats);
+
+      const reroll = button(t('pf.reroll'), 'plain', () => {
+        reroll.disabled = true;
+        Account.reroll().then(fill, e => {
+          reroll.disabled = false;
+          notice(t(e.status === 429 ? 'pf.limit' : 'net.err.lost'));
+        });
+      });
+      reroll.dataset.f = 'reroll';
+      body.appendChild(reroll);
+      if (me.bailout) {
+        const b = button(t('pf.bailout'), 'primary', () => {
+          b.disabled = true;
+          Account.bailout().then(fill, e => {
+            b.disabled = false;
+            if (e.status !== 409) return notice(t('net.err.lost'));
+            Account.refresh().then(fill, () => {});
+          });
+        });
+        b.dataset.f = 'bailout';
+        body.appendChild(b);
+        body.appendChild(node('p', 'note', t('pf.bailoutNote')));
+      }
+
+      LOOK.forEach((part, k) => {
+        const fs = node('fieldset', 'fld');
+        fs.appendChild(node('legend', '', t('pf.' + part)));
+        const row = node('div', 'looks');
+        for (let i = 0; i < Avatar.COUNTS[k]; i++) {
+          const on = me.avatar[k] === i;
+          const b = node('button', 'look' + (on ? ' on' : ''));
+          b.type = 'button';
+          b.dataset.f = part + ':' + i;
+          b.setAttribute('aria-pressed', on);
+          b.setAttribute('aria-label', part === 'acc' && !i ? t('pf.none') : t('pf.' + part) + ' ' + (i + 1));
+          b.appendChild(Avatar.el(swap(me, k, i), 44));
+          b.addEventListener('click', () => {
+            const cur = Account.me();
+            if (!cur || cur.avatar[k] === i) return;
+            Account.look(swap(cur, k, i)).then(fill, () => notice(t('net.err.lost')));
+          });
+          row.appendChild(b);
+        }
+        fs.appendChild(row);
+        body.appendChild(fs);
+      });
+
+      const del = node('div', 'danger');
+      if (!sure) {
+        const d = button(t('pf.delete'), 'quiet', () => { sure = true; fill(); });
+        d.dataset.f = 'delete';
+        del.appendChild(d);
+      } else {
+        const p = node('p', '', t('pf.deleteAsk'));
+        p.setAttribute('role', 'alert');
+        del.appendChild(p);
+        const go = button(t('pf.deleteGo'), 'plain', () => {
+          go.disabled = true;
+          Account.remove().then(() => {
+            Net.cancel();
+            h.close();
+            start(true);
+          }, () => {
+            go.disabled = false;
+            notice(t('net.err.lost'));
+          });
+        });
+        go.dataset.f = 'deleteGo';
+        del.appendChild(go);
+        const keep = button(t('pf.keep'), 'primary', () => { sure = false; fill(); });
+        keep.dataset.f = 'keep';
+        del.appendChild(keep);
+      }
+      body.appendChild(del);
+      if (was) {
+        const e = body.querySelector('[data-f="' + was + '"]');
+        if (e) e.focus({ preventScroll: true });
+      }
+    }
+
+    fill();
+    h = Sheet.open({ kind: 'bottom', tall: true, title: t('pf.title'), body: body, actions: [{ label: t('done'), kind: 'primary' }], onClose: () => start(true) });
+  }
+
+  // a shared link opened this, so there is nothing to ask but whether to join
   function online(code) {
     const body = node('div', 'form');
-    const name = field(t('net.name'), Settings.get('name') || '', 16);
-    name.input.placeholder = t('net.namePh');
-    body.appendChild(name.el);
     const h = Sheet.open({
-      kind: 'bottom', tall: true, title: code ? t('net.joinTitle', { code: code }) : t('net.title'), body: body,
+      kind: 'bottom', tall: true, title: t('net.joinTitle', { code: code }), body: body,
       actions: [{ label: t('cancel'), kind: 'quiet' }]
     });
-    const join = c => {
-      Net.join(c, who());
-      connecting();
-    };
-    const go = fn => () => {
-      Settings.set('name', name.input.value.trim(), true);
+    body.appendChild(button(t('net.joinGo'), 'primary', () => {
       h.close();
-      fn();
-    };
-    const pick = (key, fn) => {
-      const b = button('', key === 'quick' ? 'primary big' : 'plain big', go(fn));
-      b.appendChild(node('b', '', t('net.' + key)));
-      b.appendChild(node('span', '', t('net.' + key + 'Note')));
-      return b;
-    };
-    if (code) {
-      body.appendChild(button(t('net.joinGo'), 'primary', go(() => join(code))));
-      return;
-    }
-    body.appendChild(pick('quick', () => Net.quick()));
-    body.appendChild(pick('create', () => setup(true)));
-    const row = node('div', 'fld');
-    row.appendChild(node('span', 'lbl', t('net.join')));
-    const line = node('div', 'joinrow');
-    const c = node('input', 'txt code');
-    c.type = 'text';
-    c.maxLength = 4;
-    c.placeholder = 'ABCD';
-    c.autocomplete = 'off';
-    c.autocapitalize = 'characters';
-    c.spellcheck = false;
-    c.setAttribute('aria-label', t('net.code'));
-    const j = button(t('net.joinGo'), 'primary', go(() => join(c.value)));
-    j.disabled = true;
-    c.addEventListener('input', () => {
-      c.value = c.value.toUpperCase().replace(/[^A-Z]/g, '');
-      j.disabled = c.value.length !== 4;
-    });
-    c.addEventListener('keydown', e => { if (e.key === 'Enter' && !j.disabled) j.click(); });
-    line.appendChild(c);
-    line.appendChild(j);
-    row.appendChild(line);
-    body.appendChild(row);
-  }
-
-  function queue(n) {
-    const text = n ? t('net.queue', { n: n }) : t('net.looking');
-    if (wait && document.contains(wait.h.wrap)) {
-      wait.p.textContent = text;
-      return;
-    }
-    const body = node('div', 'lobby');
-    const p = node('p', 'lead', text);
-    body.appendChild(p);
-    body.appendChild(node('p', 'note', t('net.queueNote')));
-    wait = { p: p, h: Sheet.open({ kind: 'center', title: t('net.waiting'), body: body, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => Net.cancel() }] }) };
+      connecting();
+      const w = wait;
+      Account.ensure().then(() => {
+        if (wait !== w) return;
+        close();
+        Net.join(code);
+        connecting();
+      }, () => {
+        if (wait !== w) return;
+        close();
+        notice(t('net.err.lost'));
+      });
+    }));
   }
 
   function connecting() {
     const p = node('p', 'lead', t('net.connecting'));
     p.setAttribute('role', 'status');
-    wait = { h: Sheet.open({ kind: 'center', title: t('net.title'), body: p, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => Net.cancel() }] }) };
+    wait = { h: Sheet.open({ kind: 'center', title: t('net.title'), body: p, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => { Net.cancel(); wait = null; resume(); } }] }) };
   }
 
   function share(code, out) {
@@ -420,23 +561,43 @@ var UI = (function () {
     if (!wait || !wait.body || !document.contains(wait.h.wrap)) {
       close();
       const body = node('div', 'lobby');
-      wait = { body: body, h: Sheet.open({ kind: 'bottom', tall: true, title: t('net.room'), body: body, dismiss: false, actions: [{ label: t('net.leave'), kind: 'plain', fn: () => Net.leave() }] }) };
+      wait = { body: body, h: Sheet.open({ kind: 'bottom', tall: true, title: t('net.room'), body: body, dismiss: false, actions: [{ label: t('net.leave'), kind: 'plain', fn: () => { Net.leave(); resume(); } }] }) };
     }
     const body = wait.body;
     body.textContent = '';
-    const code = node('p', 'code', m.code);
-    code.setAttribute('aria-label', m.code.split('').join(' '));
-    body.appendChild(code);
+    clearInterval(tick);
+    if (m.pub) body.appendChild(node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) })));
+    else {
+      const code = node('p', 'code', m.code);
+      code.setAttribute('aria-label', m.code.split('').join(' '));
+      body.appendChild(code);
+      body.appendChild(node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) })));
+    }
     const mine = m.you === m.host;
-    body.appendChild(node('p', 'note', t(mine ? 'net.hintHost' : 'net.hintGuest')));
+    if (m.pub) {
+      if (m.left !== null) {
+        const cd = node('p', 'lead');
+        cd.dataset.end = Date.now() + m.left;
+        body.appendChild(cd);
+        countdown(body);
+      }
+      body.appendChild(node('p', 'note', t('hall.fill')));
+    } else body.appendChild(node('p', 'note', t(mine ? 'net.hintHost' : 'net.hintGuest')));
+    body.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(m.stake) })));
     const ul = node('ul', 'seatlist');
     m.seats.forEach((s, i) => {
       const li = node('li', s ? '' : 'free');
-      li.appendChild(node('span', '', s ? s.name + (i === m.you ? ' ' + t('net.you') : '') : t('net.bot')));
+      const line = node('span', 'sit');
+      if (s && s.av) line.appendChild(Avatar.el(s.av, 33));
+      const nm = s ? who(s.seed) : t('net.bot');
+      line.appendChild(node('span', '', nm + (s && i === m.you ? ' ' + t('net.you') : '')));
+      li.appendChild(line);
       if (s && i === m.host) li.appendChild(node('small', '', t('net.hostTag')));
+      else if (s && s.level) li.appendChild(node('small', '', t('hall.level', { n: s.level })));
       ul.appendChild(li);
     });
     body.appendChild(ul);
+    if (m.pub) return;
     const out = node('p', 'note');
     out.setAttribute('role', 'status');
     const row = node('div', 'menu');
@@ -452,7 +613,214 @@ var UI = (function () {
     body.appendChild(out);
   }
 
-  // the lobby or the queue, whichever is up
+  // keeps the "starts in" lines under root counting down
+  function countdown(root) {
+    const set = () => {
+      const all = root.querySelectorAll('[data-end]');
+      if (!all.length || !document.contains(root)) return clearInterval(tick);
+      for (const e of all) e.textContent = t('hall.starts', { n: Math.max(0, Math.ceil((e.dataset.end - Date.now()) / 1000)) });
+    };
+    set();
+    clearInterval(tick);
+    tick = setInterval(set, 1000);
+  }
+
+  function enter(stake) {
+    at = { stake: stake, stakes: null, entry: 10, n: {}, tables: [] };
+    draw();
+    Account.ensure().then(() => Account.refresh()).then(() => {
+      if (at) Net.hub();
+    }, e => {
+      if (!at) return;
+      exit();
+      notice(t(e.status === 401 ? 'net.err.auth' : 'net.err.lost'));
+    });
+  }
+
+  function exit() {
+    at = null;
+    clearInterval(tick);
+    Net.cancel();
+    start(true);
+  }
+
+  function resume() {
+    if (at) enter(at.stake);
+  }
+
+  // one step back: from a room to the list, from the list to the home screen
+  function up() {
+    if (!at) return false;
+    if (at.stake) {
+      at.stake = 0;
+      at.tables = [];
+      Net.watch(0);
+      draw();
+    } else exit();
+    return true;
+  }
+
+  function hub(m) {
+    if (!at) return;
+    at.stakes = m.stakes;
+    at.entry = m.entry;
+    const me = Account.me();
+    if (at.stake && me && me.chips < at.entry * at.stake) at.stake = 0;
+    if (at.stake) Net.watch(at.stake);
+    draw();
+  }
+
+  function rooms(n) {
+    if (!at) return;
+    at.n = n;
+    draw();
+  }
+
+  function tables(stake, list) {
+    if (!at || at.stake !== stake) return;
+    at.tables = list.map(x => Object.assign(x, { end: x.left === null ? 0 : Date.now() + x.left }));
+    draw();
+  }
+
+  function stakeRooms(box, me) {
+    const list = node('div', 'rooms');
+    for (const s of at.stakes) {
+      const need = at.entry * s;
+      const ok = !!me && me.chips >= need;
+      const b = button('', 'room' + (ok ? '' : ' locked'), () => {
+        at.stake = s;
+        at.tables = [];
+        Net.watch(s);
+        draw();
+      });
+      b.disabled = !ok;
+      b.dataset.k = 'room' + s;
+      b.appendChild(node('b', '', fmt(s)));
+      b.appendChild(node('span', '', ok ? t('hall.here', { n: at.n[s] || 0 }) : t('hall.need', { n: fmt(need) })));
+      list.appendChild(b);
+    }
+    box.appendChild(list);
+
+    const fr = node('div', 'fld');
+    fr.appendChild(node('span', 'lbl', t('hall.friends')));
+    const mk = button(t('net.create'), 'plain big', () => setup(true));
+    mk.disabled = !me || me.chips < at.entry * at.stakes[0];
+    mk.dataset.k = 'create';
+    fr.appendChild(mk);
+    const line = node('div', 'joinrow');
+    const c = node('input', 'txt code');
+    c.type = 'text';
+    c.maxLength = 4;
+    c.placeholder = 'ABCD';
+    c.dataset.k = 'code';
+    c.autocomplete = 'off';
+    c.autocapitalize = 'characters';
+    c.spellcheck = false;
+    c.setAttribute('aria-label', t('net.code'));
+    const j = button(t('net.joinGo'), 'primary', () => {
+      connecting();
+      Net.join(c.value);
+    });
+    j.disabled = true;
+    c.addEventListener('input', () => {
+      c.value = c.value.toUpperCase().replace(/[^A-Z]/g, '');
+      j.disabled = c.value.length !== 4;
+    });
+    c.addEventListener('keydown', e => { if (e.key === 'Enter' && !j.disabled) j.click(); });
+    line.appendChild(c);
+    line.appendChild(j);
+    fr.appendChild(line);
+    box.appendChild(fr);
+  }
+
+  function inRoom(box) {
+    const q = button('', 'primary big', () => {
+      connecting();
+      Net.play(at.stake);
+    });
+    q.dataset.k = 'quick';
+    q.appendChild(node('b', '', t('hall.quick')));
+    q.appendChild(node('span', '', t('hall.quickNote')));
+    box.appendChild(q);
+    box.appendChild(node('p', 'note', t('hall.fill')));
+    box.appendChild(node('h3', '', t('hall.tables')));
+    if (!at.tables.length) return box.appendChild(node('p', 'note', t('hall.none')));
+    const ul = node('ul', 'tbls');
+    for (const x of at.tables) {
+      const li = node('li');
+      const b = node('button', 'tbl');
+      b.type = 'button';
+      b.dataset.k = 'sit' + x.code;
+      b.addEventListener('click', () => {
+        connecting();
+        Net.sit(x.code);
+      });
+      const faces = node('span', 'faces');
+      for (const s of x.seats) faces.appendChild(s ? Avatar.el(s.av, 33) : node('span', 'none'));
+      b.appendChild(faces);
+      const tx = node('span', 'tx');
+      tx.appendChild(node('b', '', t('hall.seated', { n: x.seats.filter(Boolean).length })));
+      tx.appendChild(node('small', '', x.seats.filter(Boolean).map(s => who(s.seed) + ' ' + t('hall.level', { n: s.level })).join(', ')));
+      b.appendChild(tx);
+      if (x.left !== null) {
+        const cd = node('small', 'cd');
+        cd.dataset.end = x.end;
+        b.appendChild(cd);
+      }
+      li.appendChild(b);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+
+  // The lobby is a screen of its own in the home container: the stake rooms, and inside one its open tables.
+  function draw() {
+    const home = $('home');
+    const keep = home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+    const typed = home.querySelector('input.code');
+    const word = typed ? typed.value : '';
+    const caret = typed ? typed.selectionStart : 0;
+    const top = home.scrollTop;
+    clearInterval(tick);
+    home.hidden = false;
+    home.textContent = '';
+    kilimRows();
+    home.appendChild(band());
+    const main = node('main', 'hm-main hall');
+    const box = node('div', 'hl');
+    const bar = node('div', 'hl-bar');
+    const back = button(t('hall.back'), 'quiet', up);
+    back.dataset.k = 'back';
+    bar.appendChild(back);
+    bar.appendChild(node('h2', '', at.stake ? t('hall.room', { n: fmt(at.stake) }) : t('net.title')));
+    box.appendChild(bar);
+    const me = Account.me();
+    if (me) box.appendChild(strip(me));
+    if (!at.stakes) {
+      const p = node('p', 'lead', t('net.connecting'));
+      p.setAttribute('role', 'status');
+      box.appendChild(p);
+    } else if (at.stake) inRoom(box);
+    else stakeRooms(box, me);
+    main.appendChild(box);
+    home.appendChild(main);
+    countdown(home);
+    const field = home.querySelector('input.code');
+    if (field && word) {
+      field.value = word;
+      field.dispatchEvent(new Event('input'));
+    }
+    home.scrollTop = top;
+    if (keep) {
+      const e = home.querySelector('[data-k="' + keep + '"]');
+      if (e) {
+        e.focus({ preventScroll: true });
+        if (e === field) e.setSelectionRange(caret, caret);
+      }
+    }
+  }
+
+  // the lobby or the connecting sheet, whichever is up
   function close() {
     if (wait) wait.h.close();
     wait = null;
@@ -474,5 +842,8 @@ var UI = (function () {
 
   window.addEventListener('resize', () => { if (!$('home').hidden) kilimRows(); });
 
-  return { start: start, pause: pause, settings: settings, howTo: howTo, lobby: lobby, queue: queue, close: close, notice: notice, link: link };
+  return {
+    start: start, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, link: link,
+    hall: enter, exit: exit, resume: resume, up: up, inHall: () => !!at, hub: hub, rooms: rooms, tables: tables
+  };
 })();
