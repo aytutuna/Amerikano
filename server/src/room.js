@@ -1,5 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import Game from '../../www/js/game.js';
+import Names from '../../www/js/names.js';
+import { verify, player, award, seat, credit, payout, STAKES, ENTRY } from './account.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const NAMES = ['Ece', 'Can', 'Deniz', 'Aylin', 'Mert', 'Selin', 'Arda', 'Defne', 'Kerem', 'Nil',
@@ -7,6 +9,7 @@ const NAMES = ['Ece', 'Can', 'Deniz', 'Aylin', 'Mert', 'Selin', 'Arda', 'Defne',
 const IDLE = 30000;
 const GRACE = 8000;
 const NEXT = 20000;
+const WAIT = 20000;
 const KEEP = 600000;
 
 export async function freeCode(ns) {
@@ -18,10 +21,8 @@ export async function freeCode(ns) {
   return null;
 }
 
-function clean(s) {
-  s = typeof s === 'string' ? s : '';
-  s = s.replace(/[\p{Cc}\p{Zl}\p{Zp}]|(?!\p{Join_Control})\p{Cf}|\p{Join_Control}(?!\p{Extended_Pictographic})|(?<!\p{Extended_Pictographic}\p{Variation_Selector}?)\p{Join_Control}/gu, '');
-  return Array.from(s.trim()).slice(0, 16).join('').trim();
+function human(p, gone) {
+  return { pid: p.pid, name: Names.text(p.seed, 'en'), seed: p.seed, av: p.av, level: p.level, token: crypto.randomUUID(), gone: gone };
 }
 
 function card(i) {
@@ -49,6 +50,7 @@ export class Room extends DurableObject {
       this.r = (await ctx.storage.get('r')) || null;
       const s = await ctx.storage.get('st');
       this.st = s ? Game.load(s) : null;
+      if (this.r && this.r.over && !this.r.paid) ctx.storage.setAlarm(Date.now());
     });
   }
 
@@ -65,26 +67,39 @@ export class Room extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // Called by the quick match queue: k humans at random seats, the rest bots.
-  openPublic(code, k) {
-    if (this.r) return null;
-    const n = 4;
-    const seats = Array(n).fill(null);
+  // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
+  openTable(code, stake) {
+    if (this.r) return false;
     this.r = {
-      code: code, n: n, games: 8, level: 'relaxed', pub: true, host: -1, seats: seats,
-      started: true, over: false, since: 0, ready: [], dead: Date.now() + KEEP * this.k
+      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, host: -1, seats: Array(4).fill(null),
+      started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
-    const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
-    const out = [];
-    for (let j = 0; j < n; j++) {
-      const i = order[j];
-      if (j < k) {
-        seats[i] = { name: this.pick(), token: crypto.randomUUID(), gone: Date.now() };
-        out.push({ seat: i, token: seats[i].token });
-      } else seats[i] = { name: this.pick(), bot: true };
+    this.save();
+    this.arm();
+    return true;
+  }
+
+  // Called by the Hub for a player it has checked. The socket joins afterwards with the token.
+  sit(p) {
+    const r = this.r;
+    if (!r || !r.pub || r.started) return null;
+    let i = r.seats.findIndex(s => s && s.pid === p.pid);
+    if (i >= 0) r.seats[i].gone = Date.now();
+    else {
+      i = r.seats.indexOf(null);
+      if (i < 0) return null;
+      r.seats[i] = human(p, Date.now());
+      // the first two humans each restart the wait; later ones do not
+      if (r.seats.filter(Boolean).length <= 2) r.go = Date.now() + WAIT * this.k;
     }
-    this.begin();
-    return out;
+    const token = r.seats[i].token;
+    if (r.seats.every(Boolean)) this.ctx.waitUntil(this.go());
+    else {
+      this.save();
+      this.send();
+      this.arm();
+    }
+    return { seat: i, token: token, table: this.summary() };
   }
 
   async webSocketMessage(ws, data) {
@@ -112,10 +127,14 @@ export class Room extends DurableObject {
   async alarm() {
     const r = this.r;
     if (!r) return;
-    if (r.dead && Date.now() >= r.dead) return this.wipe();
+    if (r.over && !r.paid) await this.settle().catch(() => {});
+    if (r.dead && Date.now() >= r.dead && (!r.over || r.paid) && !this.owes()) return this.wipe();
+    if (r.over) return this.arm();
     if (Date.now() >= this.due()) {
-      if (!this.st) this.drop();
-      else if (this.st.phase === 'gameend') this.advance();
+      if (!this.st) {
+        if (r.started) await this.begin();
+        else await this.drop();
+      } else if (this.st.phase === 'gameend') this.advance();
       else this.step();
     } else this.arm();
   }
@@ -126,10 +145,13 @@ export class Room extends DurableObject {
     r.seats.forEach((s, i) => {
       if (s && s.gone && Date.now() >= s.gone + GRACE * this.k) r.seats[i] = null;
     });
-    if (!r.seats[r.host]) r.host = r.seats.findIndex(Boolean);
+    if (r.pub && !r.seats.some(Boolean)) return this.wipe();
+    if (r.go && Date.now() >= r.go) return this.go();
+    if (!r.pub && !r.seats[r.host]) r.host = r.seats.findIndex(Boolean);
     this.save();
     this.send();
     this.arm();
+    this.report();
   }
 
   fail(ws, k, more) {
@@ -141,31 +163,50 @@ export class Room extends DurableObject {
     ws.close(1000, k);
   }
 
-  create(ws, a, m) {
+  async create(ws, a, m) {
     if (this.r) return this.refuse(ws, 'taken');
     const n = m.players;
     const g = m.games;
+    const stake = m.stake === undefined ? STAKES[0] : m.stake;
+    if (!STAKES.includes(stake)) return this.fail(ws, 'opts');
     if (!Number.isInteger(n) || n < 2 || n > 5) return this.fail(ws, 'opts');
     if (!Number.isInteger(g) || g < n || g > 16 || g % n) return this.fail(ws, 'opts');
+    const p = await verify(this.env.DB, m.auth);
+    if (ws.readyState !== 1) return;
+    if (!p) return this.refuse(ws, 'auth');
+    if (this.r) return this.refuse(ws, 'taken');
+    if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, host: -1,
+      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, host: -1,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
-    this.join(ws, a, m);
+    this.join(ws, a, m, p);
   }
 
-  join(ws, a, m) {
+  async join(ws, a, m, p) {
+    if (!this.r) return this.refuse(ws, 'nocode');
+    if (a.seat >= 0) return;
+    if (this.r.pub && !m.token) return this.refuse(ws, 'nocode');
+    const rejoin = typeof m.token === 'string' && this.r.seats.some(s => s && s.token === m.token);
+    if (!rejoin && !m.token && !p) {
+      p = await verify(this.env.DB, m.auth);
+      if (ws.readyState !== 1) return;
+      if (!p) return this.refuse(ws, 'auth');
+    }
     const r = this.r;
     if (!r) return this.refuse(ws, 'nocode');
-    if (a.seat >= 0) return;
     let i = typeof m.token === 'string' ? r.seats.findIndex(s => s && s.token === m.token) : -1;
     if (i < 0) {
       if (m.token) return this.refuse(ws, 'nocode');
-      if (r.started) return this.refuse(ws, 'started');
-      i = r.seats.indexOf(null);
-      if (i < 0) return this.refuse(ws, 'full');
-      r.seats[i] = { name: clean(m.name) || 'Player ' + (i + 1), token: crypto.randomUUID(), gone: 0 };
-      if (r.host < 0) r.host = i;
+      i = r.seats.findIndex(s => s && s.pid === p.id);
+      if (i < 0) {
+        if (r.started) return this.refuse(ws, 'started');
+        if (p.chips < ENTRY * r.stake) return this.refuse(ws, 'poor');
+        i = r.seats.indexOf(null);
+        if (i < 0) return this.refuse(ws, 'full');
+        r.seats[i] = human(seat(p), 0);
+        if (r.host < 0) r.host = i;
+      }
     }
     const s = r.seats[i];
     s.gone = 0;
@@ -182,13 +223,46 @@ export class Room extends DurableObject {
   start(ws, i) {
     const r = this.r;
     if (i !== r.host || r.started) return this.fail(ws, 'host');
-    r.started = true;
-    for (let j = 0; j < r.n; j++) if (!r.seats[j]) r.seats[j] = { name: this.pick(), bot: true };
-    this.begin();
+    return this.go();
   }
 
-  begin() {
+  // bots take the empty seats
+  go() {
     const r = this.r;
+    r.started = true;
+    r.go = 0;
+    for (let j = 0; j < r.n; j++) if (!r.seats[j]) r.seats[j] = { name: this.pick(), bot: true };
+    this.report();
+    this.arm();
+    return this.begin();
+  }
+
+  // a second call while the stakes are being taken waits for the first
+  begin() {
+    return this.starting || (this.starting = this.deal().finally(() => { this.starting = null; }));
+  }
+
+  async deal() {
+    const r = this.r;
+    if (!r.id) r.id = crypto.randomUUID();
+    this.save();
+    for (let i = 0; i < r.n; i++) {
+      const s = r.seats[i];
+      if (!s.pid || s.esc) continue;
+      // the escrow is the stake; a player who can no longer cover it is replaced by a bot
+      if (await credit(this.env.DB, s.pid, -r.stake, 'escrow', r.id + ':in')) {
+        s.esc = true;
+        this.save();
+        continue;
+      }
+      r.seats[i] = { name: s.name, seed: s.seed, av: s.av, level: s.level, bot: true };
+      for (const w of this.socks()) {
+        if (w.deserializeAttachment().seat !== i) continue;
+        this.fail(w, 'poor');
+        w.close(1000, 'poor');
+      }
+    }
+    r.duo = r.seats.filter(s => s.pid).length > 1;
     const st = Game.newMatch({ players: r.n, games: r.games, level: r.level, allBots: true });
     st.players.forEach((p, i) => {
       p.name = r.seats[i].name;
@@ -202,8 +276,9 @@ export class Room extends DurableObject {
     const r = this.r;
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
-      r.seats[a.seat] = { name: r.seats[a.seat].name, bot: true };
-      this.st.players[a.seat].bot = true;
+      const s = r.seats[a.seat];
+      r.seats[a.seat] = { name: s.name, seed: s.seed, av: s.av, level: s.level, bot: true };
+      if (this.st) this.st.players[a.seat].bot = true;
     } else {
       r.seats[a.seat] = null;
       if (r.host === a.seat) r.host = r.seats.findIndex(Boolean);
@@ -219,9 +294,11 @@ export class Room extends DurableObject {
     const rest = this.socks().filter(w => w !== ws);
     if (i >= 0 && !rest.some(w => w.deserializeAttachment().seat === i)) r.seats[i].gone = Date.now();
     if (!rest.length && !r.over) r.dead = Date.now() + KEEP * this.k;
+    if (r.pub && !r.started && !r.seats.some(Boolean)) return this.ctx.waitUntil(this.wipe());
     this.save();
     this.send();
     this.arm();
+    if (!r.over) this.report();
   }
 
   act(ws, i, m) {
@@ -244,6 +321,7 @@ export class Room extends DurableObject {
       return this.fail(ws, err, more);
     }
     r.seats[i].auto = false;
+    r.seats[i].acted = true;
     this.moved();
   }
 
@@ -317,19 +395,69 @@ export class Room extends DurableObject {
     if (this.st.phase === 'matchend' && !r.over) {
       r.over = true;
       r.dead = Date.now() + KEEP * this.k;
+      this.outcome();
+      this.report(true);
     }
     this.save();
     this.send();
     this.arm();
+    if (r.over && !r.paid) this.ctx.waitUntil(this.settle().catch(() => {}));
+  }
+
+  // What each human gets, worked out once at the end, and xp only when two humans started and this one played.
+  outcome() {
+    const { r, st } = this;
+    const fin = st.stats.map(x => x.fin);
+    r.res = r.seats.map((s, i) => {
+      if (!s.pid || !s.esc) return null;
+      const win = st.final.low === i;
+      const pay = payout(r.stake, st.players[i].chips);
+      const xp = r.duo && s.acted ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
+      return { pid: s.pid, pay: pay, net: pay - r.stake, xp: xp, win: win, done: false };
+    });
+  }
+
+  // a second call while the first is running waits for it
+  settle() {
+    return this.settling || (this.settling = this.pay().finally(() => { this.settling = null; }));
+  }
+
+  // Pays out and awards xp. Safe to run again: paid seats are skipped and the credit carries a ref.
+  // A loss beyond the stake is taken from the balance, never below zero.
+  async pay() {
+    const r = this.r;
+    for (const x of r.res) {
+      if (!x || x.done) continue;
+      let pay = x.pay;
+      if (pay < 0) {
+        const p = await player(this.env.DB, x.pid);
+        pay = Math.max(pay, -(p ? p.chips : 0));
+      }
+      await credit(this.env.DB, x.pid, pay, 'match', r.id + ':out');
+      x.done = true;
+      this.save();
+      if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });
+    }
+    r.paid = true;
+    this.save();
+  }
+
+  // Stakes are held for a started match, so the bots play it out even when nobody is connected.
+  owes() {
+    const r = this.r;
+    return r.started && !r.paid && r.seats.some(s => s.esc);
   }
 
   due() {
     const { r, st, k } = this;
     if (!st) {
-      const gone = r.seats.filter(s => s && s.gone).map(s => s.gone + GRACE * k);
-      return gone.length ? Math.min(...gone) : Infinity;
+      if (r.started) return 0;
+      const due = r.seats.filter(s => s && s.gone).map(s => s.gone + GRACE * k);
+      if (r.go) due.push(r.go);
+      return due.length ? Math.min(...due) : Infinity;
     }
-    if (st.phase === 'matchend' || !this.humans().length) return Infinity;
+    if (st.phase === 'matchend') return r.paid ? Infinity : Date.now() + 5000 * k;
+    if (!this.humans().length && !this.owes()) return Infinity;
     if (st.phase === 'gameend') return r.since + NEXT * k;
     const i = this.actor();
     const s = r.seats[i];
@@ -347,7 +475,8 @@ export class Room extends DurableObject {
       r.dead = Date.now() + KEEP * this.k;
       this.save();
     }
-    const t = Math.min(this.due(), r.dead || Infinity);
+    const dead = (r.over && !r.paid) || this.owes() ? Infinity : r.dead || Infinity;
+    const t = Math.min(this.due(), dead);
     // A lobby with no timer still gets a periodic check
     this.ctx.storage.setAlarm(Math.max(t < Infinity ? t : Date.now() + KEEP * this.k, Date.now()));
   }
@@ -358,6 +487,7 @@ export class Room extends DurableObject {
   }
 
   async wipe() {
+    this.report(true);
     for (const w of this.ctx.getWebSockets()) w.close(1000, 'closed');
     this.r = this.st = null;
     await this.ctx.storage.deleteAlarm();
@@ -383,11 +513,30 @@ export class Room extends DurableObject {
     }
   }
 
+  // what the Hub lists for a public table
+  summary() {
+    const r = this.r;
+    return {
+      stake: r.stake, started: r.started,
+      seats: r.seats.map(s => s && !s.bot ? { seed: s.seed, av: s.av, level: s.level } : null),
+      pids: r.seats.map(s => s && s.pid),
+      left: r.go && !r.started ? Math.max(0, r.go - Date.now()) : null
+    };
+  }
+
+  report(gone) {
+    const r = this.r;
+    if (!r || !r.pub) return;
+    const hub = this.env.HUB.get(this.env.HUB.idFromName('h'));
+    this.ctx.waitUntil(hub.table(r.code, gone ? null : this.summary()).catch(() => {}));
+  }
+
   lobby(me) {
     const r = this.r;
     return {
       t: 'room', code: r.code, n: r.n, games: r.games, level: r.level, host: r.host, you: me,
-      seats: r.seats.map(s => s && { name: s.name })
+      stake: r.stake, pub: r.pub, left: r.go && !r.started ? Math.max(0, r.go - Date.now()) : null,
+      seats: r.seats.map(s => s && { name: s.name, seed: s.seed, av: s.av, level: s.level })
     };
   }
 
@@ -403,7 +552,7 @@ export class Room extends DurableObject {
     const res = st.result;
     return {
       t: 'state', lb: sent,
-      n: n, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, stake: r.stake, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),
@@ -412,12 +561,14 @@ export class Room extends DurableObject {
       players: per(st.players).map((p, k) => {
         const i = (k + me) % n;
         const o = {
-          name: p.name, bot: p.bot, away: !r.seats[i].bot && !here.has(i), n: p.hand.length,
+          name: p.name, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level,
+          bot: p.bot, away: !r.seats[i].bot && !here.has(i), n: p.hand.length,
           opened: p.opened, claims: p.claims, chips: p.chips, score: p.score
         };
         if (k === 0) o.hand = ids(p.hand);
         return o;
       }),
+      res: r.res && r.res[me] ? { net: r.res[me].net, xp: r.res[me].xp } : undefined,
       result: res && { rows: per(res.rows), finisher: rot(res.finisher) },
       stats: st.stats.map(x => ({ fin: rot(x.fin), turns: x.turns, task: x.task })),
       lastFin: st.lastFin === undefined ? undefined : rot(st.lastFin),
