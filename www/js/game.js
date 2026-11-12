@@ -701,9 +701,11 @@ var Game = (function () {
   function openClaim(st) {
     const queue = [];
     if (st.discard.length && st.stock.length) {
+      // whoever threw the card away (the seat before, once play has started) cannot take it back
+      const threw = st.turns ? (st.turn + st.n - 1) % st.n : -1;
       for (let k = 1; k < st.n; k++) {
         const q = (st.turn + k) % st.n;
-        if (st.players[q].claims < 4) queue.push(q);
+        if (q !== threw && st.players[q].claims < 4) queue.push(q);
       }
     }
     if (!queue.length) { st.phase = 'play'; return; }

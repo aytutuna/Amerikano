@@ -464,7 +464,7 @@ var I18n = (function () {
           ['The last game is always Arabitiş: nobody may lay anything until the whole hand fits into melds, with at most one card left to discard.'],
           ['After you open, you lay nothing more until your next turn. From then on you can add cards to any meld on the table and lay new melds.', 1]
         ] },
-        { h: 'Taking a card out of turn', p: [['If you draw from the stock instead of taking the discard, the others may claim the card you left. Whoever takes it also draws a penalty card (ceza kağıdı) and puts 1 chip in the pot. Nobody can claim more than 4 times in a game.', 1]] },
+        { h: 'Taking a card out of turn', p: [['If you draw from the stock instead of taking the discard, the others may claim the card you left, except the player who threw it away. Whoever takes it also draws a penalty card (ceza kağıdı) and puts 1 chip in the pot. Nobody can claim more than 4 times in a game.', 1]] },
         { h: 'Points', p: [['Cards left in hand count 2 to 10 as printed, jack, queen and king 10, ace 11, joker 20.', 1], ['Whoever picked the task and goes out scores 50 less. If they never opened, they score 50 more. The lowest score is best.']] },
         { h: 'Chips', p: [
           ['Everyone puts 10 chips in the pot (kasa). Going out wins 5 chips. At the end the pot is split in three: two parts to the lowest score, one part to whoever went out in the last game.', 1],
@@ -948,7 +948,7 @@ var I18n = (function () {
           ['Son oyun hep Arabitiş’tir: bütün el küt ve seri olmadan kimse bir şey indiremez, atmak için en fazla bir kağıt kalabilir.'],
           ['El açtığın turda başka bir şey indiremezsin. Sonraki turdan başlayarak masadaki küt ve serilere kağıt ekleyebilir, yeni küt ve seri indirebilirsin.', 1]
         ] },
-        { h: 'Sırası gelmeden almak', p: [['Yerdeki kağıdı almayıp desteden çekersen, diğer oyuncular senin bıraktığın kağıdı alabilir. Alan oyuncu ayrıca bir ceza kağıdı çeker ve kasaya 1 çip koyar. Bir oyuncu bir oyunda en fazla 4 kez alabilir.', 1]] },
+        { h: 'Sırası gelmeden almak', p: [['Yerdeki kağıdı almayıp desteden çekersen, diğer oyuncular senin bıraktığın kağıdı alabilir; kağıdı atan oyuncu geri alamaz. Alan oyuncu ayrıca bir ceza kağıdı çeker ve kasaya 1 çip koyar. Bir oyuncu bir oyunda en fazla 4 kez alabilir.', 1]] },
         { h: 'Puanlar', p: [['Elde kalan kağıtlar 2’den 10’a kadar üzerinde yazan sayı, vale, kız ve papaz 10, as 11, joker 20 puandır.', 1], ['Görevi seçen oyuncu oyunu bitirirse 50 puan düşer, hiç el açamazsa 50 puan eklenir. En düşük puan en iyisidir.']] },
         { h: 'Çipler', p: [
           ['Herkes kasaya 10 çip koyar. Oyunu bitiren kasadan 5 çip alır. Maç sonunda kasa üçe bölünür: iki payı en düşük puanlı oyuncu, bir payı son oyunu bitiren alır.', 1],
