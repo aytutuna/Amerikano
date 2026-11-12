@@ -2,16 +2,16 @@
   "appId": "com.aytutuna.amerikano",
   "appName": "Amerikano",
   "webDir": "www",
-  "backgroundColor": "#1F2B5B",
+  "backgroundColor": "#2E1B0E",
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#1F2B5B"
+    "backgroundColor": "#2E1B0E"
   },
   "plugins": {
     "SplashScreen": {
       "launchAutoHide": false,
       "launchFadeOutDuration": 200,
-      "backgroundColor": "#1F2B5B",
+      "backgroundColor": "#2E1B0E",
       "showSpinner": false
     },
     "SystemBars": {
@@ -19,7 +19,7 @@
     },
     "StatusBar": {
       "style": "DARK",
-      "backgroundColor": "#161F44",
+      "backgroundColor": "#2E1B0E",
       "overlaysWebView": true
     }
   }
