@@ -24,7 +24,7 @@ var Avatar = (function () {
   // layers are stacked sprites cut from one strip per part; px is the drawn size
   function el(parts, px) {
     const d = document.createElement('span');
-    d.className = 'avt' + (px < TILE ? ' down' : '');
+    d.className = 'avt' + (px % TILE ? ' down' : '');
     d.setAttribute('aria-hidden', 'true');
     d.style.width = d.style.height = px + 'px';
     PARTS.forEach((p, i) => {
@@ -38,22 +38,38 @@ var Avatar = (function () {
     return d;
   }
 
-  // a round frame that shows the head of a sprite drawn at 1x, or at 2x when big
-  function pic(parts, box, big) {
-    const px = big ? TILE * 2 : TILE;
+  // a round frame around the head. Below one tile the sprite is scaled smoothly, above it only by whole steps so the pixels stay even
+  function pic(parts, box) {
+    const want = box * 1.2;
+    let px = want;
+    if (want >= TILE * .85) {
+      const step = TILE * Math.max(1, Math.round(want / TILE));
+      // a whole step far from the frame would crop the head or leave it small, so those sizes scale smoothly
+      if (step / box >= 1.05 && step / box <= 1.35) px = step;
+    }
     const f = document.createElement('span');
     f.className = 'avf';
     f.style.width = f.style.height = box + 'px';
     const a = el(parts, px);
-    // the head sits right of and below the middle of the tile, so a small frame is centred on it
+    // the head sits right of and below the middle of the tile
     const k = px / TILE;
     a.style.left = Math.round(box / 2 - 36 * k) + 'px';
-    a.style.top = Math.round(box / 2 - 39 * k) + 'px';
+    a.style.top = Math.round(box / 2 - 40 * k) + 'px';
     f.appendChild(a);
     return f;
   }
 
-  return { COUNTS: COUNTS, valid: valid, random: random, at: at, el: el, pic: pic, TILE: TILE };
+  // a pic for n stage units at the current stage size
+  function sized(parts, n) {
+    const box = Math.round(n * Stage.u);
+    const w = document.createElement('span');
+    w.className = 'apic';
+    w.style.width = w.style.height = box + 'px';
+    w.appendChild(pic(parts, box));
+    return w;
+  }
+
+  return { COUNTS: COUNTS, valid: valid, random: random, at: at, el: el, pic: pic, sized: sized, TILE: TILE };
 })();
 
 if (typeof module !== 'undefined') module.exports = Avatar;

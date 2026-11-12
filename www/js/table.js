@@ -2,8 +2,7 @@ var Table = (function () {
   const $ = id => document.getElementById(id);
   const game = $('game');
   const seatsEl = $('seats');
-  const ctlEl = $('ctl');
-  const tableEl = $('table');
+  const minesEl = $('mine');
   const meldsEl = $('melds');
   const mlist = $('mlist');
   const hand = $('hand');
@@ -12,9 +11,8 @@ var Table = (function () {
   const actsEl = $('acts');
   const fl = $('flights');
   const still = matchMedia('(prefers-reduced-motion: reduce)');
-  const wide = matchMedia('(orientation: landscape) and (max-height: 520px)');
   const HR = Cards.RATIO;
-  const DASH = 2 * Math.PI * 29.5;
+  const DASH = 2 * Math.PI * 32.5;
   // where each opponent sits, by how many opponents there are
   const SPOTS = [[], ['t'], ['tl', 'tr'], ['l', 't', 'r'], ['l', 'tl', 'tr', 'r']];
 
@@ -48,42 +46,16 @@ var Table = (function () {
     return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
   }
 
+  // one overlapped row: cards keep their size and close up as the hand grows
   function rackLayout(n, W) {
-    const land = wide.matches;
-    const pad = 4, gap = 2, rg = 3, minStep = 30;
-    const inner = W - pad * 2;
-    const cap = land ? 57 : 72;
-    const cols0 = land ? 14 : 7;
-    const sbs = land ? 16 : 8;
-    const sw = k => Math.floor((inner - (k - 1) * gap) / k);
-    let rows = land ? 1 : 2;
-    let per, w, step;
-    for (;; rows++) {
-      per = Math.max(Math.ceil(n / rows), 1);
-      if (per <= sbs) {
-        per = Math.max(per, cols0);
-        w = Math.min(sw(per), cap);
-        step = w + gap;
-        break;
-      }
-      w = Math.min(sw(sbs), cap);
-      step = (inner - w) / (per - 1);
-      if (step >= minStep || rows >= 4) break;
-    }
+    const u = Stage.u;
+    const w = Math.round(54 * u);
     const h = Math.round(w * HR);
-    const used = Math.max(Math.ceil(n / per), 1);
+    const step = n > 1 ? Math.min(Math.round(w * .76), (W - 24 * u - w) / (n - 1)) : 0;
+    const x0 = (W - w - (n - 1) * step) / 2;
     const pos = [];
-    for (let i = 0; i < n; i++) {
-      const r = Math.floor(i / per), c = i % per;
-      const cnt = Math.min(per, n - r * per);
-      const rowW = w + (cnt - 1) * step;
-      pos.push({
-        x: pad + (inner - rowW) / 2 + c * step,
-        y: r * (h + rg),
-        w: w, h: h
-      });
-    }
-    return { rows: rows, per: per, w: w, h: h, step: step, pos: pos, height: used * h + (used - 1) * rg };
+    for (let i = 0; i < n; i++) pos.push({ x: x0 + i * step, y: 0, w: w, h: h });
+    return { w: w, h: h, step: step, pos: pos, height: h };
   }
 
   function putCard(el, p, i, sel) {
@@ -150,7 +122,7 @@ var Table = (function () {
     const e = Cards.node('div', 'seat');
     e.setAttribute('role', 'group');
     e.dataset.p = i;
-    e.innerHTML = '<span class="av" aria-hidden="true"><svg class="rg" viewBox="0 0 64 64"><circle class="rt" cx="32" cy="32" r="29.5"/><circle class="rf" cx="32" cy="32" r="29.5" transform="rotate(-90 32 32)"/></svg><span class="pf"></span><i class="cnt"></i><em class="lv"></em></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sc"></span><span class="bk"></span><span class="tw"></span></span><button class="tap" type="button"></button>';
+    e.innerHTML = '<span class="hf" aria-hidden="true"><i class="fc"></i><i class="fc"></i></span><span class="av" aria-hidden="true"><svg class="rg" viewBox="0 0 68 68"><circle class="rt" cx="34" cy="34" r="32.5"/><circle class="rf" cx="34" cy="34" r="32.5" transform="rotate(-90 34 34)"/></svg><span class="pf"></span><i class="cnt"></i><em class="lv"></em></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sb"><span class="sc"></span><span class="bk"></span></span><span class="tw"></span></span><button class="tap" type="button"></button>';
     e.querySelector('.av').appendChild(Cards.icon('i-check', 'ok'));
     e.querySelector('.bk').appendChild(Cards.icon('i-chip', 'chip'));
     e.querySelector('.bk').appendChild(document.createTextNode(''));
@@ -162,9 +134,7 @@ var Table = (function () {
     const st = v.st;
     const live = st.phase !== 'gameend' && st.phase !== 'matchend';
     const keep = new Set();
-    const tight = st.n > 4;
     const order = st.players.map((p, i) => i);
-    seatsEl.classList.toggle('tight', tight);
     let at = 0;
     for (const i of order) {
       const p = st.players[i];
@@ -175,11 +145,10 @@ var Table = (function () {
         seatEls.set(i, e);
       }
       const mine = i === 0 && !p.bot;
-      const host = i === 0 && !wide.matches ? ctlEl : seatsEl;
-      if (host === ctlEl) {
-        if (e.parentNode !== ctlEl) ctlEl.appendChild(e);
+      if (!i) {
+        if (e.parentNode !== minesEl) minesEl.appendChild(e);
       } else if (seatsEl.children[at] !== e) seatsEl.insertBefore(e, seatsEl.children[at] || null);
-      if (host === seatsEl) at++;
+      if (i) at++;
       e.classList.toggle('mine', i === 0);
       e.dataset.at = i ? SPOTS[st.n - 1][i - 1] : 'b';
       const turn = live && (st.clock ? st.clock.p === i : st.turn === i);
@@ -188,7 +157,7 @@ var Table = (function () {
       e.classList.toggle('open', p.opened);
       const av = e.querySelector('.pf');
       const parts = App.look(p, i);
-      const box = wide.matches ? 34 : 52;
+      const box = Math.round(62 * Stage.u);
       const look = parts.join() + ':' + box;
       if (av.dataset.look !== look) {
         av.dataset.look = look;
@@ -202,7 +171,7 @@ var Table = (function () {
       e.querySelector('.nm').textContent = p.name;
       e.querySelector('.sc').textContent = t('ptsShort', { n: p.score });
       const bk = e.querySelector('.bk');
-      bk.hidden = p.bank === undefined || tight;
+      bk.hidden = p.bank === undefined;
       if (!bk.hidden) bk.lastChild.textContent = short(p.bank);
       const tap = e.querySelector('.tap');
       tap.hidden = !App.online();
@@ -262,8 +231,11 @@ var Table = (function () {
     }
     const gn = sub.querySelector('.gn');
     const gloss = task ? t('taskSub', { task: task }) : '';
-    gn.textContent = t(st.gameNo === st.games ? 'lastGame' : 'gameOf', { n: st.gameNo, of: st.games }) + (gloss ? ', ' + gloss : '');
+    const game = t(st.gameNo === st.games ? 'lastGame' : 'gameOf', { n: st.gameNo, of: st.games });
+    gn.textContent = gloss ? game + ', ' + gloss : game;
     sub.classList.remove('nopat');
+    // the other language's name is a hint, so it goes first when the line is too long
+    if (gloss && gn.scrollWidth > gn.clientWidth) gn.textContent = game;
     if (gn.scrollWidth > gn.clientWidth) sub.classList.add('nopat');
     $('scl').textContent = t('score');
     $('pot').textContent = t('pot', { n: st.pot });
@@ -272,7 +244,8 @@ var Table = (function () {
     $('chat').setAttribute('aria-label', t('chat.open'));
     seatsEl.setAttribute('aria-label', t('seatsLabel'));
     $('rack').setAttribute('aria-label', t('hand'));
-    $('ctl').setAttribute('aria-label', t('ctlLabel'));
+    $('tools').setAttribute('aria-label', t('ctlLabel'));
+    $('piles').setAttribute('aria-label', t('pilesLabel'));
   }
 
   function piles(v) {
@@ -301,7 +274,7 @@ var Table = (function () {
     else if (v.ring === 'put') lab = t('discardPut');
     discEl.setAttribute('aria-label', lab);
     stockEl.classList.toggle('ring', v.ring === 'draw' && st.stock.length > 0);
-    discEl.classList.toggle('ring', (v.ring === 'draw' && !!top) || v.ring === 'put');
+    discEl.classList.toggle('ring', (v.ring === 'draw' && !!top) || v.ring === 'claim' || v.ring === 'put');
   }
 
   function meldEl(m, v) {
@@ -385,6 +358,17 @@ var Table = (function () {
         if (r.plus) r.plus.setAttribute('aria-label', t('meldAdd', { label: label, more: range + ', ' + who }));
       });
     });
+    // many melds: step the cards down until they fit the box instead of hiding rows below the fold
+    const box = $('melds');
+    box.style.removeProperty('--mw');
+    const floor = Math.round(26 * Stage.u);
+    for (let w = mw - 2; w >= floor && box.scrollHeight > box.clientHeight + 1; w -= 2) {
+      box.style.setProperty('--mw', w + 'px');
+      for (const el of mlist.querySelectorAll('.meld')) {
+        const n = el.querySelectorAll('.mc').length;
+        el.style.setProperty('--st', Math.min(Math.round(w * .75), n > 1 ? (avail - w) / (n - 1) : w) + 'px');
+      }
+    }
     $('nomelds').textContent = st.melds.length ? '' : t('noMelds');
   }
 
@@ -413,7 +397,6 @@ var Table = (function () {
     for (const [id, k, on] of [['mvl', 'moveLeft', v.mv && v.mv.l], ['mvr', 'moveRight', v.mv && v.mv.r]]) {
       const m = $(id);
       m.hidden = !v.mv;
-      m.lastChild.textContent = t(k);
       m.setAttribute('aria-label', t(k));
       m.setAttribute('aria-disabled', on ? 'false' : 'true');
     }
@@ -623,40 +606,16 @@ var Table = (function () {
     if (o.reveal != null) reveal(o.reveal);
     controls(v);
     rack(v, s, o.instant);
-    game.classList.toggle('big', parseFloat(getComputedStyle(document.documentElement).fontSize) > 24);
-    measure();
     const z = zones(v.st);
     flights(v, s, z, o);
     prev = z;
   }
 
-  function measure() {
-    const st = document.documentElement.style;
-    const rr = $('rack').getBoundingClientRect(), lip = document.querySelector('.lip');
-    st.setProperty('--rackh', Math.ceil(rr.bottom - Math.min(rr.top, lip.getBoundingClientRect().top)) + 'px');
-    st.setProperty('--seatt', $('seats').offsetTop + (wide.matches ? 0 : game.classList.contains('big') ? 116 : 136) + 'px');
-    st.setProperty('--liph', lip.offsetHeight + 'px');
-  }
-
-  function rim() {
-    const w = tableEl.clientWidth, h = tableEl.clientHeight;
-    if (!w || !h) return;
-    const el = $('rim');
-    const band = 'height="12" fill="url(#kilim)" transform="';
-    el.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-    el.innerHTML = '<rect width="' + w * 2 + '" ' + band + 'scale(.5)"/>' +
-      '<rect width="' + w * 2 + '" ' + band + 'translate(0,' + (h - 6) + ') scale(.5)"/>' +
-      '<rect width="' + h * 2 + '" ' + band + 'translate(6,0) rotate(90) scale(.5)"/>' +
-      '<rect width="' + h * 2 + '" ' + band + 'translate(' + w + ',0) rotate(90) scale(.5)"/>';
-  }
-
   function relayout() {
     if (!view || game.hidden) return;
     seats(view);
-    rim();
     rack(view, null, true);
     melds(view);
-    measure();
   }
 
   function slotAt(x, y) {
@@ -674,7 +633,6 @@ var Table = (function () {
 
   window.addEventListener('resize', relayout);
   new ResizeObserver(relayout).observe(hand);
-  new ResizeObserver(rim).observe(tableEl);
 
   T.render = render;
   T.relayout = relayout;

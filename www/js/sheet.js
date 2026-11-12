@@ -16,7 +16,7 @@ var Sheet = (function () {
     const modal = stack.some(s => s.o.modal !== false);
     for (const e of bg()) e.inert = modal;
     // a non-modal sheet covers these, so keep focus off them; the rack stays live
-    for (const id of ['seats', 'table', 'ctl']) document.getElementById(id).inert = !modal && stack.length > 0;
+    for (const id of ['seats', 'melds', 'piles']) document.getElementById(id).inert = !modal && stack.length > 0;
     for (const s of stack) s.wrap.inert = s !== top && modal;
     if (S.changed) S.changed();
   }
@@ -46,36 +46,6 @@ var Sheet = (function () {
     }
   }
 
-  // Dragging the grab bar or title down closes a dismissible sheet.
-  function swipe(h) {
-    let y0 = 0, dy = 0, t0 = 0, on = false;
-    h.head.addEventListener('pointerdown', e => {
-      if (h.o.dismiss === false || h.o.kind === 'center' || e.button) return;
-      on = true;
-      y0 = e.clientY;
-      dy = 0;
-      t0 = e.timeStamp;
-      h.head.setPointerCapture(e.pointerId);
-      h.el.style.animation = 'none';
-      h.el.style.transition = 'none';
-    });
-    h.head.addEventListener('pointermove', e => {
-      if (!on) return;
-      dy = Math.max(0, e.clientY - y0);
-      h.el.style.transform = 'translateY(' + dy + 'px)';
-    });
-    const end = (e, cancel) => {
-      if (!on) return;
-      on = false;
-      const quick = dy / Math.max(1, e.timeStamp - t0) > 0.5;
-      if (!cancel && (dy > 90 || (dy > 30 && quick))) return h.close();
-      h.el.style.transition = 'transform .16s ease-out';
-      h.el.style.transform = '';
-    };
-    h.head.addEventListener('pointerup', e => end(e, false));
-    h.head.addEventListener('pointercancel', e => end(e, true));
-  }
-
   function open(o) {
     const id = 'sh' + (++uid);
     const wrap = Cards.node('div', 'sw ' + (o.kind || 'bottom'));
@@ -86,13 +56,12 @@ var Sheet = (function () {
       scrim.addEventListener('click', () => { if (o.dismiss !== false && down >= born) h.close(); });
       wrap.appendChild(scrim);
     }
-    const el = Cards.node('section', 'sheet' + (o.dismiss !== false ? ' dis' : '') + (o.tall ? ' tall' : ''));
+    const el = Cards.node('section', 'sheet' + (o.tall ? ' tall' : ''));
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-modal', o.modal === false ? 'false' : 'true');
     el.setAttribute('aria-labelledby', id);
     el.tabIndex = -1;
     const head = Cards.node('div', 'sh-head');
-    head.appendChild(Cards.node('span', 'grab'));
     const title = Cards.node('h2', 'sh-title', o.title);
     title.id = id;
     head.appendChild(title);
@@ -140,7 +109,6 @@ var Sheet = (function () {
       }
     };
     acts(h);
-    swipe(h);
     stack.push(h);
     syncInert();
     // a scrolling body needs to be reachable from the keyboard

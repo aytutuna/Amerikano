@@ -1,8 +1,10 @@
 var Settings = (function () {
   const KEY = 'amerikano.settings';
-  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', felt: 'night', players: 4, games: 4, level: 'relaxed' };
+  const def = { lang: 'auto', speed: 'normal', sound: true, haptics: true, fourc: false, back: 'red', felt: 'green', players: 4, games: 4, level: 'relaxed' };
+  const OLD_FELT = { night: 'green', pine: 'green', sea: 'blue' };
   let s = Object.assign({}, def);
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
+  s.felt = OLD_FELT[s.felt] || s.felt;
 
   function apply() {
     I18n.set(s.lang);
@@ -214,7 +216,7 @@ var App = (function () {
       targets: targets(),
       status: status(),
       acts: actions(),
-      ring: draw ? 'draw' : (dragIds || A.sel.size === 1) && canDiscard() ? 'put' : null,
+      ring: draw ? 'draw' : st.phase === 'claim' && Game.claimer(st) === 0 ? 'claim' : (dragIds || A.sel.size === 1) && canDiscard() ? 'put' : null,
       mv: A.sel.size === 1 ? { l: A.order.indexOf([...A.sel][0]) > 0, r: A.order.indexOf([...A.sel][0]) < A.order.length - 1 } : null,
       sortLabel: t(nextSort() === 'suit' ? 'sortSuit' : 'sortRank'),
       rinfo: t('rackInfo', { n: p.hand.length, pts: Game.handPts(p.hand) }) + (p.opened ? ', ' + t('lipOpened') : '')
@@ -354,13 +356,10 @@ var App = (function () {
     claimKey = k;
     const c = st.claim.card;
     const body = Cards.node('div', 'offer');
-    const cv = Cards.el(c);
-    cv.style.setProperty('--w', '56px');
-    body.appendChild(cv);
     body.appendChild(Cards.node('p', '', t('claimBody', { left: 4 - st.players[0].claims })));
     Live.urgent(t('ev.claimOffer', { card: Cards.label(c) }));
     prompt = Sheet.open({
-      kind: 'above', modal: false, dismiss: false,
+      kind: 'claim', modal: false, dismiss: false,
       title: t('claimTitle', { card: Cards.label(c) }),
       body: body,
       note: Cards.node('p', 'cost', t('costPill')),
@@ -466,7 +465,7 @@ var App = (function () {
       if (types.length === 1) return lay(sel, types[0]);
       const body = Cards.node('div', 'types');
       const h = Sheet.open({
-        kind: 'above', title: t('typeTitle'), body: body,
+        kind: 'center', title: t('typeTitle'), body: body,
         actions: [{ label: t('cancel'), kind: 'quiet' }]
       });
       for (const ty of ['set', 'run']) {
@@ -544,9 +543,9 @@ var App = (function () {
 
   A.preview = id => {
     const c = Game.CARDS[id];
-    const body = Cards.node('div', 'big');
+    const body = Cards.node('div', 'pv');
     const e = Cards.el(c);
-    e.style.setProperty('--w', Math.round(Math.min(innerWidth * 0.6, 300, (innerHeight - 150) / Cards.RATIO)) + 'px');
+    e.style.setProperty('--w', Math.round(Math.min(innerWidth * 0.6, 300, 220 * Stage.u / Cards.RATIO)) + 'px');
     body.appendChild(e);
     Sheet.open({
       kind: 'center', title: t('preview', { card: Cards.label(c) }), body: body,

@@ -9,7 +9,7 @@
 
   function person(st, i, out) {
     const s = node('span', 'who');
-    s.appendChild(Avatar.pic(App.look(st.players[i], i), 30));
+    s.appendChild(Avatar.sized(App.look(st.players[i], i), 30));
     s.appendChild(node('span', 'pn', who(st, i)));
     if (out) {
       s.appendChild(Cards.icon('jk-star', 'fin'));
@@ -279,7 +279,7 @@
     box.appendChild(node('div', 'rays'));
     box.appendChild(kilim());
     const pic = node('div', 'hpic');
-    pic.appendChild(Avatar.pic(App.look(st.players[w], w), 132, true));
+    pic.appendChild(Avatar.sized(App.look(st.players[w], w), 88));
     box.appendChild(pic);
     box.appendChild(node('h3', '', who(st, w)));
     box.appendChild(node('p', 'hpts', t('ptsShort', { n: st.players[w].score })));
@@ -371,7 +371,7 @@
       ? { label: t('end.lobby'), kind: 'primary', fn: () => { App.leave(true); UI.hall(st.stake); } }
       : { label: t('end.home'), kind: 'plain', fn: () => App.leave(true) };
     return Sheet.open({
-      kind: 'paper', tall: true, title: t('end.won', v), body: body, dismiss: false,
+      kind: 'paper', title: t('end.won', v), body: body, dismiss: false,
       actions: App.online() ? [home] : [again, home]
     });
   }
@@ -391,8 +391,6 @@
       b.appendChild(Cards.pattern(x.task));
       const tx = node('span', 'tt');
       tx.appendChild(node('b', '', t('task', { task: x.task })));
-      const sub = t('taskSub', { task: x.task });
-      if (sub) tx.appendChild(node('small', '', sub));
       b.appendChild(tx);
       b.appendChild(node('span', 'aw', t('choice.away', { n: x.away })));
       b.addEventListener('click', () => { h.close(); pick(x.task.id); });
@@ -400,7 +398,7 @@
       ul.appendChild(li);
     });
     body.appendChild(ul);
-    const h = Sheet.open({ kind: 'above', title: t('choice.pick'), body: body, dismiss: false, modal: false });
+    const h = Sheet.open({ kind: 'tasks', title: t('choice.pick'), body: body, dismiss: false, modal: false });
     return h;
   }
 

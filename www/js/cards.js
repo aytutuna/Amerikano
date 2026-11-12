@@ -100,7 +100,7 @@ var Cards = (function () {
       const g = node('span', 'pg ' + r.t);
       for (let i = 0; i < r.n; i++) {
         const i_ = node('i');
-        if (r.t === 'run') i_.style.height = 'calc(var(--u, 1) * ' + (5 + i * 2.5) + 'px)';
+        if (r.t === 'run') i_.style.height = 'calc(var(--u) * ' + (5 + i * 2.5) + ')';
         g.appendChild(i_);
       }
       p.appendChild(g);

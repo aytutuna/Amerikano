@@ -30,6 +30,8 @@ var Social = (function () {
 
   S.refresh = () => Account.call('GET', '/api/friends').then(d => (book = d));
 
+  S.list = () => book.friends;
+
   S.blocked = pid => !!pid && book.blocked.some(x => x.id === pid);
 
   // a person in a list: picture, name and level, opening the profile card when tapped
@@ -37,7 +39,7 @@ var Social = (function () {
     const li = node('li', 'fr');
     const b = node('button', 'pick');
     b.type = 'button';
-    b.appendChild(Avatar.pic(face(p), 44));
+    b.appendChild(Avatar.sized(face(p), 40));
     const tx = node('span', 'tx');
     tx.appendChild(node('b', '', who(p.seed)));
     tx.appendChild(node('small', '', t('hall.level', { n: p.level })));
@@ -129,11 +131,13 @@ var Social = (function () {
 
   // the leaderboard from the last fetch, with a switch between this week and all time
   S.leaders = (box, again) => {
-    const modes = node('div', 'pills');
+    const modes = node('div', 'tabs sub');
+    modes.setAttribute('role', 'tablist');
     for (const k of ['week', 'all']) {
-      const b = node('button', 'pill', t('top.' + k));
+      const b = node('button', 'tab', t('top.' + k));
       b.type = 'button';
-      b.setAttribute('aria-pressed', mode === k);
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', mode === k);
       b.addEventListener('click', () => { mode = k; again(); });
       modes.appendChild(b);
     }
@@ -151,7 +155,7 @@ var Social = (function () {
       const b = node('button', 'pick');
       b.type = 'button';
       b.appendChild(node('span', 'no', n));
-      b.appendChild(Avatar.pic(face(p), 44));
+      b.appendChild(Avatar.sized(face(p), 40));
       const tx = node('span', 'tx');
       tx.appendChild(node('b', '', you ? t('top.you') : who(p.seed)));
       tx.appendChild(node('small', '', t('top.level', { n: p.level })));
@@ -172,7 +176,7 @@ var Social = (function () {
 
   // the card for one player; at a table the seat adds the gift row
   S.profile = (pid, hint, seat, again) => {
-    const body = node('div', 'form prof pcard');
+    const body = node('div', 'prof pcard');
     const h = Sheet.open({ kind: 'bottom', tall: true, title: t('pc.title'), body: body, onClose: again, actions: [{ label: t('close'), kind: 'primary' }] });
     let data = null;
 
@@ -216,13 +220,15 @@ var Social = (function () {
 
     function fill() {
       body.textContent = '';
+      const left = node('div', 'pcol');
+      body.appendChild(left);
       const top = node('div', 'pf-top');
-      top.appendChild(Avatar.pic(face(hint), 132, true));
+      top.appendChild(Avatar.sized(face(hint), 100));
       const tx = node('div', 'tx');
       tx.appendChild(node('h3', '', hint.seed === undefined ? hint.name : who(hint.seed)));
       if (!hint.bot) tx.appendChild(node('p', '', t('pf.level', { n: hint.level })));
       top.appendChild(tx);
-      body.appendChild(top);
+      left.appendChild(top);
       if (data) {
         const stats = node('dl', 'stats');
         for (const [k, v] of [['games', fmt(data.games)], ['rate', rate(data)], ['week', data.rank ? '#' + data.rank : '-']]) {
@@ -231,25 +237,25 @@ var Social = (function () {
           d.appendChild(node('dd', '', v));
           stats.appendChild(d);
         }
-        body.appendChild(stats);
+        left.appendChild(stats);
         const r = data.rel;
-        if (r === 'none') body.appendChild(button(t('pc.add'), 'primary', post('/api/friend', 'POST', () => ({ id: pid }))));
+        if (r === 'none') left.appendChild(button(t('pc.add'), 'primary', post('/api/friend', 'POST', () => ({ id: pid }))));
         else if (r === 'got') {
-          body.appendChild(button(t('pc.accept'), 'primary', post('/api/friend', 'POST', () => ({ id: pid }))));
-          body.appendChild(button(t('pc.decline'), 'plain', post('/api/friend/' + pid, 'DELETE')));
+          left.appendChild(button(t('pc.accept'), 'primary', post('/api/friend', 'POST', () => ({ id: pid }))));
+          left.appendChild(button(t('pc.decline'), 'plain', post('/api/friend/' + pid, 'DELETE')));
         } else if (r === 'sent') {
           const b = button(t('pc.sent'), 'plain', () => {});
           b.disabled = true;
-          body.appendChild(b);
-          body.appendChild(button(t('pc.cancel'), 'quiet', post('/api/friend/' + pid, 'DELETE')));
+          left.appendChild(b);
+          left.appendChild(button(t('pc.cancel'), 'quiet', post('/api/friend/' + pid, 'DELETE')));
         } else if (r === 'friend') {
-          body.appendChild(node('p', 'note', t('pc.friends')));
-          body.appendChild(button(t('pc.remove'), 'plain', post('/api/friend/' + pid, 'DELETE')));
+          left.appendChild(node('p', 'note', t('pc.friends')));
+          left.appendChild(button(t('pc.remove'), 'plain', post('/api/friend/' + pid, 'DELETE')));
         }
-      } else if (hint.bot) body.appendChild(node('p', 'note', t('pc.bot')));
+      } else if (hint.bot) left.appendChild(node('p', 'note', t('pc.bot')));
       if (seat && (!data || data.rel !== 'you')) body.appendChild(gifts());
-      if (data && data.rel === 'block') body.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
-      else if (data && data.rel !== 'you') body.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
+      if (data && data.rel === 'block') left.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
+      else if (data && data.rel !== 'you') left.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
     }
 
     fill();
