@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.aytutuna.amerikano",
+      "sha256_cert_fingerprints": [
+        "70:EF:DF:94:2E:FB:C6:56:2C:28:5C:7A:97:E9:B8:51:AD:B2:BC:16:A9:2B:AC:1C:F2:D8:F9:81:06:59:D9:0D"
+      ]
+    }
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["8XT2U634Z4.com.aytutuna.amerikano"],
+        "components": [{ "/": "/t/*" }]
+      }
+    ]
+  }
+}
