@@ -4,7 +4,8 @@ var Social = (function () {
   let book = { friends: [], incoming: [], outgoing: [], blocked: [] };
   let board = null;
   let mode = 'week';
-  let toast = null;
+  let late = null;
+  let fade = 0;
   const asked = new Map();
 
   const fmt = n => n.toLocaleString(I18n.lang());
@@ -42,7 +43,7 @@ var Social = (function () {
     b.appendChild(Avatar.sized(face(p), 40));
     const tx = node('span', 'tx');
     tx.appendChild(node('b', '', who(p.seed)));
-    tx.appendChild(node('small', '', t('hall.level', { n: p.level })));
+    tx.appendChild(node('small', '', t('hall.level', { n: p.level }) + (p.at ? ' · ' + t('fr.at.' + p.at.w) : '')));
     b.appendChild(tx);
     if (p.online !== undefined) {
       const d = node('i', 'dot' + (p.online ? ' on' : ''));
@@ -64,14 +65,14 @@ var Social = (function () {
     box.appendChild(ul);
   }
 
-  function inviteBtn(p) {
+  function inviteBtn(p, have) {
     const b = button(t('fr.invite'), 'plain', () => {
       b.disabled = true;
       asked.set(p.id, 'wait');
       Net.send({ t: 'invite', to: p.id });
     });
     b.dataset.pid = p.id;
-    b.disabled = !p.online;
+    b.disabled = !have;
     const k = asked.get(p.id);
     if (k && k !== 'wait') {
       b.textContent = t(k);
@@ -80,27 +81,44 @@ var Social = (function () {
     return b;
   }
 
-  // the friends list from what was fetched last; o.invite adds Invite buttons, o.again redraws after a change
+  // what a friend's whereabouts allow: Join at a table with room, Playing once it started, Invite elsewhere
+  function reach(p, o) {
+    const a = p.at;
+    if (!a) return [];
+    if (a.w === 'table') {
+      if (a.code === o.code) return [];
+      if (a.started || !a.free) {
+        const tag = node('span', 'tag', t('fr.playing'));
+        tag.dataset.pid = p.id;
+        return [tag];
+      }
+      return [button(t('fr.join'), 'primary', () => o.join(a))];
+    }
+    return o.invite === undefined ? [] : [inviteBtn(p, o.invite)];
+  }
+
+  // the friends list from what was fetched last; o.invite is whether Invite works (a table is open), o.join takes up a table, o.again redraws after a change
   S.friends = (box, o) => {
     const call = (method, path, body) => () => Account.call(method, path, body).then(S.refresh).then(o.again, () => {});
     section(box, t('fr.requests'), book.incoming, p => person(p, [
       button(t('pc.accept'), 'primary', call('POST', '/api/friend', { id: p.id })),
       button(t('pc.decline'), 'plain', call('DELETE', '/api/friend/' + p.id))
     ], o.again));
-    if (book.friends.length) section(box, t('fr.tab'), book.friends, p => person(p, o.invite ? [inviteBtn(p)] : null, o.again));
+    if (book.friends.length) section(box, t('fr.tab'), book.friends.slice().sort((x, y) => !!y.at - !!x.at), p => person(p, reach(p, o), o.again));
     else if (!book.incoming.length) box.appendChild(node('p', 'note', t('fr.none')));
     section(box, t('fr.waiting'), book.outgoing, p => person(p, null, o.again));
     section(box, t('fr.blocked'), book.blocked, p => person(p, [button(t('pc.unblock'), 'plain', call('DELETE', '/api/block/' + p.id))], o.again));
   };
 
-  // from the room lobby: friends who are in the lobby can be asked to this table
+  // from the room lobby: friends who are online can be asked to this table
   S.invite = () => {
     const body = node('div', 'form frs');
+    const here = Net.code();
     asked.clear();
     const draw = () => {
       body.textContent = '';
       body.appendChild(node('p', 'note', t('fr.inviteNote')));
-      S.friends(body, { invite: true, again: draw });
+      S.friends(body, { invite: true, code: here, join: a => UI.accept(a), again: draw });
     };
     draw();
     Sheet.open({ kind: 'bottom', tall: true, title: t('fr.inviteFriends'), body: body, actions: [{ label: t('close'), kind: 'primary' }] });
@@ -114,15 +132,41 @@ var Social = (function () {
     for (const b of document.querySelectorAll('.frs [data-pid]')) if (b.dataset.pid === m.to) b.textContent = t(k);
   };
 
+  // an invitation shows as a toast on whatever screen is up; during a match it can only be put off
   S.invited = m => {
-    if (!UI.inHall()) return;
-    if (toast) toast.close();
-    const body = node('p', '', t('fr.invText', { name: who(m.from.seed), n: fmt(m.stake) }));
-    toast = Sheet.open({
-      kind: 'center', title: t('fr.invTitle'), body: body,
-      actions: [{ label: t('fr.join'), kind: 'primary', fn: () => UI.accept(m) }, { label: t('fr.later'), kind: 'quiet' }]
-    });
+    const play = App.online();
+    if (play) late = { m: m, at: Date.now() };
+    const box = document.getElementById('toast');
+    S.clear();
+    const el = node('div', play ? 'toast live' : 'toast');
+    el.setAttribute('role', 'status');
+    const pic = Avatar.sized(m.from.av, 36);
+    el.appendChild(pic);
+    const text = t('fr.invText', { name: who(m.from.seed), n: fmt(m.stake) });
+    el.appendChild(node('p', '', text));
+    const off = () => { box.textContent = ''; };
+    if (!play) {
+      const go = button(t('fr.join'), 'primary', () => {
+        off();
+        if (App.active()) App.leave(false);
+        UI.accept(m);
+      });
+      el.appendChild(go);
+    }
+    el.appendChild(button(t('fr.later'), 'quiet', off));
+    box.appendChild(el);
+    Live.say(text);
+    fade = setTimeout(off, play ? 6000 : 15000);
   };
+
+  S.clear = () => {
+    clearTimeout(fade);
+    document.getElementById('toast').textContent = '';
+  };
+
+  // an invitation put off during a match is offered again in the lobby
+  S.late = () => (late && Date.now() - late.at < 10 * 60000 ? late.m : null);
+  S.used = () => { late = null; };
 
   S.top = () => {
     if (board && Date.now() - board.at < FRESH) return Promise.resolve(board);
@@ -226,7 +270,7 @@ var Social = (function () {
       top.appendChild(Avatar.sized(face(hint), 100));
       const tx = node('div', 'tx');
       tx.appendChild(node('h3', '', hint.seed === undefined ? hint.name : who(hint.seed)));
-      if (!hint.bot) tx.appendChild(node('p', '', t('pf.level', { n: hint.level })));
+      if (hint.level) tx.appendChild(node('p', '', t('pf.level', { n: hint.level })));
       top.appendChild(tx);
       left.appendChild(top);
       if (data) {
@@ -252,7 +296,7 @@ var Social = (function () {
           left.appendChild(node('p', 'note', t('pc.friends')));
           left.appendChild(button(t('pc.remove'), 'plain', post('/api/friend/' + pid, 'DELETE')));
         }
-      } else if (hint.bot) left.appendChild(node('p', 'note', t('pc.bot')));
+      }
       if (seat && (!data || data.rel !== 'you')) body.appendChild(gifts());
       if (data && data.rel === 'block') left.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
       else if (data && data.rel !== 'you') left.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
@@ -268,7 +312,7 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[i];
     if (!p) return;
-    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level, bot: !p.pid };
+    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level };
     S.profile(p.pid, hint, i || 0);
   };
 

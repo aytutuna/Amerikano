@@ -2,14 +2,18 @@ var Net = (function () {
   const KEY = 'amerikano.online';
   const SITE = 'https://amerikano.pages.dev/';
   const FRESH = 15 * 60000;
-  const REFUSED = ['nocode', 'started', 'full', 'taken', 'auth', 'poor'];
+  const REFUSED = ['nocode', 'started', 'full', 'taken', 'auth', 'poor', 'busy'];
   let sock = null;
-  let hub = false;
+  let hubSock = null;
   let ses = null;
   let tries = 0;
   let retry = 0;
   let pong = 0;
   let pinged = 0;
+  let hubTries = 0;
+  let hubRetry = 0;
+  let hubDone = false;
+  let where = 'lobby';
 
   function host() {
     const l = location;
@@ -53,7 +57,6 @@ var Net = (function () {
 
   function open(path, hello) {
     detach();
-    hub = path === '/ws/hub';
     const ws = new WebSocket(host() + path);
     sock = ws;
     ws.onopen = () => {
@@ -70,11 +73,10 @@ var Net = (function () {
     if (ses) open('/ws/' + ses.code, { t: 'join', token: ses.token });
   }
 
-  // gives up: back to the home screen with the reason. A lost connection keeps the
+  // gives up on the table: back to the lobby with the reason. A lost connection keeps the
   // session so Rejoin still works once the network is back; a replaced one belongs to the other window.
   function gone(k) {
     const live = App.online();
-    const lobby = hub;
     detach();
     clearTimeout(retry);
     if (k === 'replaced') ses = null;
@@ -82,13 +84,11 @@ var Net = (function () {
     UI.close();
     if (live) App.leave(false, true);
     UI.notice(msg(k));
-    if (lobby) UI.exit();
-    else UI.resume();
+    UI.show();
   }
 
   function lost(e) {
     sock = null;
-    if (hub) return gone('lost');
     // 4000 means the seat was taken over from another window, 1000 that the server ended it
     if (e.code === 4000) return gone('replaced');
     if (e.code === 1000) return ses ? gone('ended') : undefined;
@@ -104,13 +104,6 @@ var Net = (function () {
     let m;
     try { m = JSON.parse(d); } catch (e) { return; }
     switch (m.t) {
-      case 'hub': UI.hub(m); break;
-      case 'rooms': UI.rooms(m.n); break;
-      case 'tables': UI.tables(m.stake, m.tables); break;
-      case 'seated':
-        save({ code: m.code, token: m.token, hist: [] });
-        open('/ws/' + m.code, { t: 'join', token: m.token });
-        break;
       case 'joined':
         tries = 0;
         save({ code: m.code, token: m.token, hist: ses && ses.code === m.code ? ses.hist : [] });
@@ -122,7 +115,6 @@ var Net = (function () {
         save();
         App.sync(m);
         break;
-      case 'invited': Social.invited(m); break;
       case 'sent': Social.sent(m); break;
       case 'said': if (App.online()) Social.said(m); break;
       case 'gifted': if (App.online()) Social.gifted(m); break;
@@ -131,10 +123,7 @@ var Net = (function () {
   }
 
   function fail(m) {
-    if (hub && m.k !== 'auth') {
-      UI.close();
-      return UI.notice(msg(m.k));
-    }
+    if (m.k === 'held') return UI.held(m.seat);
     if (REFUSED.includes(m.k)) {
       if (m.k === 'auth') Account.forget();
       const live = App.online();
@@ -142,18 +131,93 @@ var Net = (function () {
       drop();
       UI.close();
       if (live) App.leave(false);
-      if (m.k === 'auth') UI.exit();
       UI.notice(msg(m.k));
-      if (m.k !== 'auth') UI.resume();
+      if (m.k === 'auth') UI.retry();
+      else UI.show();
       return;
     }
     if (App.online()) App.fail(m.k, m);
     else UI.notice(msg(m.k));
   }
 
+  // The hub socket lives as long as the app is in the foreground, whatever screen is up.
+  function hubOpen() {
+    clearTimeout(hubRetry);
+    if (hubSock || hubDone || document.hidden || !Account.auth()) return;
+    const ws = new WebSocket(host() + '/ws/hub');
+    hubSock = ws;
+    ws.onopen = () => {
+      if (ws !== hubSock) return;
+      ws.pong = Date.now();
+      ws.pinged = 0;
+      ws.send(JSON.stringify({ t: 'hello', auth: Account.auth(), at: where }));
+    };
+    ws.onmessage = e => { if (ws === hubSock) hubGot(e.data); };
+    ws.onclose = () => {
+      if (ws !== hubSock) return;
+      hubSock = null;
+      if (hubDone || document.hidden) return;
+      UI.conn(hubTries++ ? 'down' : 'wait');
+      hubRetry = setTimeout(hubOpen, Math.min(1000 * 2 ** (hubTries - 1), 15000));
+    };
+  }
+
+  function hubClose() {
+    clearTimeout(hubRetry);
+    const w = hubSock;
+    hubSock = null;
+    if (w) w.close();
+  }
+
+  function hubGot(d) {
+    if (d === 'pong') { hubSock.pong = Date.now(); return; }
+    let m;
+    try { m = JSON.parse(d); } catch (e) { return; }
+    switch (m.t) {
+      case 'hub':
+        hubTries = 0;
+        UI.conn('up');
+        UI.hub(m);
+        break;
+      case 'rooms': UI.rooms(m.n); break;
+      case 'seated':
+        save({ code: m.code, token: m.token, hist: [] });
+        open('/ws/' + m.code, { t: 'join', token: m.token });
+        break;
+      case 'invited': Social.invited(m); break;
+      case 'error': hubFail(m); break;
+    }
+  }
+
+  function hubFail(m) {
+    if (m.k === 'replaced') {
+      hubDone = true;
+      hubClose();
+      return UI.conn('replaced');
+    }
+    UI.close();
+    if (m.k === 'auth') {
+      Account.forget();
+      hubClose();
+      return UI.retry();
+    }
+    UI.notice(msg(m.k));
+  }
+
+  function hubSay(m) {
+    if (hubSock && hubSock.readyState === 1) hubSock.send(JSON.stringify(m));
+    else {
+      UI.close();
+      UI.notice(msg('lost'));
+    }
+  }
+
   // the wake-up after a background trip: a socket that looks open may be long dead
   function wake() {
-    if (document.hidden || !ses || (App.active() && !App.online())) return;
+    if (document.hidden) return hubClose();
+    hubTries = 0;
+    hubOpen();
+    if (!ses || (App.active() && !App.online())) return;
     clearTimeout(retry);
     const w = sock;
     if (!w || w.readyState !== 1) {
@@ -168,6 +232,16 @@ var Net = (function () {
   document.addEventListener('visibilitychange', wake);
   window.addEventListener('online', wake);
   setInterval(() => {
+    const h = hubSock;
+    if (h && h.readyState === 1) {
+      if (h.pinged > h.pong) {
+        hubClose();
+        hubOpen();
+      } else {
+        h.pinged = Date.now();
+        h.send('ping');
+      }
+    }
     if (!sock || sock.readyState !== 1) return;
     if (pinged > pong) return rejoin();
     pinged = Date.now();
@@ -176,22 +250,28 @@ var Net = (function () {
 
   const N = {};
 
-  N.link = code => SITE + '#' + code;
+  N.link = code => SITE + 't/' + code;
   N.recent = recent;
   N.busy = () => !!sock || !!ses;
+  N.code = () => ses && ses.code;
   N.hist = () => (ses && ses.hist) || [];
   N.keep = hist => { if (ses) { ses.hist = hist; store(); } };
 
-  N.hub = () => {
-    drop();
-    open('/ws/hub', { t: 'hello', auth: Account.auth() });
+  N.up = () => {
+    hubDone = false;
+    hubTries = 0;
+    hubClose();
+    hubOpen();
   };
 
-  const say = m => { if (sock && sock.readyState === 1) sock.send(JSON.stringify(m)); };
+  // where the hub tells friends this player is, besides at a table
+  N.at = w => {
+    where = w;
+    if (hubSock && hubSock.readyState === 1) hubSock.send(JSON.stringify({ t: 'at', at: w }));
+  };
 
-  N.watch = stake => say({ t: 'watch', stake: stake });
-  N.sit = code => say({ t: 'sit', code: code });
-  N.play = stake => say({ t: 'quick', stake: stake });
+  N.sit = code => hubSay({ t: 'sit', code: code });
+  N.play = stake => hubSay({ t: 'quick', stake: stake });
 
   N.create = o => {
     drop();

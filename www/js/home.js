@@ -1,10 +1,13 @@
 var UI = (function () {
   const node = Cards.node;
   const $ = id => document.getElementById(id);
-  const FAN = [23, 37, 104, 51, 12];
-  let launched = false;
   let wait = null;
-  let at = null;
+  let booted = false;
+  let again = 0;
+  let pressed = false;
+  let linked = '';
+  // net is wait, up, down or replaced
+  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {} };
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -20,102 +23,6 @@ var UI = (function () {
     b.type = 'button';
     b.addEventListener('click', fn);
     return b;
-  }
-
-  // The one orchestrated moment: the fan opens once per launch, later visits show it open.
-  function fan(go) {
-    const f = node('div', 'fan' + (go ? ' go' : ''));
-    f.setAttribute('role', 'img');
-    f.setAttribute('aria-label', t('start.fan'));
-    FAN.forEach((id, i) => {
-      const c = Cards.el(Game.CARDS[id]);
-      c.style.setProperty('--a', (i - 2) * 15 + 'deg');
-      c.style.setProperty('--i', i);
-      f.appendChild(c);
-    });
-    return f;
-  }
-
-  function start(quiet) {
-    if (at && quiet) return draw();
-    if (!quiet) {
-      at = null;
-      }
-    const home = $('home');
-    const keep = quiet && home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
-    const go = !launched && !quiet;
-    launched = true;
-    home.hidden = false;
-    home.textContent = '';
-
-    const main = node('main', 'hm');
-    const felt = node('div', 'hm-felt felt');
-    felt.appendChild(node('i', 'kil'));
-    const brand = node('div', 'hm-brand');
-    const h1 = node('h1', '', t('start.title'));
-    brand.appendChild(h1);
-    brand.appendChild(fan(go));
-    felt.appendChild(brand);
-    main.appendChild(felt);
-
-    const nav = node('div', 'hm-btns');
-    const mine = Account.me();
-    if (Account.has() && mine) {
-      const who = node('div', 'hm-who');
-      who.appendChild(capsule(mine));
-      who.appendChild(purse(mine));
-      nav.appendChild(who);
-      if (mine.daily.ready) nav.appendChild(claim(mine, 'primary', true));
-    }
-    if (!quiet && Account.has()) {
-      const redo = () => { if (!$('home').hidden) start(true); };
-      Account.refresh().then(redo, redo);
-    }
-    const saved = App.saved();
-    const back = Net.recent();
-    if (back) {
-      const r = button('', 'primary big', () => {
-        Net.resume();
-        connecting();
-      });
-      r.appendChild(node('b', '', t('start.rejoin')));
-      r.appendChild(node('span', '', t('start.rejoinNote', back)));
-      r.dataset.k = 'back';
-      nav.appendChild(r);
-    }
-    if (saved) {
-      const c = button('', 'primary big', () => App.resume());
-      c.appendChild(node('b', '', t('start.cont')));
-      c.appendChild(node('span', '', t('start.saved', saved)));
-      c.dataset.k = 'cont';
-      nav.appendChild(c);
-    }
-    const o = button(t('start.online'), saved || back ? 'plain big' : 'primary big', () => enter(0));
-    o.dataset.k = 'net';
-    const n = button(t('start.go'), 'plain big', () => setup());
-    n.dataset.k = 'go';
-    nav.appendChild(o);
-    nav.appendChild(n);
-    const row = node('div', 'hm-row');
-    const h = button(t('start.how'), 'quiet', howTo);
-    h.dataset.k = 'how';
-    const s = button(t('start.settings'), 'quiet', settings);
-    s.dataset.k = 'set';
-    row.appendChild(h);
-    row.appendChild(s);
-    nav.appendChild(row);
-    main.appendChild(nav);
-    home.appendChild(main);
-    // Large system text sizes scale the title past the felt.
-    document.fonts.ready.then(() => {
-      const room = brand.clientWidth;
-      if (h1.offsetWidth > room) h1.style.setProperty('--fit', room / h1.offsetWidth);
-    });
-
-    if (keep) {
-      const e = home.querySelector('[data-k="' + keep + '"]');
-      if (e) e.focus({ preventScroll: true });
-    }
   }
 
   // Radio group drawn as pills or rows; the native input stays for keyboard and screen readers.
@@ -150,15 +57,16 @@ var UI = (function () {
     return out;
   }
 
-  function setup(room) {
+  // players, games and level, plus the stake for an online table; get() reads what was picked
+  function matchForm(room) {
     let n = Settings.get('players');
     if (![3, 4, 5].includes(n)) n = 4;
     let g = Settings.get('games');
     let lv = Settings.get('level') === 'sharp' ? 'sharp' : 'relaxed';
     const me = Account.me();
-    const stakes = room && at && at.stakes ? at.stakes.filter(x => me && me.chips >= at.entry * x) : [];
+    const stakes = room && at.stakes ? at.stakes.filter(x => me && me.chips >= at.entry * x) : [];
     let sk = stakes[0];
-    const form = node('div', 'form');
+    const form = node('div', 'form' + (room ? ' one' : ''));
     const saved = App.saved();
 
     function fill() {
@@ -171,15 +79,14 @@ var UI = (function () {
         focusOn('players:' + v);
       }, 'seg'));
       const games = choice('games', t('setup.games'), opts.map(v => ({ v: v, label: String(v) })), g, v => { g = v; }, 'seg');
-      games.appendChild(node('p', 'note', t('setup.gamesNote')));
+      if (!room) games.appendChild(node('p', 'note', t('setup.gamesNote')));
       form.appendChild(games);
       form.appendChild(choice('level', t('setup.level'), [
-        { v: 'relaxed', label: t('setup.relaxed'), note: t('setup.relaxedNote') },
-        { v: 'sharp', label: t('setup.sharp'), note: t('setup.sharpNote') }
-      ], lv, v => { lv = v; }, 'rows'));
+        { v: 'relaxed', label: t('setup.relaxed'), note: room ? '' : t('setup.relaxedNote') },
+        { v: 'sharp', label: t('setup.sharp'), note: room ? '' : t('setup.sharpNote') }
+      ], lv, v => { lv = v; }, room ? 'seg' : 'rows'));
       if (room) {
         const stake = choice('stake', t('hall.stake'), stakes.map(v => ({ v: v, label: fmt(v) })), sk, v => { sk = v; fill(); focusOn('stake:' + v); }, 'seg');
-        stake.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(sk) })));
         form.appendChild(stake);
       }
       if (saved && !room) form.appendChild(node('p', 'note', t('setup.replace')));
@@ -191,21 +98,24 @@ var UI = (function () {
     }
 
     fill();
+    return {
+      form: form,
+      ok: () => !room || sk !== undefined,
+      get: () => {
+        Settings.set('players', n, true);
+        Settings.set('games', g, true);
+        Settings.set('level', lv, true);
+        return { players: n, games: g, level: lv, stake: sk };
+      }
+    };
+  }
 
+  function setup() {
+    const f = matchForm(false);
     Sheet.open({
-      kind: 'bottom', tall: true, title: t(room ? 'net.create' : 'setup.title'), body: form,
+      kind: 'bottom', tall: true, title: t('start.go'), body: f.form,
       actions: [
-        {
-          label: t(room ? 'net.createGo' : 'setup.go'), kind: 'primary', fn: () => {
-            Settings.set('players', n, true);
-            Settings.set('games', g, true);
-            Settings.set('level', lv, true);
-            if (room) {
-              Net.create({ players: n, games: g, level: lv, stake: sk });
-              connecting();
-            } else App.newMatch({ players: n, games: g, level: lv });
-          }
-        },
+        { label: t('setup.go'), kind: 'primary', fn: () => { const o = f.get(); App.newMatch({ players: o.players, games: o.games, level: o.level }); } },
         { label: t('cancel'), kind: 'quiet' }
       ]
     });
@@ -269,6 +179,9 @@ var UI = (function () {
         { v: 'en', label: t('set.en') },
         { v: 'tr', label: t('set.tr') }
       ], Settings.get('lang'), v => { Settings.set('lang', v); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
+      const how = button(t('start.how'), 'plain', howTo);
+      how.dataset.f = 'how';
+      form.appendChild(how);
       form.appendChild(toggle('sound', t('set.sound')));
       form.appendChild(toggle('haptics', t('set.haptics')));
       const sw = node('span', 'suits');
@@ -390,11 +303,11 @@ var UI = (function () {
       d.disabled = true;
       Account.daily().then(() => {
         $('live').textContent = t('pf.got', { n: fmt(me.daily.reward) });
-        start(true);
+        redraw();
       }, e => {
         d.disabled = false;
         if (e.status !== 409) return notice(t('net.err.lost'));
-        Account.refresh().then(() => start(true), () => {});
+        Account.refresh().then(redraw, () => {});
       });
     });
     d.dataset.k = 'daily';
@@ -528,7 +441,7 @@ var UI = (function () {
           go.disabled = true;
           Account.remove().then(() => {
             h.close();
-            exit();
+            retry();
           }, () => {
             go.disabled = false;
             notice(t('net.err.lost'));
@@ -549,7 +462,7 @@ var UI = (function () {
     }
 
     fill();
-    h = Sheet.open({ kind: 'bottom', tall: true, title: t('pf.title'), body: body, actions: [{ label: t('done'), kind: 'primary' }], onClose: () => start(true) });
+    h = Sheet.open({ kind: 'bottom', tall: true, title: t('pf.title'), body: body, actions: [{ label: t('done'), kind: 'primary' }], onClose: redraw });
   }
 
   // a shared link opened this, so there is nothing to ask but whether to join
@@ -558,30 +471,33 @@ var UI = (function () {
       kind: 'center', title: t('net.joinTitle', { code: code }),
       actions: [{
         label: t('net.joinGo'), kind: 'primary', fn: () => {
-          connecting();
-          const w = wait;
-          Account.ensure().then(() => {
-            if (wait !== w) return;
-            close();
-            Net.join(code);
-            connecting();
-          }, () => {
-            if (wait !== w) return;
-            close();
-            notice(t('net.err.lost'));
-          });
+          if (App.active()) App.leave(false);
+          accept({ pub: false, code: code });
         }
       }, { label: t('cancel'), kind: 'quiet' }]
     });
   }
 
-  function connecting() {
+  // cancel is for a table socket; a request to the hub is answered within moments
+  function connecting(cancel, title) {
     const body = node('div', 'conn');
     body.appendChild(Cards.icon('i-chip', 'chip spin'));
     const p = node('p', 'lead', t('net.connecting'));
     p.setAttribute('role', 'status');
     body.appendChild(p);
-    wait = { h: Sheet.open({ kind: 'center', title: t('net.title'), body: body, dismiss: false, actions: [{ label: t('cancel'), kind: 'plain', fn: () => { Net.cancel(); wait = null; resume(); } }] }) };
+    const h = Sheet.open({
+      kind: 'center', title: title || t('net.title'), body: body, dismiss: false,
+      actions: cancel ? [{ label: t('cancel'), kind: 'plain', fn: () => { Net.cancel(); wait = null; } }] : []
+    });
+    wait = { h: h };
+    if (!cancel) {
+      setTimeout(() => {
+        if (wait && wait.h === h && !wait.body && document.contains(h.wrap)) {
+          close();
+          notice(t('net.err.lost'));
+        }
+      }, 12000);
+    }
   }
 
   function share(code, out) {
@@ -594,9 +510,9 @@ var UI = (function () {
     else copy();
   }
 
-  // the seats round a small felt: who is in, and where a bot will sit
+  // the seats round a small felt; they are built once and only the seat that changed is redrawn, so an arrival can be seen
   function seatTable(m) {
-    const box = node('div', 'wt-table');
+    const box = node('div', 'wt-table' + (m.seats.length > 4 ? ' five' : ''));
     box.appendChild(node('div', 'felt wt-felt'));
     const mid = node('div', 'wt-mid');
     if (m.pub) mid.appendChild(node('b', 'plaque', fmt(m.stake)));
@@ -607,133 +523,167 @@ var UI = (function () {
     }
     box.appendChild(mid);
     const n = m.seats.length;
-    m.seats.forEach((s, i) => {
-      const a = (i / n + .25) * 2 * Math.PI;
-      const seat = node('div', 'ws' + (s ? '' : ' free'));
+    const els = m.seats.map((s, i) => {
+      const a = (((i - m.you + n) % n) / n + .25) * 2 * Math.PI;
+      const seat = node('div', 'ws free');
       seat.style.left = 50 + 33 * Math.cos(a) + '%';
-      seat.style.top = 50 + 26 * Math.sin(a) + '%';
-      const ring = node('span', 'wr');
-      if (s && s.av) ring.appendChild(face(s.av, 36));
-      seat.appendChild(ring);
-      if (!s) ring.setAttribute('aria-label', t('net.bot'));
-      seat.appendChild(node('span', 'wn', s ? who(s.seed) + (i === m.you ? ' ' + t('net.you') : '') : t('net.botTag')));
+      seat.style.top = 50 + (n > 4 ? 35 : 26) * Math.sin(a) + '%';
+      seat.appendChild(node('span', 'wr'));
+      seat.appendChild(node('span', 'wn'));
       box.appendChild(seat);
+      return seat;
     });
-    return box;
+    return { box: box, els: els };
   }
 
+  function seated(w, m) {
+    m.seats.forEach((s, i) => {
+      const e = w.els[i];
+      const key = s ? s.seed + ':' + s.av.join() + ':' + s.level + ':' + (i === m.you) : m.finding > 0 ? 'seek' : 'free';
+      const was = e.dataset.key;
+      if (was === key) return;
+      e.dataset.key = key;
+      e.className = 'ws' + (s ? '' : ' free') + (!s && m.finding > 0 ? ' seek' : '') + (i === m.you ? ' me' : '');
+      const ring = e.firstChild;
+      ring.textContent = '';
+      if (s) {
+        ring.appendChild(face(s.av, 36));
+        ring.appendChild(node('em', 'lv', s.level));
+      }
+      const name = s ? who(s.seed) + (i === m.you ? ' ' + t('net.you') : '') : t(m.finding > 0 ? 'net.looking' : 'net.free');
+      e.lastChild.textContent = name;
+      if (s && w.seen && (was === 'free' || was === 'seek') && i !== m.you) {
+        e.classList.add('in');
+        Sfx.join();
+        Live.say(t('net.arrived', { name: who(s.seed), n: s.level }));
+      }
+    });
+    w.seen = true;
+  }
+
+  // the table's own sheet: seats fill as the server reports them, until the match starts
   function lobby(m) {
     if (!wait || !wait.body || !document.contains(wait.h.wrap)) {
       close();
       const body = node('div', 'wt');
-      wait = { body: body, h: Sheet.open({ kind: 'bottom', tall: true, title: t('net.room'), body: body, dismiss: false, actions: [{ label: t('net.leave'), kind: 'plain', fn: () => { Net.leave(); resume(); } }] }) };
+      const tb = seatTable(m);
+      body.appendChild(tb.box);
+      const side = node('div', 'wt-side');
+      body.appendChild(side);
+      wait = { body: body, side: side, els: tb.els, seen: false, h: Sheet.open({ kind: 'bottom', tall: true, title: t('net.room'), body: body, dismiss: false, actions: [{ label: t('net.leave'), kind: 'plain', fn: () => { Net.leave(); wait = null; show(); } }] }) };
     }
-    const body = wait.body;
-    body.textContent = '';
-    body.appendChild(seatTable(m));
-    const side = node('div', 'wt-side');
+    wait.h.set(t(m.finding > 0 ? 'hall.finding' : 'net.room'));
+    seated(wait, m);
+    const side = wait.side;
+    const keep = side.contains(document.activeElement) ? document.activeElement.dataset.f : null;
+    side.textContent = '';
     side.appendChild(node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) })));
     const mine = m.you === m.host;
-    if (m.pub) {
-      if (m.left !== null) {
-        const cd = node('p', 'lead');
-        cd.dataset.end = Date.now() + m.left;
-        side.appendChild(cd);
-      }
-      side.appendChild(node('p', 'note', t('hall.fill')));
-    } else side.appendChild(node('p', 'note', t(mine ? 'net.hintHost' : 'net.hintGuest')));
+    if (m.finding > 0) {
+      const p = node('p', 'lead', t('net.finding', { n: m.finding }));
+      p.setAttribute('role', 'status');
+      side.appendChild(p);
+    } else side.appendChild(node('p', 'note', m.pub ? t('hall.fill') : t(mine ? 'net.hintHost' : 'net.hintGuest')));
     side.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(m.stake) })));
     const out = node('p', 'note');
     out.setAttribute('role', 'status');
     const acts = node('div', 'wt-acts');
-    if (m.seats.includes(null)) acts.appendChild(button(t('fr.inviteFriends'), 'plain', Social.invite));
+    wait.go = null;
+    wait.m = m;
+    if (m.seats.includes(null)) {
+      const inv = button(t('fr.inviteFriends'), 'plain', Social.invite);
+      inv.dataset.f = 'invite';
+      acts.appendChild(inv);
+    }
     if (!m.pub) {
-      if (mine) {
+      if (mine && !m.finding) {
         const go = button(t('net.start'), 'primary', () => {
           go.disabled = true;
           Net.send({ t: 'start' });
         });
+        go.dataset.f = 'start';
+        wait.go = go;
         acts.appendChild(go);
       }
-      acts.appendChild(button(t('net.share'), 'plain', () => share(m.code, out)));
+      const sh = button(t('net.share'), 'plain', () => share(m.code, out));
+      sh.dataset.f = 'share';
+      acts.appendChild(sh);
     }
     side.appendChild(acts);
     side.appendChild(out);
-    body.appendChild(side);
-    countdown(body);
+    if (keep) {
+      const e = side.querySelector('[data-f="' + keep + '"]');
+      if (e) e.focus({ preventScroll: true });
+    }
   }
 
-  // keeps the "starts in" lines under root counting down
-  function countdown(root) {
-    const set = () => {
-      const all = root.querySelectorAll('[data-end]');
-      if (!all.length || !document.contains(root)) return clearInterval(root.tick);
-      for (const e of all) e.textContent = t('hall.starts', { n: Math.max(0, Math.ceil((e.dataset.end - Date.now()) / 1000)) });
-    };
-    clearInterval(root.tick);
-    set();
-    root.tick = setInterval(set, 1000);
-  }
-
-  function enter(stake) {
-    at = { stake: stake, stakes: null, entry: 10, n: {}, tables: [], tab: 'rooms' };
-    draw();
-    Account.ensure().then(() => Account.refresh()).then(() => {
-      if (at) Net.hub();
-    }, e => {
-      if (!at) return;
-      exit();
-      notice(t(e.status === 401 ? 'net.err.auth' : 'net.err.lost'));
-    });
-  }
-
-  function exit() {
-    at = null;
-    Net.cancel();
-    start(true);
-  }
-
-  function resume() {
-    if (at) enter(at.stake);
-  }
-
-  // one step back: from a room to the list, from the list to the home screen
-  function up() {
-    if (!at) return false;
-    if (at.stake) {
-      at.stake = 0;
-      at.tables = [];
-      Net.watch(0);
+  // sets the lobby up on first sight and whenever the account has to be made again
+  function boot(quiet) {
+    clearTimeout(again);
+    if (!quiet) {
+      at.net = 'wait';
       draw();
-    } else exit();
-    return true;
+    }
+    Account.ensure().then(() => Account.refresh()).then(() => {
+      Net.up();
+      redraw();
+    }, down);
+  }
+
+  function down() {
+    at.net = 'down';
+    at.stakes = null;
+    redraw();
+    clearTimeout(again);
+    again = setTimeout(() => { if (at.net === 'down') boot(true); }, 12000);
+  }
+
+  function retry() {
+    booted = true;
+    boot();
+  }
+
+  // the lobby is the home screen; coming back from a match or from Training lands here
+  function show() {
+    $('home').hidden = false;
+    if (!booted) {
+      booted = true;
+      return boot();
+    }
+    draw();
+    if (at.net === 'up') Account.refresh().then(redraw, () => {});
+  }
+
+  function conn(k) {
+    if (at.net === k) return;
+    at.net = k;
+    if (k !== 'up') at.stakes = null;
+    redraw();
   }
 
   function hub(m) {
-    if (!at) return;
+    at.net = 'up';
     at.stakes = m.stakes;
     at.entry = m.entry;
-    const me = Account.me();
-    if (at.stake && me && me.chips < at.entry * at.stake) at.stake = 0;
-    if (at.stake) Net.watch(at.stake);
-    if (me) Social.refresh().then(redraw, () => {});
-    draw();
+    if (Account.me()) Social.refresh().then(redraw, () => {});
+    redraw();
   }
 
   function rooms(n) {
-    if (!at) return;
     at.n = n;
-    draw();
+    redraw();
   }
 
-  function tables(stake, list) {
-    if (!at || at.stake !== stake) return;
-    at.tables = list.map(x => Object.assign(x, { end: x.left === null ? 0 : Date.now() + x.left }));
+  // one step back: from another tab to the rooms; the lobby itself has nothing behind it
+  function up() {
+    if ($('home').hidden || at.tab === 'rooms') return false;
+    at.tab = 'rooms';
     draw();
+    return true;
   }
 
   const short = n => n >= 1e4 ? new Intl.NumberFormat(I18n.lang(), { notation: 'compact' }).format(n) : fmt(n);
-  const redraw = () => { if (at && !$('home').hidden) draw(); };
+  const redraw = () => { if (!$('home').hidden) draw(); };
   const afford = (me, s) => !!me && me.chips >= at.entry * s;
 
   // a small green oval with a seat per player that is in
@@ -749,10 +699,8 @@ var UI = (function () {
     for (const s of at.stakes) {
       const ok = afford(me, s);
       const b = raw('room', () => {
-        at.stake = s;
-        at.tables = [];
-        Net.watch(s);
-        draw();
+        connecting(false, t('hall.finding'));
+        Net.play(s);
       });
       b.disabled = !ok;
       b.dataset.k = 'room' + s;
@@ -788,16 +736,19 @@ var UI = (function () {
     all.dataset.k = 'more';
     head.appendChild(all);
     card.appendChild(head);
-    const list = Social.list().slice().sort((x, y) => y.online - x.online).slice(0, 7);
+    const list = Social.list().slice().sort((x, y) => !!y.at - !!x.at).slice(0, 7);
     if (!list.length) card.appendChild(node('p', 'note', t('fr.none')));
     const ul = node('ul', 'fl');
     for (const p of list) {
       const li = node('li', 'frw');
       li.appendChild(face(p.avatar, 28));
-      li.appendChild(node('b', '', who(p.seed)));
-      const d = node('i', 'dot' + (p.online ? ' on' : ''));
+      const tx = node('span', 'tx');
+      tx.appendChild(node('b', '', who(p.seed)));
+      if (p.at) tx.appendChild(node('small', '', t('fr.at.' + p.at.w)));
+      li.appendChild(tx);
+      const d = node('i', 'dot' + (p.at ? ' on' : ''));
       d.setAttribute('role', 'img');
-      d.setAttribute('aria-label', t(p.online ? 'fr.online' : 'fr.offline'));
+      d.setAttribute('aria-label', t(p.at ? 'fr.online' : 'fr.offline'));
       li.appendChild(d);
       ul.appendChild(li);
     }
@@ -812,16 +763,29 @@ var UI = (function () {
     return b;
   }
 
-  function friendRoom() {
+  // Create table, Join with code and the friends list in one sheet
+  function friendsSheet() {
     const body = node('div', 'fgrid');
-    const h = Sheet.open({ kind: 'bottom', title: t('hall.friends'), body: body, actions: [{ label: t('cancel'), kind: 'quiet' }] });
-    const mk = node('section', 'fbox');
-    mk.appendChild(node('p', 'note', t('hall.friendsNote')));
-    const go = button(t('net.create'), 'primary', () => { h.close(); setup(true); });
-    go.disabled = !afford(Account.me(), at.stakes[0]);
-    go.dataset.k = 'create';
-    mk.appendChild(go);
+    const f = matchForm(true);
+    let tick = 0;
+    const h = Sheet.open({
+      kind: 'bottom', tall: true, title: t('hall.friends'), body: body, onClose: () => clearInterval(tick),
+      actions: [
+        {
+          label: t('net.createGo'), kind: 'primary', fn: () => {
+            if (!f.ok()) return notice(t('net.err.poor'));
+            connecting(true, t('net.title'));
+            Net.create(f.get());
+          }
+        },
+        { label: t('cancel'), kind: 'quiet' }
+      ]
+    });
+    const mk = node('section', 'fbox mk');
+    mk.appendChild(f.form);
     body.appendChild(mk);
+
+    const right = node('div', 'fcol');
     const jn = node('section', 'fbox');
     const c = node('input', 'txt code');
     c.type = 'text';
@@ -834,8 +798,8 @@ var UI = (function () {
     c.setAttribute('aria-label', t('net.code'));
     const j = button(t('net.joinGo'), 'primary', () => {
       h.close();
-      connecting();
-      Net.join(c.value);
+      connecting(true, t('net.title'));
+      Account.ensure().then(() => Net.join(c.value), () => { close(); notice(t('net.err.lost')); });
     });
     j.disabled = true;
     c.addEventListener('input', () => {
@@ -843,85 +807,101 @@ var UI = (function () {
       j.disabled = c.value.length !== 4;
     });
     c.addEventListener('keydown', e => { if (e.key === 'Enter' && !j.disabled) j.click(); });
-    jn.appendChild(c);
-    jn.appendChild(j);
-    body.appendChild(jn);
+    jn.appendChild(node('p', 'note', t('net.join')));
+    const row = node('div', 'jrow');
+    row.appendChild(c);
+    row.appendChild(j);
+    jn.appendChild(row);
+    right.appendChild(jn);
+
+    const fr = node('section', 'fbox frs fl2');
+    right.appendChild(fr);
+    body.appendChild(right);
+    const draw = () => {
+      fr.textContent = '';
+      fr.appendChild(node('p', 'note', t('fr.createFirst')));
+      Social.friends(fr, { invite: false, join: a => { h.close(); accept(a); }, again: draw });
+    };
+    draw();
+    Social.refresh().then(draw, () => {});
+    tick = setInterval(() => { if (!pressed && !document.hidden) Social.refresh().then(draw, () => {}); }, 8000);
+  }
+
+  // Rejoin, Continue and an invitation put off during a match, kept to one strip
+  function banner() {
+    const bar = node('div', 'hl-bn');
+    const pill = (k, head, sub, fn) => {
+      const b = raw('pill', fn);
+      b.dataset.k = k;
+      b.appendChild(node('b', '', head));
+      b.appendChild(node('span', '', sub));
+      bar.appendChild(b);
+    };
+    const back = Net.recent();
+    if (back && !Net.busy()) pill('back', t('start.rejoin'), t('start.rejoinNote', back), () => { connecting(true); Net.resume(); });
+    const saved = App.saved();
+    if (saved) pill('cont', t('start.cont'), t('start.saved', saved), () => App.resume());
+    const inv = Social.late();
+    if (inv) pill('late', t('fr.join'), t('fr.lateNote', { name: who(inv.from.seed) }), () => { Social.used(); accept(inv); });
+    return bar.children.length ? bar : null;
+  }
+
+  function offline() {
+    const w = node('div', 'conn off');
+    const k = at.net === 'replaced' ? 'replaced' : 'down';
+    w.appendChild(node('p', 'lead', t('nonet.' + k)));
+    w.appendChild(node('p', 'note', t('nonet.' + k + 'Note')));
+    const b = button(t(k === 'replaced' ? 'nonet.here' : 'nonet.retry'), 'primary', () => { booted = true; if (k === 'replaced') Net.up(); boot(); });
+    b.dataset.k = 'retry';
+    w.appendChild(b);
+    return w;
   }
 
   function tablesTab(body, me) {
+    const on = at.net === 'up' && at.stakes;
     const side = node('div', 'hl-side');
-    if (me) side.appendChild(daily(me));
-    side.appendChild(friendCard());
-    body.appendChild(side);
+    if (on && me) side.appendChild(daily(me));
+    if (on) side.appendChild(friendCard());
+    if (side.children.length) body.appendChild(side);
     const main = node('div', 'hl-main');
-    main.appendChild(node('h2', 'hl-h', t('hall.pick')));
-    main.appendChild(roomCards(me));
+    const head = node('div', 'hl-hd');
+    head.appendChild(node('h2', 'hl-h', t(on ? 'hall.pick' : 'start.title')));
+    const bn = banner();
+    if (bn) head.appendChild(bn);
+    main.appendChild(head);
+    if (on) main.appendChild(roomCards(me));
+    else if (at.net === 'wait') main.appendChild(waiting());
+    else main.appendChild(offline());
     const play = node('div', 'hl-play');
-    // the second room, or the best one the player can pay for
-    const ok = at.stakes.filter(s => afford(me, s));
-    const q = ok[Math.min(1, ok.length - 1)];
-    const quick = twoLines('primary', t('hall.quick'), q ? t('hall.quickAt', { n: fmt(q) }) : t('hall.locked'), () => {
-      connecting();
-      Net.play(q);
-    });
-    quick.disabled = !q;
-    quick.dataset.k = 'quick';
-    play.appendChild(quick);
-    const prac = twoLines('plain', t('start.go'), t('start.goNote'), () => { exit(); setup(); });
+    if (on) {
+      // the second room, or the best one the player can pay for
+      const ok = at.stakes.filter(s => afford(me, s));
+      const q = ok[Math.min(1, ok.length - 1)];
+      const quick = twoLines('primary', t('hall.quick'), q ? t('hall.quickAt', { n: fmt(q) }) : t('hall.locked'), () => {
+        connecting(false, t('hall.finding'));
+        Net.play(q);
+      });
+      quick.disabled = !q;
+      quick.dataset.k = 'quick';
+      play.appendChild(quick);
+      const fr = twoLines('plain', t('hall.friends'), t('hall.friendsNote'), friendsSheet);
+      fr.dataset.k = 'friends';
+      play.appendChild(fr);
+    }
+    const prac = twoLines(on ? 'quiet small' : 'primary', t('start.go'), t('start.goNote'), setup);
     prac.dataset.k = 'go';
     play.appendChild(prac);
-    const fr = twoLines('plain', t('hall.friends'), t('hall.friendsNote'), friendRoom);
-    fr.dataset.k = 'friends';
-    play.appendChild(fr);
     main.appendChild(play);
     body.appendChild(main);
   }
 
-  function inRoom(body) {
-    const side = node('div', 'hl-side');
-    const card = node('section', 'paper rcard');
-    card.appendChild(node('b', 'plaque', short(at.stake)));
-    card.appendChild(node('p', 'rmeta', t('hall.min', { n: fmt(at.entry * at.stake) })));
-    card.appendChild(node('p', 'note', t('hall.fill')));
-    side.appendChild(card);
-    const quick = twoLines('primary', t('hall.quick'), t('hall.quickNote'), () => {
-      connecting();
-      Net.play(at.stake);
-    });
-    quick.dataset.k = 'quick';
-    side.appendChild(quick);
-    body.appendChild(side);
-
-    const pn = node('section', 'paper pnl');
-    pn.appendChild(node('h3', '', t('hall.tables')));
-    const sb = node('div', 'sbody');
-    pn.appendChild(sb);
-    body.appendChild(pn);
-    if (!at.tables.length) return sb.appendChild(node('p', 'note', t('hall.none')));
-    const ul = node('ul', 'tbls');
-    for (const x of at.tables) {
-      const li = node('li');
-      const b = raw('tbl', () => {
-        connecting();
-        Net.sit(x.code);
-      });
-      b.dataset.k = 'sit' + x.code;
-      const faces = node('span', 'faces');
-      for (const s of x.seats) faces.appendChild(s ? face(s.av, 30) : node('span', 'none'));
-      b.appendChild(faces);
-      const tx = node('span', 'tx');
-      tx.appendChild(node('b', '', t('hall.seated', { n: x.seats.filter(Boolean).length })));
-      tx.appendChild(node('small', '', x.seats.filter(Boolean).map(s => who(s.seed) + ' ' + t('hall.level', { n: s.level })).join(', ')));
-      b.appendChild(tx);
-      if (x.left !== null) {
-        const cd = node('small', 'cd');
-        cd.dataset.end = x.end;
-        b.appendChild(cd);
-      }
-      li.appendChild(b);
-      ul.appendChild(li);
-    }
-    sb.appendChild(ul);
+  function waiting() {
+    const w = node('div', 'conn');
+    w.appendChild(Cards.icon('i-chip', 'chip spin'));
+    const p = node('p', 'lead', t('net.connecting'));
+    p.setAttribute('role', 'status');
+    w.appendChild(p);
+    return w;
   }
 
   function tabs(bar) {
@@ -945,14 +925,8 @@ var UI = (function () {
 
   function hallBar(me) {
     const bar = node('div', 'hl-top');
-    const back = raw('ib', up);
-    back.dataset.k = 'back';
-    back.setAttribute('aria-label', t('hall.back'));
-    back.appendChild(Cards.icon('i-left', 'ic'));
-    bar.appendChild(back);
     if (me) bar.appendChild(capsule(me));
-    if (at.stake) bar.appendChild(node('h2', 'hl-room', t('hall.room', { n: fmt(at.stake) })));
-    else tabs(bar);
+    if (at.net === 'up') tabs(bar);
     const end = node('div', 'hl-end');
     if (me) end.appendChild(purse(me));
     const gear = raw('ib', settings);
@@ -964,14 +938,17 @@ var UI = (function () {
     return bar;
   }
 
-  // an invitation from a friend, taken up from the lobby
+  // an invitation or a friend's table, taken up from anywhere
   function accept(m) {
-    connecting();
+    Social.clear();
+    Sheet.closeAll();
+    if (Net.busy()) Net.leave(false);
+    connecting(true, t('net.title'));
     if (m.pub) Net.sit(m.code);
-    else Net.join(m.code);
+    else Account.ensure().then(() => Net.join(m.code), () => { close(); notice(t('net.err.lost')); });
   }
 
-  // The lobby is a screen of its own in the home container: the stake rooms, and inside one its open tables.
+  // The lobby is the home screen: the stake rooms, the friends and the leaderboard.
   function draw() {
     const home = $('home');
     const keep = home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
@@ -982,24 +959,15 @@ var UI = (function () {
     const me = Account.me();
     home.appendChild(hallBar(me));
     const body = node('main', 'hl-body');
-    if (!at.stakes) {
-      const w = node('div', 'conn');
-      w.appendChild(Cards.icon('i-chip', 'chip spin'));
-      const p = node('p', 'lead', t('net.connecting'));
-      p.setAttribute('role', 'status');
-      w.appendChild(p);
-      body.appendChild(w);
-    } else if (at.stake) inRoom(body);
-    else if (at.tab === 'rooms') tablesTab(body, me);
+    if (at.net !== 'up' || at.tab === 'rooms') tablesTab(body, me);
     else {
       const pn = node('section', 'paper pnl');
       const box = pn.appendChild(node('div', 'sbody frs'));
-      if (at.tab === 'friends') Social.friends(box, { again: redraw });
+      if (at.tab === 'friends') Social.friends(box, { join: accept, again: redraw });
       else Social.leaders(box, redraw);
       body.appendChild(pn);
     }
     home.appendChild(body);
-    countdown(home);
     const now = home.querySelector('.sbody');
     if (now) now.scrollTop = top;
     if (keep) {
@@ -1008,7 +976,7 @@ var UI = (function () {
     }
   }
 
-  // the lobby or the connecting sheet, whichever is up
+  // the connecting sheet or the table's, whichever is up
   function close() {
     if (wait) wait.h.close();
     wait = null;
@@ -1018,21 +986,43 @@ var UI = (function () {
     Sheet.open({ kind: 'center', title: t('net.title'), body: node('p', '', text), actions: [{ label: t('close'), kind: 'primary' }] });
   }
 
-  function link() {
-    const m = /^#([A-Za-z]{4})$/.exec(location.hash);
-    if (!m || Net.busy() || App.active()) return;
-    history.replaceState(history.state, '', location.pathname + location.search);
-    Sheet.closeAll();
-    online(m[1].toUpperCase());
+  // the server will not start the room while this seat's account sits at another table
+  function held(seat) {
+    const s = wait && wait.m && wait.m.seats[seat];
+    if (wait && wait.go) wait.go.disabled = false;
+    notice(t('net.err.held', { name: s ? s.name : '' }));
   }
 
-  window.addEventListener('hashchange', link);
+  // a link to a table: /t/CODE, or the older #CODE
+  function link(url) {
+    const u = url ? new URL(url, location.href) : location;
+    const m = /^\/t\/([A-Za-z]{4})\/?$/.exec(u.pathname) || /^#([A-Za-z]{4})$/.exec(u.hash);
+    if (!url && m) history.replaceState(history.state, '', '/');
+    if (!m || App.online() || Net.busy()) return;
+    const code = m[1].toUpperCase();
+    // the cold start can report the same link twice
+    if (linked === code + Math.floor(Date.now() / 3000)) return;
+    linked = code + Math.floor(Date.now() / 3000);
+    Sheet.closeAll();
+    online(code);
+  }
+
+  window.addEventListener('hashchange', () => link());
 
   // pictures are drawn at a pixel size, so a resized stage needs them again
-  window.addEventListener('resize', () => { if (!$('home').hidden) start(true); });
+  window.addEventListener('resize', () => redraw());
+
+  // friends move around without telling the lobby, so it asks now and then; never under a finger
+  document.addEventListener('pointerdown', () => { pressed = true; }, true);
+  document.addEventListener('pointerup', () => { pressed = false; }, true);
+  document.addEventListener('pointercancel', () => { pressed = false; }, true);
+  setInterval(() => {
+    if (pressed || document.hidden || $('home').hidden || at.net !== 'up' || Sheet.count() || at.tab === 'top') return;
+    Social.refresh().then(redraw, () => {});
+  }, 8000);
 
   return {
-    start: start, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, link: link,
-    hall: enter, exit: exit, accept: accept, resume: resume, up: up, inHall: () => !!at, hub: hub, rooms: rooms, tables: tables
+    show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link,
+    accept: accept, up: up, hub: hub, rooms: rooms, conn: conn, retry: retry, redraw: redraw
   };
 })();

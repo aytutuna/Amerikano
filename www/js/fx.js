@@ -43,10 +43,29 @@ var Sfx = (function () {
     o.stop(t + 0.09);
   }
 
+  // two soft notes for someone sitting down
+  function join() {
+    if (!on || !ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    [523, 659].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.05, t + i * 0.09 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.22);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t + i * 0.09);
+      o.stop(t + i * 0.09 + 0.24);
+    });
+  }
+
   document.addEventListener('pointerdown', init, { once: true });
   document.addEventListener('keydown', init, { once: true });
 
-  return { play: play, tick: tick, set: v => { on = v; } };
+  return { play: play, tick: tick, join: join, set: v => { on = v; } };
 })();
 
 var Haptic = (function () {

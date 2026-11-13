@@ -177,7 +177,7 @@ var Table = (function () {
       tap.hidden = !App.online();
       tap.setAttribute('aria-label', t('pc.title') + ': ' + p.name);
       e.classList.toggle('away', !!p.away);
-      e.querySelector('.tw').textContent = p.away ? t('away') : '';
+      e.querySelector('.tw').textContent = p.away ? t('away') : i && !App.online() ? t('start.botTag') : '';
       e.setAttribute('aria-label', t('seat', { name: p.name, n: p.hand.length, turn: turn, opened: p.opened, score: p.score, away: p.away }));
     }
     for (const [i, e] of seatEls) {

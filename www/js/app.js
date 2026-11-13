@@ -588,6 +588,7 @@ var App = (function () {
     syncOrder();
     A.order.sort((a, b) => sortKey('suit')(a) - sortKey('suit')(b));
     show();
+    Net.at('training');
     Table.reset();
     render({ deal: true });
     if (!$('game').contains(document.activeElement)) land();
@@ -620,6 +621,7 @@ var App = (function () {
     seen = st.log.length;
     askKey = endKey = claimKey = alertKey = '';
     show();
+    Net.at('training');
     Table.reset();
     try {
       render({ instant: true });
@@ -732,7 +734,8 @@ var App = (function () {
     }
     st = null;
     $('game').hidden = true;
-    UI.start();
+    Net.at('lobby');
+    UI.show();
     const b = document.querySelector('#home [data-k=cont], #home [data-k=go]');
     if (b) b.focus({ preventScroll: true });
   };
@@ -747,7 +750,7 @@ var App = (function () {
       rename();
       render({ instant: true });
     }
-    else if (!$('home').hidden) UI.start(true);
+    else UI.redraw();
   };
 
   A.state = () => st;
@@ -808,10 +811,12 @@ var App = (function () {
     Settings.apply();
     Cards.preload();
     if (native()) {
-      window.Capacitor.Plugins.App.addListener('backButton', A.back);
+      const app = window.Capacitor.Plugins.App;
+      app.addListener('backButton', A.back);
+      app.addListener('appUrlOpen', e => UI.link(e.url));
       launch();
     } else {
-      UI.start();
+      UI.show();
       UI.link();
     }
   });
@@ -837,8 +842,18 @@ var App = (function () {
       if (shown) return;
       shown = true;
       probe.remove();
-      UI.start();
+      UI.show();
       UI.link();
+      const app = window.Capacitor.Plugins.App;
+      // the native side keeps the launch link, so a later restart returns it again
+      if (app.getLaunchUrl) app.getLaunchUrl().then(l => {
+        if (!l || !l.url) return;
+        let seen = {};
+        try { seen = JSON.parse(localStorage.getItem('amerikano.launch')) || {}; } catch (e) { /* none */ }
+        if (seen.url === l.url) return;
+        try { localStorage.setItem('amerikano.launch', JSON.stringify({ url: l.url })); } catch (e) { /* ignore */ }
+        UI.link(l.url);
+      }, () => {});
       // the timer covers a view that is not drawing yet, where rAF would never run
       requestAnimationFrame(free);
       setTimeout(free, 100);

@@ -159,14 +159,14 @@ var I18n = (function () {
 
     start: {
       title: 'Amerikano',
-      go: 'Practice',
+      go: 'Training',
       goNote: 'Against bots, no chips',
+      botTag: 'Bot',
       cont: 'Continue',
       saved: v => 'Game ' + v.n + ' of ' + v.of + ', ' + v.players + ' players',
       how: 'How to play',
       settings: 'Settings',
       fan: 'Playing cards',
-      online: 'Play online',
       rejoin: 'Rejoin',
       rejoinNote: v => 'Room ' + v.code
     },
@@ -216,8 +216,8 @@ var I18n = (function () {
       how: 'How to play',
       settings: 'Settings',
       leave: 'Leave match',
-      note: 'Your match is saved. Continue it from the home screen.',
-      onlineNote: 'The match goes on without you. If you leave, a bot takes your seat.'
+      note: 'Your match is saved. Continue it from the lobby.',
+      onlineNote: 'The match goes on without you. If you leave, your seat is played for you.'
     },
 
     choice: {
@@ -271,7 +271,6 @@ var I18n = (function () {
       split: v => (v.you ? 'You had the lowest score and take ' : v.name + ' had the lowest score and takes ') + chips(v.lowPay) + '. ' + (v.finYou ? 'You' : v.fin) + ' went out in the last game and ' + (v.finYou ? 'take ' : 'takes ') + chips(v.finPay) + '.',
       empty: v => (v.you ? 'You had' : v.name + ' had') + ' the lowest score. The pot was used up during the match, so there are no chips to share.',
       again: 'Play again',
-      home: 'Home',
       lobby: 'Back to the lobby',
       change: v => v.n > 0 ? 'You won ' + v.abs + ' chips.' : v.n < 0 ? 'You lost ' + v.abs + ' chips.' : 'You got your stake back.',
       xp: v => '+' + v.n + ' XP',
@@ -284,18 +283,20 @@ var I18n = (function () {
 
     net: {
       title: 'Play online',
-      create: 'Create a room',
-      createGo: 'Create room',
+      create: 'Create a table',
+      createGo: 'Create table',
       join: 'Join with a code',
       code: 'Room code',
       joinGo: 'Join',
       joinTitle: v => 'Join room ' + v.code,
       connecting: 'Connecting.',
       room: 'Room',
-      hintHost: 'Share the code with your friends. Start when everyone is in; empty seats are played by bots.',
+      hintHost: 'Share the code with your friends. Press Start when they are in; empty seats are filled for you.',
       hintGuest: 'Waiting for the host to start.',
-      bot: 'A bot will play',
-      botTag: 'Bot',
+      finding: v => v.n === 1 ? 'Finding a player for the last seat.' : 'Finding players for ' + v.n + ' seats.',
+      looking: 'Looking',
+      free: 'Free seat',
+      arrived: v => v.name + ' sat down, level ' + v.n + '.',
       you: '(you)',
       hostTag: 'Host',
       start: 'Start',
@@ -313,6 +314,8 @@ var I18n = (function () {
         auth: 'Your account could not be checked. Try again.',
         poor: 'You do not have enough chips for that.',
         busy: 'You already have a seat at another table.',
+        held: v => v.name + ' has a seat at another table, so the match cannot start yet.',
+        elsewhere: 'You have a seat at another table, so this match cannot start. Leave that table first.',
         host: 'Only the host can start the match.',
         opts: 'Those match settings are not allowed.',
         join: 'Join a room first.',
@@ -324,29 +327,32 @@ var I18n = (function () {
     },
 
     hall: {
-      back: 'Back',
       rooms: 'Rooms',
-      room: v => v.n + ' chip room',
       need: v => 'Needs ' + v.n + ' chips',
       playing: v => v.n + ' playing',
-      pick: 'Pick a table',
+      pick: 'Pick a room',
+      finding: 'Finding players',
       all: 'See all',
       quickAt: v => 'Sits you at a ' + v.n + ' table',
       friendsNote: 'Create a table or enter a code',
       quick: 'Quick play',
-      quickNote: 'Take a seat at the fullest open table, or open a new one.',
-      tables: 'Open tables',
-      none: 'No open tables yet.',
-      seated: v => v.n + ' of 4 seated',
-      starts: v => 'Starts in ' + v.n + ' s',
-      fill: 'A table starts when 4 players have sat down, or 20 seconds after the second one. If nobody else comes, bots take the empty seats.',
+      fill: 'The match starts as soon as every seat is taken.',
       stake: 'Stake',
       stakeAt: v => 'Stake ' + v.n + ' chips',
       stakeNote: v => 'Your stake of ' + v.n + ' chips is set aside when the match starts and paid back with what you win.',
-      friends: 'With friends',
+      friends: 'Play with friends',
       min: v => 'Min ' + v.n,
       locked: 'Locked',
       level: v => 'Lv ' + v.n
+    },
+
+    nonet: {
+      down: 'You are offline',
+      downNote: 'Online tables need a connection. Training works without one.',
+      retry: 'Try again',
+      replaced: 'Open somewhere else',
+      replacedNote: 'Amerikano is open on another device or window.',
+      here: 'Play here'
     },
 
     pf: {
@@ -413,8 +419,7 @@ var I18n = (function () {
       block: 'Block',
       unblock: 'Unblock',
       cap: 'The friends list is full.',
-      barred: 'You cannot add this player.',
-      bot: 'A bot plays this seat.'
+      barred: 'You cannot add this player.'
     },
 
     fr: {
@@ -429,7 +434,11 @@ var I18n = (function () {
       invited: 'Invited',
       away: 'Not available',
       inviteFriends: 'Invite friends',
-      inviteNote: 'Only friends in the lobby can be invited.',
+      inviteNote: 'Friends who are online can be invited to your table.',
+      createFirst: 'Create a table to invite friends. Join a friend whose table has room.',
+      playing: 'Playing',
+      at: { lobby: 'In the lobby', training: 'In training', table: 'At a table' },
+      lateNote: v => v.name + ' invited you',
       invTitle: 'Invitation',
       invText: v => v.name + ' invites you to a table. Stake ' + v.n + ' chips.',
       join: 'Join',
@@ -440,7 +449,7 @@ var I18n = (function () {
       tab: 'Leaderboard',
       week: 'This week',
       all: 'All time',
-      note: 'Chips won in matches with at least two people (bots don’t count). Resets every Monday.',
+      note: 'Chips won this week. Resets every Monday.',
       none: 'Nobody has won chips this week yet.',
       you: 'You',
       level: v => 'Level ' + v.n
@@ -643,13 +652,13 @@ var I18n = (function () {
     start: {
       title: 'Amerikano',
       cont: 'Devam et',
-      go: 'Alıştırma',
+      go: 'Antrenman',
       goNote: 'Botlara karşı, çipsiz',
+      botTag: 'Bot',
       saved: v => 'Oyun ' + v.n + ' / ' + v.of + ', ' + v.players + ' oyuncu',
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
       fan: 'İskambil kağıtları',
-      online: 'Çevrimiçi oyna',
       rejoin: 'Maça dön',
       rejoinNote: v => 'Oda ' + v.code
     },
@@ -699,8 +708,8 @@ var I18n = (function () {
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
       leave: 'Maçtan çık',
-      note: 'Maçın kaydedildi. Ana ekrandan devam edebilirsin.',
-      onlineNote: 'Maç sensiz devam eder. Ayrılırsan yerine bir bot oynar.'
+      note: 'Maçın kaydedildi. Lobiden devam edebilirsin.',
+      onlineNote: 'Maç sensiz devam eder. Ayrılırsan senin yerine oynanır.'
     },
 
     choice: {
@@ -755,7 +764,6 @@ var I18n = (function () {
         (v.finYou ? 'Son oyunu sen bitirdin, ' + v.finPay + ' çip aldın.' : 'Son oyunu bitiren ' + v.fin + ' ' + v.finPay + ' çip aldı.'),
       empty: v => (v.you ? 'En düşük puanı sen yaptın' : v.name + ' en düşük puanı yaptı') + ', ama kasa maç sırasında boşaldı; paylaşılacak çip kalmadı.',
       again: 'Tekrar oyna',
-      home: 'Ana ekran',
       lobby: 'Lobiye dön',
       change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Bahsin geri döndü.',
       xp: v => '+' + v.n + ' XP',
@@ -768,18 +776,20 @@ var I18n = (function () {
 
     net: {
       title: 'Çevrimiçi oyna',
-      create: 'Oda kur',
-      createGo: 'Odayı kur',
+      create: 'Masa kur',
+      createGo: 'Masayı kur',
       join: 'Kodla katıl',
       code: 'Oda kodu',
       joinGo: 'Katıl',
       joinTitle: v => v.code + ' odasına katıl',
       connecting: 'Bağlanılıyor.',
       room: 'Oda',
-      hintHost: 'Kodu arkadaşlarınla paylaş. Herkes gelince başlat; boş yerlerde botlar oynar.',
+      hintHost: 'Kodu arkadaşlarınla paylaş. Onlar gelince başlat; boş yerler senin için doldurulur.',
       hintGuest: 'Odayı kuranın başlatması bekleniyor.',
-      bot: 'Bot oynayacak',
-      botTag: 'Bot',
+      finding: v => v.n === 1 ? 'Son yer için oyuncu aranıyor.' : v.n + ' yer için oyuncu aranıyor.',
+      looking: 'Aranıyor',
+      free: 'Boş yer',
+      arrived: v => v.name + ' oturdu, ' + v.n + '. seviye.',
       you: '(sen)',
       hostTag: 'Kurucu',
       start: 'Başlat',
@@ -797,6 +807,8 @@ var I18n = (function () {
         auth: 'Hesabın doğrulanamadı. Tekrar dene.',
         poor: 'Bunun için yeterli çipin yok.',
         busy: 'Başka bir masada zaten yerin var.',
+        held: v => v.name + ' başka bir masada oturuyor, bu yüzden maç henüz başlayamaz.',
+        elsewhere: 'Başka bir masada yerin var, bu yüzden bu maç başlayamıyor. Önce o masadan ayrıl.',
         host: 'Maçı yalnızca odayı kuran başlatabilir.',
         opts: 'Bu maç ayarları olmaz.',
         join: 'Önce bir odaya katıl.',
@@ -808,29 +820,32 @@ var I18n = (function () {
     },
 
     hall: {
-      back: 'Geri',
       rooms: 'Odalar',
-      room: v => v.n + ' çiplik oda',
       need: v => v.n + ' çip gerekir',
       playing: v => v.n + ' kişi oynuyor',
-      pick: 'Bir masa seç',
+      pick: 'Bir oda seç',
+      finding: 'Oyuncular aranıyor',
       all: 'Tümü',
       quickAt: v => v.n + ' masasına oturur',
       friendsNote: 'Masa kur ya da kod gir',
       quick: 'Hızlı oyna',
-      quickNote: 'En dolu açık masaya otur ya da yeni bir masa aç.',
-      tables: 'Açık masalar',
-      none: 'Henüz açık masa yok.',
-      seated: v => '4 yerden ' + v.n + ' dolu',
-      starts: v => v.n + ' sn sonra başlar',
-      fill: 'Masa 4 kişi oturunca ya da ikinci kişiden 20 saniye sonra başlar. Kimse gelmezse boş yerleri botlar doldurur.',
+      fill: 'Her yer dolunca maç başlar.',
       stake: 'Bahis',
       stakeAt: v => v.n + ' çip bahis',
       stakeNote: v => v.n + ' çiplik bahsin maç başlarken ayrılır, kazandıklarınla birlikte geri ödenir.',
-      friends: 'Arkadaşlarla',
+      friends: 'Arkadaşlarla oyna',
       min: v => 'En az ' + v.n,
       locked: 'Kilitli',
       level: v => v.n + '. sv'
+    },
+
+    nonet: {
+      down: 'Çevrimdışısın',
+      downNote: 'Çevrimiçi masalar için bağlantı gerekir. Antrenman bağlantısız da çalışır.',
+      retry: 'Tekrar dene',
+      replaced: 'Başka yerde açık',
+      replacedNote: 'Amerikano başka bir cihazda ya da pencerede açık.',
+      here: 'Burada oyna'
     },
 
     pf: {
@@ -897,8 +912,7 @@ var I18n = (function () {
       block: 'Engelle',
       unblock: 'Engeli kaldır',
       cap: 'Arkadaş listen dolu.',
-      barred: 'Bu oyuncuyu ekleyemezsin.',
-      bot: 'Bu yeri bir bot oynuyor.'
+      barred: 'Bu oyuncuyu ekleyemezsin.'
     },
 
     fr: {
@@ -913,7 +927,11 @@ var I18n = (function () {
       invited: 'Davet edildi',
       away: 'Ulaşılamıyor',
       inviteFriends: 'Arkadaşlarını çağır',
-      inviteNote: 'Yalnızca lobideki arkadaşlar davet edilebilir.',
+      inviteNote: 'Çevrimiçi arkadaşlar masana davet edilebilir.',
+      createFirst: 'Arkadaş davet etmek için bir masa kur. Masasında yer olan bir arkadaşına katıl.',
+      playing: 'Oynuyor',
+      at: { lobby: 'Lobide', training: 'Antrenmanda', table: 'Bir masada' },
+      lateNote: v => v.name + ' seni çağırdı',
       invTitle: 'Davet',
       invText: v => v.name + ' seni bir masaya çağırıyor. Bahis ' + v.n + ' çip.',
       join: 'Katıl',
@@ -924,7 +942,7 @@ var I18n = (function () {
       tab: 'Sıralama',
       week: 'Bu hafta',
       all: 'Tüm zamanlar',
-      note: 'En az iki kişinin oynadığı maçlarda kazanılan çip, botlar sayılmaz. Her pazartesi sıfırlanır.',
+      note: 'Bu hafta kazanılan çip. Her pazartesi sıfırlanır.',
       none: 'Bu hafta henüz kimse çip kazanmadı.',
       you: 'Sen',
       level: v => v.n + '. seviye'

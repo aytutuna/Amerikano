@@ -315,7 +315,7 @@
       box.appendChild(res);
     }
     box.appendChild(kilim());
-    box.lastChild.classList.add('bot');
+    box.lastChild.classList.add('low');
     return box;
   }
 
@@ -367,9 +367,7 @@
     body.appendChild(sheet);
 
     const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
-    const home = App.online()
-      ? { label: t('end.lobby'), kind: 'primary', fn: () => { App.leave(true); UI.hall(st.stake); } }
-      : { label: t('end.home'), kind: 'plain', fn: () => App.leave(true) };
+    const home = { label: t('end.lobby'), kind: App.online() ? 'primary' : 'plain', fn: () => App.leave(true) };
     return Sheet.open({
       kind: 'paper', title: t('end.won', v), body: body, dismiss: false,
       actions: App.online() ? [home] : [again, home]

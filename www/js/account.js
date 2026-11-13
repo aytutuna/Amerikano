@@ -3,6 +3,7 @@ var Account = (function () {
   const ME = 'amerikano.me';
   let acc = load(KEY);
   let me = load(ME);
+  let making = null;
 
   function load(k) {
     try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; }
@@ -61,8 +62,12 @@ var Account = (function () {
   // the guest account is made on first use
   A.ensure = async () => {
     if (!acc) {
-      acc = await call('POST', '/api/guest');
-      keep(KEY, acc);
+      making = making || call('POST', '/api/guest').finally(() => { making = null; });
+      const g = await making;
+      if (!acc) {
+        acc = g;
+        keep(KEY, acc);
+      }
     }
     return me || A.refresh();
   };
