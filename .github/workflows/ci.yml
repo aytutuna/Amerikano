@@ -101,20 +101,22 @@ jobs:
           (async () => {
             const browser = await webkit.launch();
             const errors = [];
+            // there is no game server here, so the lobby comes up offline and its requests fail
+            const offline = /Failed to load resource|access control checks|8787/;
             async function run(name, opts, play) {
               const ctx = await browser.newContext(opts);
               const page = await ctx.newPage();
               page.on('pageerror', e => errors.push(name + ': ' + e.message));
-              page.on('console', m => { if (m.type() === 'error') errors.push(name + ': ' + m.text()); });
+              page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push(name + ': ' + m.text()); });
               await page.goto('http://localhost:8080/');
-              await page.waitForSelector('#home .btn.primary', { timeout: 15000 });
+              await page.waitForSelector('#home [data-k=go]', { timeout: 15000 });
               await page.waitForTimeout(1500);
-              await page.screenshot({ path: out + '/' + name + '-home.png' });
+              await page.screenshot({ path: out + '/' + name + '-lobby.png' });
               await play(page, name);
               await ctx.close();
             }
             async function turn(page, name) {
-              await page.getByRole('button', { name: 'Practice' }).click();
+              await page.getByRole('button', { name: 'Training' }).click();
               await page.waitForSelector('.sheet .btn.primary');
               await page.screenshot({ path: out + '/' + name + '-setup.png' });
               await page.click('.sheet .btn.primary');
@@ -141,10 +143,10 @@ jobs:
               const ctx = await browser.newContext(devices['iPhone 14']);
               const page = await ctx.newPage();
               page.on('pageerror', e => errors.push('portrait: ' + e.message));
-              page.on('console', m => { if (m.type() === 'error') errors.push('portrait: ' + m.text()); });
+              page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push('portrait: ' + m.text()); });
               await page.goto('http://localhost:8080/');
               await page.waitForSelector('#rot', { state: 'visible', timeout: 15000 });
-              await page.waitForSelector('#home .btn.primary', { state: 'attached', timeout: 15000 });
+              await page.waitForSelector('#home [data-k=go]', { state: 'attached', timeout: 15000 });
               await page.screenshot({ path: out + '/portrait-rot.png' });
               await ctx.close();
             } catch (e) {
