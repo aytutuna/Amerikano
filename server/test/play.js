@@ -2,6 +2,7 @@
 const assert = require('assert');
 const WebSocket = require('ws');
 const Game = require('../../www/js/game.js');
+const Chat = require('../../www/js/chat.js');
 
 const { execSync } = require('child_process');
 let payout;
@@ -10,7 +11,7 @@ const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
-const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'bot', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
+const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
 
 let ips = 0;
 
@@ -133,7 +134,7 @@ function play(c, o) {
       const from = c.log.length;
       setTimeout(() => {
         hold = false;
-        const gone = c.log.slice(from).filter(e => e.p === 0 && e.k === 'draw');
+        const gone = c.log.slice(from).filter(e => e.p === 0 && (e.k === 'draw' || e.k === 'take'));
         assert(gone.length, 'idle player was not covered');
         console.log('idle: bot drew for the stalled player while connected');
         react(c.st);
@@ -215,7 +216,7 @@ async function friends() {
       const first = await b2.next(m => m.t === 'state');
       assert.strictEqual(first.lb, 0);
       assert.strictEqual(b2.seat === undefined, false);
-      const covered = b2.log.slice(dropLen).filter(e => e.p === 0 && e.k === 'draw');
+      const covered = b2.log.slice(dropLen).filter(e => e.p === 0 && (e.k === 'draw' || e.k === 'take'));
       assert(covered.length, 'bot did not move for the dropped player');
       console.log('reconnect: same seat, own hand back (' + first.players[0].hand.length + ' cards), bot covered', covered.length, 'draw while away');
     }
@@ -329,12 +330,12 @@ async function tables() {
   const room = await ra.next(m => m.t === 'room');
   assert.strictEqual(room.pub, true);
   assert.strictEqual(room.stake, 100);
-  assert(room.left > 0 && room.left <= 400, 'countdown ' + room.left);
+  assert(!('left' in room), 'no countdown at a table that fills itself');
   play(ra, o);
   play(rb, o);
   await Promise.race([finished, new Promise((r, j) => setTimeout(() => j(new Error('timeout')), 120000))]);
   assert.strictEqual(ra.st.stake, 100);
-  assert.strictEqual(ra.st.players.filter(x => !x.bot).length, 2);
+  assert([accA.id, accB.id].every(id => ra.st.players.some(x => x.pid === id)));
   await new Promise(r => setTimeout(r, 600));
   for (const [acc, c, who] of [[accA, ra, 'A'], [accB, rb, 'B']]) {
     const back = payout(100, c.st.players[0].chips);
@@ -363,20 +364,27 @@ async function lone() {
   const h = await hub(acc);
   const s = h.next(m => m.t === 'seated');
   h.send({ t: 'quick', stake: 500 });
-  const r = seated(await s);
+  const sat = await s;
+  const r = seated(sat);
   const st = await r.next(m => m.t === 'state');
-  assert.strictEqual(st.players.filter(p => p.bot).length, 3);
+  leakCheck(st);
+  assert.strictEqual(st.players.filter(p => p.pid && personaIds([p.pid]) === 1).length, 3);
   assert.strictEqual(st.stake, 500);
   await new Promise(x => setTimeout(x, 300));
   assert.strictEqual((await call('GET', '/api/me', acc)).body.chips, 4500);
   console.log('lone player: bots fill the table after the wait, stake 500 taken');
   r.ws.close();
   h.ws.close();
-  // with nobody connected the bots still finish the match and the stake is settled
-  const rows = () => sql("SELECT reason FROM chip_log WHERE player = '" + acc.id + "' AND reason = 'match'");
-  for (let i = 0; i < 60 && !rows().length; i++) await new Promise(x => setTimeout(x, 500));
-  assert.strictEqual(rows().length, 1, 'an abandoned match settles');
-  console.log('abandoned match: the bots played it out and the stake was settled');
+  // With nobody connected the bots still finish the match and the stake is settled. A match that
+  // ends level pays nothing back and leaves no log row, so the personas being freed is the sign.
+  const held = () => sql("SELECT count(*) AS n FROM personas WHERE busy = '" + sat.code + "'")[0].n;
+  const t0 = Date.now();
+  for (let i = 0; i < 240 && held(); i++) await new Promise(x => setTimeout(x, 500));
+  assert.strictEqual(held(), 0, 'an abandoned match settles');
+  const me = (await call('GET', '/api/me', acc)).body;
+  assert.strictEqual(me.chips, sql("SELECT sum(delta) AS n FROM chip_log WHERE player = '" + acc.id + "'")[0].n, 'every chip change is logged');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player = '" + acc.id + "' AND reason = 'escrow'")[0].n, 1);
+  console.log('abandoned match: the bots played it out and the stake was settled in ' + Math.round((Date.now() - t0) / 1000) + 's');
 }
 
 async function busy() {
@@ -473,14 +481,17 @@ async function solo() {
   await c.ready;
   c.send({ t: 'create', auth: acc.auth, players: 2, games: 2, level: 'relaxed' });
   await c.next(m => m.t === 'joined');
+  const rooms = [];
+  c.handlers.push(m => { if (m.t === 'room') rooms.push(m); });
   c.send({ t: 'start' });
   await c.next(m => m.t === 'state' && m.phase === 'matchend');
   await new Promise(r => setTimeout(r, 500));
   const p = (await call('GET', '/api/me', acc)).body;
-  assert.strictEqual(p.games + p.xp, 0, 'a room with one human pays no xp');
+  assert.strictEqual(p.games + p.xp, 0, 'a player who never moved earns nothing');
   assert.strictEqual(sql("SELECT week_won AS n FROM players WHERE id = '" + acc.id + "'")[0].n, 0, 'nor weekly chips');
+  assert(rooms.some(m => m.finding === 1), 'the waiting view says one seat is being filled');
   c.ws.close();
-  console.log('solo room against bots earns nothing');
+  console.log('solo room: the empty seat is looked for, an idle player earns nothing');
 }
 
 async function accounts() {
@@ -652,18 +663,18 @@ async function chat() {
   const [sa, sb] = await begin(g);
   assert.strictEqual(sa.players[0].pid, g.accA.id);
   assert.strictEqual(sb.players[0].pid, g.accB.id);
-  assert.strictEqual(sa.players.filter(p => p.pid).length, 2);
-  assert(sa.players.filter(p => p.bot).every(p => !('pid' in p)), 'bots carry no id');
+  assert.strictEqual(sa.players.filter(p => p.pid).length, 3);
+  assert.strictEqual(sa.players.filter(p => personaIds([p.pid])).length, 1);
   const got = [];
-  g.b.handlers.push(m => { if (m.t === 'said') got.push(m); });
-  const mine = g.a.next(m => m.t === 'said');
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  g.b.handlers.push(m => { if (m.t === 'said' && m.p === seatA) got.push(m); });
+  const mine = g.a.next(m => m.t === 'said' && m.p === 0);
   g.a.send({ t: 'say', k: 'nope' });
   g.a.send({ t: 'say', k: 'hello' });
   const e = await mine;
   assert.deepStrictEqual([e.p, e.k], [0, 'hello']);
   await sleep(200);
   assert.strictEqual(got.length, 1, 'an unknown phrase is dropped');
-  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
   assert.deepStrictEqual([got[0].p, got[0].k], [seatA, 'hello'], 'the other player sees the seat as theirs');
   g.a.send({ t: 'say', k: 'smile' });
   for (let i = 0; i < 6; i++) g.a.send({ t: 'say', k: 'luck' });
@@ -732,6 +743,10 @@ async function invites() {
   const hn = await hub(n);
   const fl = (await call('GET', '/api/friends', g.accA)).body.friends;
   assert.deepStrictEqual(fl.map(x => [x.id, x.online]), [[f.id, true]], 'a friend in the lobby shows as online');
+  assert.deepStrictEqual(fl[0].at, { w: 'lobby' });
+  hf.send({ t: 'at', at: 'training' });
+  await sleep(100);
+  assert.deepStrictEqual((await call('GET', '/api/friends', g.accA)).body.friends[0].at, { w: 'training' });
   g.b.ws.close();
 
   sql('UPDATE players SET chips = 500 WHERE id = ' + who(f));
@@ -760,9 +775,197 @@ async function invites() {
   await sleep(300);
   assert.strictEqual((await call('GET', '/api/friends', g.accA)).body.friends[0].online, false);
   hn.ws.close();
-  console.log('invite: delivered to a friend in the lobby, once, nothing to a stranger');
+  console.log('invite: delivered to a friend in training, once, nothing to a stranger');
   g.a.ws.close();
 }
+
+function personaIds(ids) {
+  return sql('SELECT count(*) AS n FROM personas WHERE id IN (' + ids.map(x => "'" + x + "'").join(',') + ')')[0].n;
+}
+
+// a lone human at a stake table: personas fill the seats one at a time and the match settles as before
+async function personas() {
+  const acc = await guest();
+  const h = await hub(acc);
+  const t0 = Date.now();
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 500 });
+  const sat = await s;
+  const r = seated(sat);
+  const all = [];
+  const stamps = [];
+  r.handlers.push(m => {
+    all.push(m);
+    if (m.t === 'state') stamps.push([Date.now(), m]);
+  });
+  const fin = new Promise(res => play(r, { finish: res }));
+  const counts = [];
+  const first = r.next(m => m.t === 'room');
+  first.then(m => assert.strictEqual(m.finding, 3, 'the waiting view counts the seats being filled'));
+  r.handlers.push(m => { if (m.t === 'room') counts.push([Date.now(), m.seats.filter(Boolean).length]); });
+  await Promise.race([fin, new Promise((x, j) => setTimeout(() => j(new Error('timeout')), 120000))]);
+  assert(!all.some(m => /bot|fake|persona/i.test(JSON.stringify(m))), 'nothing at the table says bot');
+  const steps = counts.map(x => x[1]);
+  assert.deepStrictEqual(steps.filter((n, i) => i === 0 || n !== steps[i - 1]), [1, 2, 3], 'seats fill one at a time before the table starts');
+  const two = counts.find(x => x[1] === 2)[0];
+  assert(two - t0 >= 60, 'the first fill waits a while: ' + (two - t0) + 'ms');
+  const st = r.st;
+  assert.strictEqual(st.players.length, 4);
+  const others = st.players.slice(1);
+  assert.strictEqual(personaIds(others.map(p => p.pid)), 3);
+  for (const p of others) {
+    assert(p.level >= 1 && p.level <= 4, 'level near the human: ' + p.level);
+    assert(p.bank >= 500 * 9, 'plausible chips: ' + p.bank);
+    assert.strictEqual(p.away, false);
+  }
+  assert.strictEqual(new Set(others.map(p => p.seed)).size, 3, 'no name twice at a table');
+  // a persona never reads as instant: the gaps between moves it makes
+  const gaps = [];
+  for (let i = 1; i < stamps.length; i++) {
+    const [at, m] = stamps[i];
+    const prev = stamps[i - 1][1];
+    if (m.lb > 0 && m.log.length && prev.phase === m.phase && prev.turn !== 0 && prev.phase !== 'claim' && prev.phase !== 'gameend') gaps.push(at - stamps[i - 1][0]);
+  }
+  assert(gaps.length > 8 && Math.min(...gaps) >= 15, 'bot moves are paced: ' + Math.min(...gaps));
+  const said = all.filter(m => m.t === 'said');
+  for (const m of said) assert(m.p >= 1 && m.p < 4 && (Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k)));
+  assert(said.length <= 4, 'chat is capped per match');
+  await sleep(600);
+  const me = (await call('GET', '/api/me', acc)).body;
+  assert.strictEqual(me.chips, 5000 - 500 + payout(500, st.players[0].chips));
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player IN (SELECT id FROM personas)")[0].n, 0, 'personas never touch the chip log');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE id IN (SELECT id FROM personas)")[0].n, 0);
+  assert(me.xp >= 40 && me.games === 1, 'a match against personas counts: xp ' + me.xp);
+  assert.strictEqual(me.xp, 40 + (st.final.low === 0 ? 30 : 0) + 5 * st.stats.filter(x => x.fin === 0).length);
+  const board = (await call('GET', '/api/player/' + acc.id, acc)).body;
+  assert.strictEqual(board.won, st.res.net > 0 ? st.res.net : 0, 'and so does the weekly board');
+  console.log('personas: a lone human got a full table, ' + said.length + ' chat, ' + gaps.length + ' paced moves, settled');
+
+  // profile, friend request and the lists look the same as for a real player
+  const pid = others[0].pid;
+  const real = (await call('GET', '/api/player/' + (await guest()).id, acc)).body;
+  const pr = await call('GET', '/api/player/' + pid, acc);
+  assert.strictEqual(pr.status, 200);
+  assert.deepStrictEqual(Object.keys(pr.body).sort(), Object.keys(real).sort());
+  assert.strictEqual(pr.body.rel, 'none');
+  assert.strictEqual(pr.body.avatar.length, 4);
+  assert.strictEqual((await call('POST', '/api/friend', acc, { id: pid })).status, 200);
+  assert.strictEqual((await call('GET', '/api/player/' + pid, acc)).body.rel, 'sent');
+  const l = (await call('GET', '/api/friends', acc)).body;
+  assert.deepStrictEqual(l.outgoing.map(x => x.id), [pid]);
+  assert.strictEqual(l.friends.length + l.incoming.length, 0);
+  assert.deepStrictEqual(Object.keys(l.outgoing[0]).sort(), ['avatar', 'id', 'level', 'seed']);
+  const top = (await call('GET', '/api/top', acc)).body;
+  assert(![...top.week, ...top.level].some(x => x.id === pid), 'personas are not ranked');
+  assert.strictEqual((await call('DELETE', '/api/friend/' + pid, acc)).status, 200);
+  assert.strictEqual((await call('GET', '/api/player/' + pid, acc)).body.rel, 'none');
+  assert.strictEqual((await call('GET', '/api/friends', acc)).body.outgoing.length, 0);
+  console.log('persona profile: same shape, friend request stays pending and can be cancelled');
+  r.ws.close();
+  h.ws.close();
+
+  // a second hub socket for the same account replaces the first
+  const one = await hub(acc);
+  const gone = new Promise(res => one.ws.on('close', code => res(code)));
+  const msg = one.next(m => m.t === 'error');
+  const two2 = await hub(acc);
+  assert.strictEqual((await msg).k, 'replaced');
+  assert.strictEqual(await gone, 4000);
+  two2.ws.close();
+  console.log('hub: the newest socket of an account wins');
+}
+
+// where friends are, an invite to a player who is not in the lobby, and joining a friend's table
+async function whereabouts() {
+  const [a, f, c, poor] = [await guest(), await guest(), await guest(), await guest()];
+  for (const x of [f, c, poor]) {
+    await call('POST', '/api/friend', a, { id: x.id });
+    await call('POST', '/api/friend', x, { id: a.id });
+  }
+  sql("UPDATE players SET chips = 1000 WHERE id = '" + poor.id + "'");
+  const at = async id => (await call('GET', '/api/friends', a)).body.friends.find(x => x.id === id).at;
+  assert.strictEqual(await at(f.id), null);
+  const hf = await hub(f);
+  const hp = await hub(poor);
+  assert.deepStrictEqual(await at(f.id), { w: 'lobby' });
+  hf.send({ t: 'at', at: 'training' });
+  await sleep(100);
+  assert.deepStrictEqual(await at(f.id), { w: 'training' });
+
+  // a public table
+  const ha = await hub(a);
+  const sa = ha.next(m => m.t === 'seated');
+  ha.send({ t: 'quick', stake: 500 });
+  const A = await sa;
+  const ra = seated(A);
+  await ra.next(m => m.t === 'room');
+  const seen = (await call('GET', '/api/friends', f)).body.friends.find(x => x.id === a.id).at;
+  assert.deepStrictEqual(seen, { w: 'table', code: A.code, pub: true, stake: 500, free: 3, started: false });
+
+  // an invite reaches a friend who is in training, and carries what is needed to sit
+  const inv = hf.next(m => m.t === 'invited');
+  ra.send({ t: 'invite', to: f.id });
+  const m = await inv;
+  assert.deepStrictEqual([m.code, m.stake, m.pub, m.from.pid], [A.code, 500, true, a.id]);
+  console.log('invite: reached a friend in training');
+
+  // joining: too poor is refused, a friend sits at the host's table
+  const no = hp.next(m => m.t === 'error');
+  hp.send({ t: 'sit', code: A.code });
+  assert.strictEqual((await no).k, 'poor');
+  const sf = hf.next(m => m.t === 'seated');
+  hf.send({ t: 'sit', code: m.code });
+  const F = await sf;
+  assert.strictEqual(F.code, A.code);
+  assert.notStrictEqual(F.seat, A.seat);
+  const rf = seated(F);
+  await rf.next(m => m.t === 'room');
+  ra.ws.close();
+  rf.ws.close();
+  ha.ws.close();
+  hf.ws.close();
+  hp.ws.close();
+  console.log('join a friend: poor refused, public table sat through the hub');
+
+  // a private room is joined by its code, with the same chip check
+  const host = client('/ws/new');
+  await host.ready;
+  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, level: 'relaxed', stake: 500 });
+  const ja = await host.next(m => m.t === 'joined');
+  await sleep(100);
+  const w = (await call('GET', '/api/friends', f)).body.friends.find(x => x.id === a.id).at;
+  assert.deepStrictEqual(w, { w: 'table', code: ja.code, pub: false, stake: 500, free: 2, started: false });
+  const hub2 = await hub(f);
+  const no2 = hub2.next(m => m.t === 'error');
+  hub2.send({ t: 'sit', code: ja.code });
+  assert.strictEqual((await no2).k, 'nocode', 'a private room is not sat through the hub');
+  const lowc = client('/ws/' + ja.code);
+  await lowc.ready;
+  lowc.send({ t: 'join', auth: poor.auth });
+  assert.strictEqual((await lowc.next(m => m.t === 'error')).k, 'poor');
+  const fc = client('/ws/' + ja.code);
+  await fc.ready;
+  fc.send({ t: 'join', auth: f.auth });
+  await fc.next(m => m.t === 'joined');
+  await sleep(100);
+  assert.strictEqual((await call('GET', '/api/friends', c)).body.friends.length, 1);
+  assert.strictEqual((await call('GET', '/api/friends', a)).body.friends.find(x => x.id === f.id).at.code, ja.code);
+  // the host starts with an empty seat and it is looked for in the pool
+  const st = host.next(m => m.t === 'state');
+  const finding = host.next(m => m.t === 'room' && m.finding === 1);
+  host.send({ t: 'start' });
+  await finding;
+  const view = await st;
+  assert.strictEqual(personaIds(view.players.map(p => p.pid)), 1);
+  leakCheck(view);
+  const started = (await call('GET', '/api/friends', a)).body.friends.find(x => x.id === f.id).at;
+  assert.strictEqual(started.started, true);
+  console.log('join a friend: private room by code, host start fills the empty seat');
+  host.ws.close();
+  fc.ws.close();
+  hub2.ws.close();
+}
+
 
 async function board() {
   const [a, b, c, old] = [await guest(), await guest(), await guest(), await guest()];
@@ -810,13 +1013,207 @@ async function board() {
   g.b.ws.close();
 }
 
+function schema() {
+  const text = require('fs').readFileSync(__dirname + '/../migrations/0004_personas.sql', 'utf8');
+  assert(!/insert/i.test(text), 'the migration only creates the table');
+  console.log('personas: nothing seeded, they are made when a table needs one');
+}
+
+async function silent() {
+  const c = client('/ws/hub');
+  await c.ready;
+  // the local dev server can leave the socket half closed after the server's close frame, so closing counts
+  for (let i = 0; c.ws.readyState === 1; i++) {
+    assert(i < 200, 'a socket that never said hello is still open');
+    await sleep(100);
+  }
+  console.log('hub: a socket without hello is closed');
+}
+
+// personas are shared by id: busy at one table, chips and stats settled, only the ones who can cover the stake
+async function pool() {
+  const day = 86400000;
+  const now = Date.now();
+  sql('DELETE FROM personas WHERE created = 1');
+  sql('UPDATE personas SET chips = 100, topup = ' + now + ', busy = NULL');
+  sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(hex(randomblob(16))), i, '1,1,1,0', 1, 0, 0, 0, 100000, " + (now - 3 * day) + ', NULL, 0, 1 FROM n');
+  const rich = sql('SELECT id FROM personas WHERE created = 1').map(x => x.id);
+  assert.strictEqual(rich.length, 20);
+
+  const stakes = [100, 500, 2500];
+  const accs = [await guest(), await guest(), await guest()];
+  sql('UPDATE players SET chips = 100000 WHERE id IN (' + accs.map(who).join(',') + ')');
+  const runs = [];
+  for (const [n, stake] of stakes.entries()) {
+    const acc = accs[n];
+    const h = await hub(acc);
+    const s = h.next(m => m.t === 'seated');
+    h.send({ t: 'quick', stake: stake });
+    const r = seated(await s);
+    const run = { stake, acc, h, r, first: null, done: null };
+    run.first = r.next(m => m.t === 'state');
+    run.done = new Promise(res => play(r, { finish: res }));
+    runs.push(run);
+  }
+  const firsts = await Promise.all(runs.map(x => x.first));
+  const ids = [];
+  firsts.forEach((m, n) => {
+    for (const p of m.players.slice(1)) {
+      assert(rich.includes(p.pid), 'only personas with enough chips are picked');
+      assert.strictEqual(p.bank, 100000 + 3 * 750 - runs[n].stake, 'the days since the last top-up are paid before the stake is taken');
+      ids.push(p.pid);
+    }
+  });
+  assert.strictEqual(new Set(ids).size, 9, 'a persona is at one table at a time');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE busy IS NOT NULL')[0].n, 9);
+  const tops = sql("SELECT topup FROM personas WHERE id IN ('" + ids.join("','") + "')");
+  assert(tops.every(x => x.topup === now), 'the top-up date moves by whole days');
+  await Promise.all(runs.map(x => x.done));
+  await sleep(800);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE busy IS NOT NULL')[0].n, 0, 'they are free again after the match');
+
+  runs.forEach((x, n) => {
+    const st = x.r.st;
+    st.players.slice(1).forEach((p, j) => {
+      const k = j + 1;
+      const row = sql("SELECT * FROM personas WHERE id = '" + p.pid + "'")[0];
+      const win = st.final.low === k;
+      const fin = st.stats.filter(f => f.fin === k).length;
+      assert.strictEqual(row.chips, Math.max(firsts[n].players[k].bank + payout(x.stake, p.chips), 0), 'chips settled like a player');
+      assert.deepStrictEqual([row.games, row.wins, row.xp], [1, win ? 1 : 0, 40 + (win ? 30 : 0) + 5 * fin]);
+    });
+  });
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player IN (SELECT id FROM personas)")[0].n, 0);
+  for (const x of runs) {
+    x.r.ws.close();
+    x.h.ws.close();
+  }
+  sql('DELETE FROM personas WHERE created = 1');
+  console.log('personas: busy while seated, topped up by day, chips games wins and xp settled');
+}
+
+// a private room whose host starts with empty seats is found by quick play, and the match counts for both humans
+async function openRoom() {
+  const [host, x] = [await guest(), await guest()];
+  const c = client('/ws/new');
+  await c.ready;
+  c.send({ t: 'create', auth: host.auth, players: 4, games: 4, level: 'relaxed', stake: 500 });
+  const ja = await c.next(m => m.t === 'joined');
+  const rooms = [];
+  c.handlers.push(m => { if (m.t === 'room') rooms.push(m); });
+  await sleep(400);
+  assert(rooms.every(m => m.finding === 0 && m.seats.filter(Boolean).length === 1), 'nobody comes before the host starts');
+  const hx = await hub(x);
+  hx.send({ t: 'watch', stake: 500 });
+  const listed = hx.next(m => m.t === 'tables' && m.tables.some(t => t.code === ja.code));
+  const open = c.next(m => m.t === 'room' && m.finding === 3);
+  c.send({ t: 'start' });
+  await open;
+  assert((await listed).tables.find(t => t.code === ja.code).seats.filter(Boolean).length >= 1, 'listed once opened');
+  const sx = hx.next(m => m.t === 'seated');
+  hx.send({ t: 'quick', stake: 500 });
+  const S = await sx;
+  assert.strictEqual(S.code, ja.code, 'quick play lands in the opened room');
+  const fin = [];
+  const finished = new Promise(res => { fin.res = res; });
+  const o = { finish: z => { if (!fin.includes(z)) fin.push(z); if (fin.length === 2) fin.res(); } };
+  Object.assign(c, { seat: ja.seat });
+  const rx = seated(S);
+  play(c, o);
+  play(rx, o);
+  await Promise.race([finished, new Promise((r, j) => setTimeout(() => j(new Error('timeout')), 120000))]);
+  assert.strictEqual(c.st.players.filter(p => p.pid && personaIds([p.pid]) === 1).length, 2, 'the other two seats were filled by the pool');
+  await sleep(600);
+  for (const acc of [host, x]) {
+    const p = (await call('GET', '/api/me', acc)).body;
+    assert(p.games === 1 && p.xp >= 40, 'the match counts: games ' + p.games + ' xp ' + p.xp);
+  }
+  console.log('open friend room: strangers via quick play, personas for the rest, both humans credited');
+  c.ws.close();
+  rx.ws.close();
+  hx.ws.close();
+}
+
+async function fixes() {
+  const [a, b] = [await guest(), await guest()];
+  await call('POST', '/api/friend', a, { id: b.id });
+  await call('POST', '/api/friend', b, { id: a.id });
+  const h = client('/ws/hub');
+  await h.ready;
+  const hi = h.next(m => m.t === 'hub');
+  h.send({ t: 'hello', auth: a.auth, at: 'training' });
+  await hi;
+  const at = async () => (await call('GET', '/api/friends', b)).body.friends.find(x => x.id === a.id).at;
+  assert.deepStrictEqual(await at(), { w: 'training' }, 'hello carries where the player is');
+
+  // a seat at a public table keeps the account out of an opened room too
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 100 });
+  const mine = seated(await s);
+  await mine.next(m => m.t === 'room');
+  const host = client('/ws/new');
+  await host.ready;
+  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, level: 'relaxed', stake: 100 });
+  const ja = await host.next(m => m.t === 'joined');
+  const open = host.next(m => m.t === 'room' && m.finding === 3);
+  host.send({ t: 'start' });
+  await open;
+  const late = client('/ws/' + ja.code);
+  await late.ready;
+  late.send({ t: 'join', auth: a.auth });
+  assert.strictEqual((await late.next(m => m.t === 'error')).k, 'busy');
+  console.log('hello carries the whereabouts, an opened room refuses an account seated at a public table');
+  for (const c of [mine, host, h]) c.ws.close();
+}
+
+// the host's start is refused without closing the host's socket, and the seated player is told why
+async function held() {
+  const [a, b] = [await guest(), await guest()];
+  const h = await hub(a);
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 100 });
+  const mine = seated(await s);
+  await mine.next(m => m.t === 'room');
+  const host = client('/ws/new');
+  await host.ready;
+  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, level: 'relaxed', stake: 100 });
+  const ja = await host.next(m => m.t === 'joined');
+  const guestSock = client('/ws/' + ja.code);
+  await guestSock.ready;
+  guestSock.send({ t: 'join', auth: a.auth });
+  const gj = await guestSock.next(m => m.t === 'joined');
+  const no = host.next(m => m.t === 'error');
+  const why = guestSock.next(m => m.t === 'error');
+  host.send({ t: 'start' });
+  const e = await no;
+  assert.strictEqual(e.k, 'held');
+  assert.strictEqual(e.seat, gj.seat);
+  assert.strictEqual((await why).k, 'elsewhere');
+  await sleep(300);
+  assert.strictEqual(host.ws.readyState, 1, 'the host stays connected');
+  for (const c of [mine, host, guestSock, h]) c.ws.close();
+
+  // a started private room holds its players too
+  const g = await pair(2, 2);
+  await begin(g);
+  const hx = await hub(g.accB);
+  const busy = hx.next(m => m.t === 'error');
+  hx.send({ t: 'quick', stake: 100 });
+  assert.strictEqual((await busy).k, 'busy');
+  console.log('start refused with held and the socket kept, a started private room counts as a seat');
+  for (const c of [g.a, g.b, hx]) c.ws.close();
+}
+
 (async () => {
+  schema();
   await math();
   await accounts();
   await races();
   await solo();
   await lobby();
   await friends();
+  await silent();
   await tables();
   await busy();
   await lone();
@@ -825,7 +1222,13 @@ async function board() {
   await chat();
   await gifts();
   await invites();
+  await personas();
+  await pool();
+  await openRoom();
+  await whereabouts();
   await board();
+  await fixes();
+  await held();
   console.log('ok');
   process.exit(0);
 })().catch(e => {

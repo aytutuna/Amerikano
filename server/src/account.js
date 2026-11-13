@@ -24,7 +24,7 @@ async function hash(s) {
 }
 
 // level n starts at 50n(n-1) xp, so the climb to level n+1 is 100n(n+1)/2 in total
-const levelAt = xp => {
+export const levelAt = xp => {
   let n = 1;
   while (xp >= 50 * n * (n + 1)) n++;
   return n;
@@ -61,6 +61,14 @@ export async function verify(db, token) {
 
 export function player(db, id) {
   return db.prepare('SELECT * FROM players WHERE id = ?').bind(id).first();
+}
+
+// a player, or failing that a stored profile for the same lookups
+export async function who(db, id) {
+  const p = await player(db, id);
+  if (p) return p;
+  const q = await db.prepare('SELECT * FROM personas WHERE id = ?').bind(id).first();
+  return q && Object.assign(q, { persona: true });
 }
 
 export function seat(p) {
