@@ -1,4 +1,4 @@
-import { verify, player, json, fail } from './account.js';
+import { verify, who, json, fail } from './account.js';
 
 const DAY = 86400000;
 const CAP = 200;
@@ -31,7 +31,8 @@ const mark = r => ({ id: r.id, seed: r.name_seed, avatar: r.avatar.split(',').ma
 
 async function befriend(db, p, id) {
   if (id === p.id) return fail('self');
-  if (!await player(db, id)) return fail('nobody', 404);
+  const q = await who(db, id);
+  if (!q) return fail('nobody', 404);
   const r = await rel(db, p.id, id);
   if (r === 'block') return fail('blocked', 403);
   if (r === 'blocked' || r === 'friend' || r === 'sent') return null;
@@ -45,7 +46,8 @@ async function befriend(db, p, id) {
     ]);
     return null;
   }
-  if (await count(db, "SELECT count(*) AS n FROM friends WHERE b = ? AND state = 'req'", id) >= CAP) return fail('cap', 409);
+  const full = !q.persona && await count(db, "SELECT count(*) AS n FROM friends WHERE b = ? AND state = 'req'", id) >= CAP;
+  if (full) return fail('cap', 409);
   await db.prepare("INSERT OR IGNORE INTO friends (a, b, state) VALUES (?, ?, 'req')").bind(p.id, id).run();
   return null;
 }
@@ -57,7 +59,7 @@ function unfriend(db, p, id) {
 
 async function block(db, p, id) {
   if (id === p.id) return fail('self');
-  if (!await player(db, id)) return fail('nobody', 404);
+  if (!await who(db, id)) return fail('nobody', 404);
   if (await count(db, "SELECT count(*) AS n FROM friends WHERE a = ? AND state = 'block'", p.id) >= CAP) return fail('cap', 409);
   await db.batch([
     db.prepare("DELETE FROM friends WHERE state <> 'block' AND ((a = ?1 AND b = ?2) OR (a = ?2 AND b = ?1))").bind(p.id, id),
@@ -68,7 +70,7 @@ async function block(db, p, id) {
 
 async function friends(env, p) {
   const { results } = await env.DB.prepare(
-    'SELECT f.a, f.state, q.id, q.name_seed, q.avatar, q.level FROM friends f JOIN players q ON q.id = CASE WHEN f.a = ?1 THEN f.b ELSE f.a END WHERE f.a = ?1 OR f.b = ?1'
+    'SELECT f.a, f.state, q.id, q.name_seed, q.avatar, q.level FROM friends f JOIN (SELECT id, name_seed, avatar, level FROM players UNION ALL SELECT id, name_seed, avatar, level FROM personas) q ON q.id = CASE WHEN f.a = ?1 THEN f.b ELSE f.a END WHERE f.a = ?1 OR f.b = ?1'
   ).bind(p.id).all();
   const out = { friends: [], incoming: [], outgoing: [], blocked: [] };
   for (const r of results) {
@@ -77,9 +79,11 @@ async function friends(env, p) {
     else if (r.state === 'req') out[mine ? 'outgoing' : 'incoming'].push(mark(r));
     else if (mine) out.blocked.push(mark(r));
   }
-  const on = out.friends.length ? await env.HUB.get(env.HUB.idFromName('h')).online(out.friends.map(x => x.id)).catch(() => []) : [];
-  const here = new Set(on);
-  for (const f of out.friends) f.online = here.has(f.id);
+  const at = out.friends.length ? await env.HUB.get(env.HUB.idFromName('h')).where(out.friends.map(x => x.id)).catch(() => ({})) : {};
+  for (const f of out.friends) {
+    f.at = at[f.id] || null;
+    f.online = !!f.at;
+  }
   out.friends.sort((a, b) => b.online - a.online || a.seed - b.seed);
   return json(out);
 }
@@ -99,7 +103,7 @@ async function shown(db, a, b) {
 }
 
 async function profile(db, p, id) {
-  const row = ID.test(id) && await player(db, id);
+  const row = ID.test(id) && await who(db, id);
   if (!row) return fail('nobody', 404);
   return json(Object.assign(mark(row), await rank(db, row), {
     games: row.games, wins: row.wins, rel: row.id === p.id ? 'you' : await shown(db, p.id, row.id)
