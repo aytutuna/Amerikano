@@ -4,7 +4,7 @@ import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, STAKES, ENTRY } from './account.js';
 import { won, rel } from './social.js';
-import { claim, release, giveBack, spend, payoff } from './persona.js';
+import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
@@ -13,6 +13,8 @@ const NEXT = 20000;
 const QUICK = 0.5;
 const FAST = 15000;
 const FAST_NEXT = 8000;
+const REMATCH = 15000;
+const STAYS = 0.6;
 const TALK = 4;
 const KEEP = 600000;
 const BURST = 3;
@@ -138,6 +140,7 @@ export class Room extends DurableObject {
     if (a.seat < 0) return this.fail(ws, 'join');
     if (m.t === 'start') return this.start(ws, a.seat);
     if (m.t === 'leave') return this.leave(ws, a);
+    if (m.t === 'rematch') return this.rematch(ws, a.seat);
     if (m.t === 'act') return this.act(ws, a.seat, m);
     if (m.t === 'say') return this.say(a.seat, m);
     if (m.t === 'gift') return this.gift(ws, a.seat, m);
@@ -156,6 +159,7 @@ export class Room extends DurableObject {
     const r = this.r;
     if (!r) return;
     if (r.over && !r.paid) await this.settle().catch(() => {});
+    if (r.rm) return this.tick();
     if (r.dead && Date.now() >= r.dead && (!r.over || r.paid) && !this.owes()) return this.wipe();
     if (r.over) return this.arm();
     if (Date.now() >= this.due()) {
@@ -412,7 +416,8 @@ export class Room extends DurableObject {
     this.save();
     this.send();
     this.arm();
-    if (!r.over) this.report();
+    if (!r.over || r.rm) this.report();
+    if (r.rm) this.hurry();
   }
 
   act(ws, i, m) {
@@ -600,7 +605,7 @@ export class Room extends DurableObject {
       r.over = true;
       r.dead = Date.now() + KEEP * this.k;
       this.outcome();
-      this.report(true);
+      if (!this.humans().length) this.report(true);
       const ps = r.seats.map((s, i) => i).filter(i => r.seats[i].fake);
       if (ps.length) this.chirp(ps[Math.floor(Math.random() * ps.length)], ['well', 'rematch', 'bye', 'cheer', 'smile'], 0.5);
     } else if (this.st.phase !== 'matchend') r.wait = think(this.st.phase, this.idle()) * this.k;
@@ -666,10 +671,117 @@ export class Room extends DurableObject {
       const p = await player(this.env.DB, x.pid);
       if (p) r.seats[i].bank = p.chips;
     }
-    await release(this.env.DB, r.code);
-    r.paid = true;
+    if (this.humans().length) {
+      r.paid = true;
+      this.ask();
+    } else {
+      await release(this.env.DB, r.code);
+      r.paid = true;
+      this.report(true);
+    }
     this.save();
     this.send();
+  }
+
+  // personas stay claimed and the table stays held by the hub until the window closes
+  ask() {
+    const { r } = this;
+    const now = Date.now();
+    const p = {};
+    r.seats.forEach((s, i) => {
+      if (s.fake) p[i] = { at: now + between(2000, 12000) * this.k, stay: Math.random() < STAYS && s.bank >= ENTRY * r.stake };
+    });
+    r.rm = { end: now + REMATCH * this.k, want: [], p: p };
+    this.report();
+    this.arm();
+  }
+
+  async rematch(ws, i) {
+    const { r } = this;
+    const rm = r.rm;
+    if (!rm) return this.fail(ws, 'phase');
+    if (rm.want.includes(i)) return;
+    const p = await player(this.env.DB, r.seats[i].pid);
+    if (!p || p.chips < ENTRY * r.stake) return this.fail(ws, 'poor');
+    if (r.rm !== rm || rm.want.includes(i)) return;
+    rm.want.push(i);
+    this.save();
+    this.send();
+    this.hurry();
+  }
+
+  // a player who pressed and then dropped is not charged for the next match
+  wanting() {
+    const { r } = this;
+    return r.rm.want.filter(i => r.seats[i] && (r.seats[i].fake || !r.seats[i].bot && this.here(i)));
+  }
+
+  hurry() {
+    const { r } = this;
+    const rm = r.rm;
+    if (!Object.keys(rm.p).length && this.humans().every(i => rm.want.includes(i))) this.ctx.waitUntil(this.close());
+    else this.arm();
+  }
+
+  async tick() {
+    const { r } = this;
+    const rm = r.rm;
+    for (const [i, d] of Object.entries(rm.p)) {
+      if (d.at > Date.now()) continue;
+      delete rm.p[i];
+      if (d.stay) {
+        rm.want.push(Number(i));
+        await keep(this.env.DB, r.seats[i].pid, r.code);
+      } else await giveBack(this.env.DB, r.seats[i].pid);
+    }
+    if (r.rm !== rm) return;
+    if (Date.now() >= rm.end) return this.close();
+    this.save();
+    this.send();
+    this.hurry();
+  }
+
+  async close() {
+    const { r } = this;
+    const rm = r.rm;
+    if (!rm) return;
+    const want = this.wanting();
+    r.rm = null;
+    if (!want.some(i => !r.seats[i].fake)) {
+      await release(this.env.DB, r.code);
+      this.report(true);
+      this.save();
+      this.send();
+      return this.arm();
+    }
+    for (const w of this.socks()) {
+      const a = w.deserializeAttachment();
+      if (want.includes(a.seat)) {
+        w.serializeAttachment(Object.assign({}, a, { sent: 0 }));
+        continue;
+      }
+      w.serializeAttachment(Object.assign({}, a, { seat: -1 }));
+      w.close(1000, 'rematch');
+    }
+    r.seats = r.seats.map((s, i) => {
+      if (!want.includes(i)) return null;
+      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'talked']) delete s[k];
+      return s;
+    });
+    for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait']) delete r[k];
+    Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: r.pub ? Date.now() + KEEP * this.k : 0 });
+    this.st = null;
+    this.ctx.storage.delete('st');
+    if (r.seats.every(Boolean)) return this.go();
+    if (!r.pub) {
+      r.open = true;
+      r.host = this.firstHuman();
+    }
+    r.go = Date.now() + this.lag(4000, 8000);
+    this.save();
+    this.send();
+    this.arm();
+    this.report();
   }
 
   // Stakes are held for a started match, so the bots play it out even when nobody is connected.
@@ -686,7 +798,10 @@ export class Room extends DurableObject {
       if (r.go) due.push(r.go);
       return due.length ? Math.min(...due) : Infinity;
     }
-    if (st.phase === 'matchend') return r.paid ? Infinity : Date.now() + 5000 * k;
+    if (st.phase === 'matchend') {
+      if (r.rm) return Math.min(r.rm.end, ...Object.values(r.rm.p).map(d => d.at));
+      return r.paid ? Infinity : Date.now() + 5000 * k;
+    }
     if (!this.humans().length && !this.owes()) return Infinity;
     if (st.phase === 'gameend') return r.since + (r.fast ? FAST_NEXT : NEXT) * k;
     const i = this.actor();
@@ -807,6 +922,7 @@ export class Room extends DurableObject {
         if (k === 0) o.hand = ids(p.hand);
         return o;
       }),
+      rm: r.rm && { left: Math.max(0, r.rm.end - Date.now()), want: this.wanting().length, mine: r.rm.want.includes(me) },
       res: r.res && r.res[me] ? { net: r.res[me].net, xp: r.res[me].xp, from: r.res[me].from } : undefined,
       result: res && { rows: per(res.rows), finisher: rot(res.finisher) },
       stats: st.stats.map(x => ({ fin: rot(x.fin), turns: x.turns, task: x.task })),

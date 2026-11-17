@@ -319,6 +319,34 @@
     return box;
   }
 
+  let end = null;
+
+  function paint() {
+    const e = end;
+    if (!e || !document.contains(e.h.wrap)) return clearInterval(e && e.timer);
+    const rm = e.rm;
+    const s = rm ? Math.ceil(Math.max(0, rm.left - (Date.now() - e.at)) / 1000) : 0;
+    e.line.textContent = rm ? (rm.mine ? t('net.waitNext') + ' ' : '') + t('end.rmLine', { want: rm.want, n: e.n, s: s }) : e.finding ? t('end.rmFind') : '';
+    e.line.hidden = !e.line.textContent;
+    e.again.hidden = !rm || rm.mine;
+    e.home.className = 'btn ' + (e.again.hidden ? 'primary' : 'plain');
+  }
+
+  function rematch(st) {
+    if (!end) return;
+    end.rm = st.rm;
+    end.at = Date.now();
+    paint();
+  }
+
+  // the window closed with a new match still to be seated
+  function finding() {
+    if (!end) return;
+    end.rm = null;
+    end.finding = true;
+    paint();
+  }
+
   function matchEnd(st) {
     const f = st.final;
     const won = mine(st, f.low);
@@ -368,10 +396,29 @@
 
     const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
     const home = { label: t('end.lobby'), kind: App.online() ? 'primary' : 'plain', fn: () => App.leave(true) };
-    return Sheet.open({
+    const h = Sheet.open({
       kind: 'paper', title: t('end.won', v), body: body, dismiss: false,
       actions: App.online() ? [home] : [again, home]
     });
+    if (!App.online()) return h;
+    // pressing Rematch keeps the sheet up, so it is not one of the sheet's own actions
+    const btn = node('button', 'btn primary', t('end.rematch'));
+    btn.type = 'button';
+    const bank = st.players[0].bank;
+    btn.disabled = bank !== undefined && bank < UI.entry() * st.stake;
+    const line = node('p', 'rm');
+    line.setAttribute('role', 'status');
+    h.head.appendChild(line);
+    h.acts.insertBefore(btn, h.acts.firstChild);
+    end = { h: h, n: st.n, rm: st.rm, at: Date.now(), line: line, again: btn, home: h.acts.lastChild, finding: false, timer: setInterval(paint, 1000) };
+    btn.addEventListener('click', () => {
+      Net.send({ t: 'rematch' });
+      end.rm = Object.assign({}, end.rm, { mine: true, want: end.rm.want + 1 });
+      paint();
+      end.home.focus();
+    });
+    paint();
+    return h;
   }
 
   function askTask(st, pick) {
@@ -400,5 +447,5 @@
     return h;
   }
 
-  Object.assign(UI, { score: score, roundEnd: roundEnd, matchEnd: matchEnd, askTask: askTask });
+  Object.assign(UI, { score: score, roundEnd: roundEnd, matchEnd: matchEnd, rematch: rematch, finding: finding, askTask: askTask });
 })();

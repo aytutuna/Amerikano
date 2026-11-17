@@ -1237,6 +1237,6 @@ var UI = (function () {
 
   return {
     show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link,
-    accept: accept, up: up, hub: hub, rooms: rooms, conn: conn, retry: retry, redraw: redraw
+    accept: accept, up: up, hub: hub, rooms: rooms, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry
   };
 })();

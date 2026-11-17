@@ -256,6 +256,8 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 .sw.center .sh-acts { justify-content: center; }
 .sh-head { flex: none; padding: calc(6 * var(--u)) 0 calc(8 * var(--u)); margin-bottom: calc(8 * var(--u)); border-bottom: 2px dashed rgba(122, 74, 18, .3); }
 .sh-title { font: 400 calc(20 * var(--r))/1.2 var(--disp); }
+.sh-head .rm { margin: calc(3 * var(--u)) 0 0; font-size: calc(12 * var(--r)); color: var(--mute); }
+.sh-head .rm[hidden] { display: none; }
 .sh-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b9a97f transparent; margin-bottom: calc(14 * var(--u)); }
 .sh-body[hidden] { display: none; }
 .sw.bottom .sh-body, .sw.paper .sh-body { margin-bottom: 0; }

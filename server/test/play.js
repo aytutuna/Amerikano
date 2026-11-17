@@ -16,7 +16,8 @@ let payout;
 const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
-  'chooser', 'clock', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
+  'chooser', 'clock', 'rm', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
+const RM = new Set(['left', 'want', 'mine']);
 const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
 
 let ips = 0;
@@ -78,6 +79,7 @@ function client(path, origin) {
 function leakCheck(m) {
   for (const k of Object.keys(m)) assert(TOP.has(k), 'unexpected key ' + k);
   assert.strictEqual(typeof m.stock, 'number');
+  if (m.rm) for (const k of Object.keys(m.rm)) assert(RM.has(k), 'unexpected rematch key ' + k);
   if (m.clock) assert(m.clock.p >= 0 && m.clock.p < m.n && m.clock.left >= 0 && m.clock.left <= m.clock.span, 'bad clock');
   m.players.forEach((p, k) => {
     for (const x of Object.keys(p)) assert(SEAT.has(x), 'unexpected player key ' + x);
@@ -1394,6 +1396,149 @@ async function fast() {
   host.ws.close();
 }
 
+const within = (p, ms, what) => Promise.race([p, new Promise((r, j) => setTimeout(() => j(new Error('timeout: ' + what)), ms))]);
+
+// two humans quick-play the same table at this stake; the personas fill the rest
+async function seatTwo(stake) {
+  const accA = await guest();
+  const accB = await guest();
+  const a = await hub(accA);
+  const b = await hub(accB);
+  const sa = a.next(m => m.t === 'seated');
+  a.send({ t: 'quick', stake: stake });
+  const A = await sa;
+  const sb = b.next(m => m.t === 'seated');
+  b.send({ t: 'quick', stake: stake });
+  const B = await sb;
+  assert.strictEqual(B.code, A.code);
+  const t = { accA, accB, a, b, A, ra: seated(A), rb: seated(B) };
+  t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm));
+  for (const c of [t.ra, t.rb]) play(c, { finish: () => {} });
+  return t;
+}
+
+const escrows = acc => sql("SELECT ref FROM chip_log WHERE player = '" + acc.id + "' AND reason = 'escrow'").map(x => x.ref);
+
+// both humans press Rematch: the same room deals again and stakes are taken again under new refs
+async function rematchBoth() {
+  const t = await seatTwo(100);
+  const [ma, mb] = await within(Promise.all(t.offer), 120000, 'match end');
+  for (const m of [ma, mb]) {
+    assert.strictEqual(m.phase, 'matchend');
+    assert(m.rm.left > 0 && m.rm.left <= 15000);
+    assert.strictEqual(m.rm.mine, false);
+  }
+  const next = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.phase !== 'matchend'));
+  t.ra.send({ t: 'rematch' });
+  t.rb.send({ t: 'rematch' });
+  const [na, nb] = await within(Promise.all(next), 30000, 'new match');
+  for (const m of [na, nb]) {
+    assert.strictEqual(m.gameNo, 1);
+    assert.strictEqual(m.lb, 0);
+    assert.strictEqual(m.n, 4);
+  }
+  assert([t.accA, t.accB].every(acc => na.players.some(p => p.pid === acc.id)));
+  for (const acc of [t.accA, t.accB]) {
+    const refs = escrows(acc);
+    assert.strictEqual(refs.length, 2);
+    assert.notStrictEqual(refs[0], refs[1]);
+  }
+  console.log('rematch: both pressed, the room dealt again with a new escrow each');
+  for (const c of [t.ra, t.rb, t.a, t.b]) c.ws.close();
+}
+
+// one presses and the other cannot cover the stake: the second is sent back and the seat is looked for again
+async function rematchOne() {
+  const t = await seatTwo(100);
+  // the window is short, so the chips go down while the match runs; the payout cannot bring them back to 1,000
+  while (!t.rb.st) await sleep(50);
+  sql("UPDATE players SET chips = 100 WHERE id = '" + t.accB.id + "'");
+  await within(Promise.all(t.offer), 120000, 'match end');
+  const poor = t.rb.next(m => m.t === 'error');
+  t.rb.send({ t: 'rematch' });
+  assert.strictEqual((await poor).k, 'poor');
+  const closed = new Promise(res => t.rb.ws.on('close', res));
+  const room = t.ra.next(m => m.t === 'room');
+  const next = t.ra.next(m => m.t === 'state' && m.phase !== 'matchend');
+  t.ra.send({ t: 'rematch' });
+  assert.strictEqual(await within(closed, 5000, 'sent back'), 1000);
+  const r = await within(room, 5000, 'room');
+  const seed = (await call('GET', '/api/me', t.accB)).body.seed;
+  assert(r.seats.includes(null) && r.finding > 0);
+  assert(r.seats.every(x => !x || x.seed !== seed), 'the one who did not press is not seated');
+  const st = await within(next, 30000, 'new match');
+  assert.strictEqual(st.players.length, 4);
+  assert(st.players.every(p => p.pid !== t.accB.id));
+  assert(st.players.some(p => p.pid === t.accA.id));
+  assert.strictEqual(escrows(t.accA).length, 2);
+  assert.strictEqual(escrows(t.accB).length, 1);
+  console.log('rematch: the poor player got poor and was sent back, the seat was refilled');
+  for (const c of [t.ra, t.a, t.b]) c.ws.close();
+}
+
+// a player who pressed and then lost the connection is not charged for the next match
+async function rematchAway() {
+  const t = await seatTwo(100);
+  await within(Promise.all(t.offer), 120000, 'match end');
+  const next = t.ra.next(m => m.t === 'state' && m.phase !== 'matchend');
+  t.rb.send({ t: 'rematch' });
+  t.ra.send({ t: 'rematch' });
+  t.rb.ws.close();
+  const st = await within(next, 30000, 'new match');
+  assert(st.players.every(p => p.pid !== t.accB.id));
+  assert.strictEqual(escrows(t.accA).length, 2);
+  assert.strictEqual(escrows(t.accB).length, 1);
+  console.log('rematch: a player who dropped after pressing was not charged');
+  for (const c of [t.ra, t.a, t.b]) c.ws.close();
+}
+
+// nobody presses: the window closes and the personas are free again
+async function rematchNone() {
+  const acc = await guest();
+  const h = await hub(acc);
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 500 });
+  const sat = await s;
+  const r = seated(sat);
+  const offer = r.next(m => m.t === 'state' && m.rm);
+  play(r, { finish: () => {} });
+  await within(offer, 120000, 'match end');
+  const over = r.next(m => m.t === 'state' && m.phase === 'matchend' && !m.rm);
+  await within(over, 5000, 'window closing');
+  const held = () => sql("SELECT count(*) AS n FROM personas WHERE busy = '" + sat.code + "'")[0].n;
+  assert.strictEqual(held(), 0);
+  console.log('rematch: nobody pressed, the personas are free again');
+  r.ws.close();
+  h.ws.close();
+}
+
+// a friend table takes the same path; with every seat kept the match starts at once
+async function rematchFriends() {
+  const accA = await guest();
+  const accB = await guest();
+  const a = client('/ws/new');
+  await a.ready;
+  a.send({ t: 'create', auth: accA.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  const ja = await a.next(m => m.t === 'joined');
+  const b = client('/ws/' + ja.code);
+  await b.ready;
+  b.send({ t: 'join', auth: accB.auth });
+  await b.next(m => m.t === 'joined');
+  const offer = [a, b].map(c => c.next(m => m.t === 'state' && m.rm));
+  for (const c of [a, b]) play(c, { finish: () => {} });
+  a.send({ t: 'start' });
+  await within(Promise.all(offer), 120000, 'match end');
+  const next = [a, b].map(c => c.next(m => m.t === 'state' && m.phase !== 'matchend'));
+  a.send({ t: 'rematch' });
+  b.send({ t: 'rematch' });
+  await within(Promise.all(next), 30000, 'new match');
+  assert.strictEqual(escrows(accA).length, 2);
+  assert.strictEqual(escrows(accB).length, 2);
+  console.log('rematch: a friend table dealt again');
+  a.ws.close();
+  b.ws.close();
+}
+
 (async () => {
   schema();
   await math();
@@ -1420,6 +1565,11 @@ async function fast() {
   await fixes();
   await held();
   await fast();
+  await rematchBoth();
+  await rematchOne();
+  await rematchAway();
+  await rematchNone();
+  await rematchFriends();
   console.log('ok');
   process.exit(0);
 })().catch(e => {

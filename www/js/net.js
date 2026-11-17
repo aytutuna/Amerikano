@@ -108,7 +108,10 @@ var Net = (function () {
         tries = 0;
         save({ code: m.code, token: m.token, hist: ses && ses.code === m.code ? ses.hist : [] });
         break;
-      case 'room': UI.lobby(m); break;
+      case 'room':
+        if (App.online()) UI.finding();
+        else UI.lobby(m);
+        break;
       case 'state':
         if (App.active() && !App.online()) return detach();
         UI.close();

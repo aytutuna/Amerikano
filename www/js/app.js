@@ -649,7 +649,7 @@ var App = (function () {
       players: m.players.map((p, i) => Object.assign({}, p, {
         name: p.seed === undefined ? p.name : Names.text(p.seed, I18n.lang()), bot: i > 0, hand: i ? new Array(p.n) : p.hand.map(card)
       })),
-      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, res: m.res, log: log
+      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, res: m.res, rm: m.rm, log: log
     };
   }
 
@@ -668,7 +668,10 @@ var App = (function () {
     const prev = on ? st : null;
     const log = prev && m.lb ? prev.log.slice(0, m.lb).concat(m.log) : m.log;
     st = hydrate(m, log);
-    const first = !prev;
+    // a rematch deals a new match into the same table, with a new log
+    const next = !!prev && prev.phase === 'matchend' && st.phase !== 'matchend';
+    if (next) Net.keep([]);
+    const first = !prev || next;
     const deal = !first && prev.gameNo !== st.gameNo;
     if (first || deal) {
       A.order = [];
@@ -686,6 +689,7 @@ var App = (function () {
       over.close();
       over = null;
     }
+    if (st.phase === 'matchend') UI.rematch(st);
     if (first) {
       on = true;
       A.hist = Net.hist();

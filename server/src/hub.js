@@ -150,7 +150,7 @@ export class Hub extends DurableObject {
   table(code, t) {
     // a close report that never arrived must not leave a table here for good
     for (const [c, x] of Object.entries(this.tables)) if (Date.now() - x.at > LIFE) delete this.tables[c];
-    if (t) this.tables[code] = Object.assign({ at: Date.now() }, this.tables[code], t);
+    if (t) this.tables[code] = Object.assign({}, this.tables[code], t, { at: Date.now() });
     else delete this.tables[code];
     this.ctx.storage.put('tables', this.tables);
     this.tell();

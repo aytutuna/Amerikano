@@ -66,6 +66,11 @@ export function release(db, code) {
   return db.prepare('UPDATE personas SET busy = NULL WHERE busy = ?').bind(code).run();
 }
 
+// a persona who stays for a rematch keeps its claim fresh, so a long run is never taken as expired
+export function keep(db, id, code) {
+  return db.prepare('UPDATE personas SET busy_at = ? WHERE id = ? AND busy = ?').bind(Date.now(), id, code).run();
+}
+
 export function giveBack(db, id) {
   return db.prepare('UPDATE personas SET busy = NULL WHERE id = ?').bind(id).run();
 }
