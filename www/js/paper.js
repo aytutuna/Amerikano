@@ -35,7 +35,7 @@
 
   function scoresPanel(st) {
     const box = node('div');
-    box.appendChild(node('p', 'pline', t('paper.state', { n: st.gameNo, of: st.games, pot: st.pot })));
+    if (!st.cup) box.appendChild(node('p', 'pline', t('paper.state', { n: st.gameNo, of: st.games, pot: st.pot })));
     const tbl = node('table', 'ptbl');
     tbl.appendChild(node('caption', 'sr', t('paper.caption')));
     const head = node('tr');
@@ -81,10 +81,12 @@
     tot.appendChild(cell('th', t('paper.total'), 'rh'));
     st.players.forEach(p => tot.appendChild(node('td', 'num' + (p.score === low ? ' low' : ''), num(p.score))));
     foot.appendChild(tot);
-    const ch = node('tr', 'chips');
-    ch.appendChild(cell('th', t('paper.chips'), 'rh'));
-    st.players.forEach(p => ch.appendChild(node('td', 'num', signed(p.chips))));
-    foot.appendChild(ch);
+    if (!st.cup) {
+      const ch = node('tr', 'chips');
+      ch.appendChild(cell('th', t('paper.chips'), 'rh'));
+      st.players.forEach(p => ch.appendChild(node('td', 'num', signed(p.chips))));
+      foot.appendChild(ch);
+    }
     tbl.appendChild(foot);
 
     box.appendChild(scroller(t('paper.caption'), tbl));
@@ -183,7 +185,7 @@
     body.appendChild(scroller(t('round.cap'), tbl));
 
     const notes = node('ul', 'pnotes');
-    if (r.finisher >= 0 && g.got > 0) notes.appendChild(node('li', '', t('round.pot', { name: who(st, r.finisher), you: mine(st, r.finisher), n: g.got })));
+    if (!st.cup && r.finisher >= 0 && g.got > 0) notes.appendChild(node('li', '', t('round.pot', { name: who(st, r.finisher), you: mine(st, r.finisher), n: g.got })));
     if (st.chooser >= 0) {
       const a = r.rows[st.chooser].adj;
       const k = a < 0 ? 'adjOut' : a > 0 ? 'adjNever' : 'adjNone';
@@ -284,18 +286,23 @@
     box.appendChild(node('h3', '', who(st, w)));
     box.appendChild(node('p', 'hpts', t('ptsShort', { n: st.players[w].score })));
     const r = st.res;
-    if (r) {
+    const cup = st.cup;
+    const prize = cup && cup.round === 'final' ? cup.prizes[cup.place - 1] : 0;
+    if (cup ? prize || (r && r.xp) : r) {
       const me = Account.me();
       const res = node('div', 'hres');
-      res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : ''));
-      const row = node('div', 'hwin' + (r.net < 0 ? ' lose' : ''));
-      row.appendChild(Cards.icon('i-chip', 'chip'));
-      const amount = node('b', '', sgn(0));
-      row.appendChild(amount);
-      res.appendChild(node('p', 'hlbl', t('end.winnings')));
-      res.appendChild(row);
-      count(amount, 0, r.net, 1100, sgn);
-      if (r.xp && me) {
+      if (!cup) res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : ''));
+      if (!cup || prize) {
+        const to = cup ? prize : r.net;
+        const row = node('div', 'hwin' + (to < 0 ? ' lose' : ''));
+        row.appendChild(Cards.icon('i-chip', 'chip'));
+        const amount = node('b', '', sgn(0));
+        row.appendChild(amount);
+        res.appendChild(node('p', 'hlbl', t(cup ? 'cup.yourPrize' : 'end.winnings')));
+        res.appendChild(row);
+        count(amount, 0, to, 1100, sgn);
+      }
+      if (r && r.xp && me) {
         // the profile may already include this match, so start from the xp the server saw at the deal
         let lv = 1;
         while (r.from >= 50 * lv * (lv + 1)) lv++;
@@ -311,7 +318,7 @@
         const bonus = node('p', 'bonus');
         res.appendChild(bonus);
         xpRun(bar, label, bonus, start, r.xp);
-      } else if (r.xp) res.appendChild(node('p', 'hlbl', t('end.xp', { n: r.xp })));
+      } else if (r && r.xp) res.appendChild(node('p', 'hlbl', t('end.xp', { n: r.xp })));
       box.appendChild(res);
     }
     box.appendChild(kilim());
@@ -355,9 +362,10 @@
     body.appendChild(hero(st, f));
 
     const tbl = node('table', 'ptbl et');
-    tbl.appendChild(node('caption', 'sr', t('end.cap')));
+    const cap = t(st.cup ? 'cup.cap' : 'end.cap');
+    tbl.appendChild(node('caption', 'sr', cap));
     const head = node('tr');
-    for (const k of ['place', 'player', 'points', 'chips']) head.appendChild(cell('th', t('end.' + k), 'ch'));
+    for (const k of st.cup ? ['place', 'player', 'points'] : ['place', 'player', 'points', 'chips']) head.appendChild(cell('th', t('end.' + k), 'ch'));
     tbl.appendChild(node('thead')).appendChild(head);
     const tb = node('tbody');
     f.order.forEach((p, i) => {
@@ -368,25 +376,32 @@
       tr.appendChild(td);
       tr.appendChild(node('td', 'num', num(st.players[p].score)));
       // online the pot is in chips of stake/10, as in the result above
-      tr.appendChild(node('td', 'num', signed(st.res ? st.players[p].chips * st.stake / 10 : st.players[p].chips)));
+      if (!st.cup) tr.appendChild(node('td', 'num', signed(st.res ? st.players[p].chips * st.stake / 10 : st.players[p].chips)));
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
-    body.appendChild(scroller(t('end.cap'), tbl));
+    body.appendChild(scroller(cap, tbl));
 
     const v = { name: who(st, f.low), you: won, pot: f.pot, lowPay: f.pay[f.low] };
-    let sentence;
-    if (!f.pot) sentence = t('end.empty', v);
-    else if (f.finisher < 0 || f.finisher === f.low || !f.pay[f.finisher]) sentence = t('end.whole', v);
-    else {
-      v.fin = who(st, f.finisher);
-      v.finYou = mine(st, f.finisher);
-      v.finPay = f.pay[f.finisher];
-      sentence = t('end.split', v);
-    }
-    body.appendChild(node('p', 'pline', sentence));
-    if (st.res) {
-      body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.lang()), unit: (st.stake / 10).toLocaleString(I18n.lang()) })));
+    const cup = st.cup;
+    if (cup) {
+      const k = cup.round === 'final' ? 'final' : cup.through ? 'finished' : 'outNote';
+      body.appendChild(node('p', 'pline strong', t('cup.' + k, { n: cup.place })));
+      if (cup.through) body.appendChild(node('p', 'note', t('cup.leaveNote')));
+    } else {
+      let sentence;
+      if (!f.pot) sentence = t('end.empty', v);
+      else if (f.finisher < 0 || f.finisher === f.low || !f.pay[f.finisher]) sentence = t('end.whole', v);
+      else {
+        v.fin = who(st, f.finisher);
+        v.finYou = mine(st, f.finisher);
+        v.finPay = f.pay[f.finisher];
+        sentence = t('end.split', v);
+      }
+      body.appendChild(node('p', 'pline', sentence));
+      if (st.res) {
+        body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.lang()), unit: (st.stake / 10).toLocaleString(I18n.lang()) })));
+      }
     }
 
     const sheet = node('button', 'btn quiet', t('end.scores'));
@@ -395,12 +410,14 @@
     body.appendChild(sheet);
 
     const again = { label: t('end.again'), kind: 'primary', fn: () => App.newMatch({ players: st.n, games: st.games, level: st.level }) };
-    const home = { label: t('end.lobby'), kind: App.online() ? 'primary' : 'plain', fn: () => App.leave(true) };
+    const home = { label: t(cup && cup.through ? 'cup.giveUp' : 'end.lobby'), kind: App.online() && !(cup && cup.through) ? 'primary' : 'plain', fn: () => App.leave(true) };
+    let title = t('end.won', v);
+    if (cup) title = cup.round === 'final' ? t('cup.won', v) : t(cup.through ? 'cup.through' : 'cup.out');
     const h = Sheet.open({
-      kind: 'paper', title: t('end.won', v), body: body, dismiss: false,
+      kind: 'paper', title: title, body: body, dismiss: false,
       actions: App.online() ? [home] : [again, home]
     });
-    if (!App.online()) return h;
+    if (!App.online() || cup) return h;
     // pressing Rematch keeps the sheet up, so it is not one of the sheet's own actions
     const btn = node('button', 'btn primary', t('end.rematch'));
     btn.type = 'button';

@@ -91,7 +91,12 @@ var Net = (function () {
     sock = null;
     // 4000 means the seat was taken over from another window, 1000 that the server ended it
     if (e.code === 4000) return gone('replaced');
-    if (e.code === 1000) return ses ? gone('ended') : undefined;
+    // a finished tournament table is wiped while its end sheet may still be up, and there is nothing to rejoin
+    if (e.code === 1000) {
+      if (ses && App.cupOver()) drop();
+      else if (ses) return gone('ended');
+      return;
+    }
     if (!ses) return gone('lost');
     if (++tries > 12) return gone('lost');
     if (tries === 1 && App.online()) App.flash(t('net.retry'));
@@ -109,6 +114,7 @@ var Net = (function () {
         save({ code: m.code, token: m.token, hist: ses && ses.code === m.code ? ses.hist : [] });
         break;
       case 'room':
+        if (m.cup) break;
         if (App.online()) UI.finding();
         else UI.lobby(m);
         break;
@@ -183,8 +189,13 @@ var Net = (function () {
         UI.hub(m);
         break;
       case 'rooms': UI.rooms(m.n, m.f); break;
+      case 'cup': UI.cup(m); break;
+      case 'cupend': UI.cupEnd(); break;
       case 'seated':
-        save({ code: m.code, token: m.token, hist: [] });
+        UI.cupSeated();
+        // the hub repeats this on every hello, so a table already open stays as it is
+        if (sock && ses && ses.code === m.code) break;
+        save({ code: m.code, token: m.token, hist: (ses || recent() || {}).code === m.code ? (ses || recent()).hist || [] : [] });
         open('/ws/' + m.code, { t: 'join', token: m.token });
         break;
       case 'invited': Social.invited(m); break;
@@ -203,6 +214,11 @@ var Net = (function () {
       Account.forget();
       hubClose();
       return UI.retry();
+    }
+    if (m.k === 'cupoff') {
+      UI.cupEnd();
+      if (App.online() && App.state() && App.state().cup) App.leave(true);
+      return UI.notice(t('cup.off'));
     }
     UI.notice(msg(m.k));
   }
@@ -275,6 +291,7 @@ var Net = (function () {
 
   N.sit = code => hubSay({ t: 'sit', code: code });
   N.play = (stake, fast) => hubSay({ t: 'quick', stake: stake, fast: fast });
+  N.cup = buy => hubSay({ t: 'cup', buy: buy });
 
   N.create = o => {
     drop();

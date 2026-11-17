@@ -342,7 +342,7 @@ var App = (function () {
     const k = st.gameNo + ':' + st.phase;
     if (endKey === k) return;
     endKey = k;
-    if (on && st.phase === 'matchend') Table.chips(st.final.low);
+    if (on && st.phase === 'matchend' && !st.cup) Table.chips(st.final.low);
     setTimeout(() => {
       if (!st || k !== st.gameNo + ':' + st.phase) return;
       Sheet.closeAll();
@@ -649,7 +649,7 @@ var App = (function () {
       players: m.players.map((p, i) => Object.assign({}, p, {
         name: p.seed === undefined ? p.name : Names.text(p.seed, I18n.lang()), bot: i > 0, hand: i ? new Array(p.n) : p.hand.map(card)
       })),
-      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, res: m.res, rm: m.rm, log: log
+      result: m.result, stats: m.stats, lastFin: m.lastFin, final: m.final, res: m.res, rm: m.rm, cup: m.cup, log: log
     };
   }
 
@@ -723,6 +723,7 @@ var App = (function () {
 
   A.flash = flash;
   A.online = () => on;
+  A.cupOver = () => on && !!st && !!st.cup && st.phase === 'matchend';
 
   A.leave = (drop, keep) => {
     clearTimeout(timer);

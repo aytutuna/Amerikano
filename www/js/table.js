@@ -171,7 +171,7 @@ var Table = (function () {
       e.querySelector('.nm').textContent = p.name;
       e.querySelector('.sc').textContent = t('ptsShort', { n: p.score });
       const bk = e.querySelector('.bk');
-      bk.hidden = p.bank === undefined;
+      bk.hidden = p.bank === undefined || !!st.cup;
       if (!bk.hidden) bk.lastChild.textContent = short(p.bank);
       const tap = e.querySelector('.tap');
       tap.hidden = !App.online();
@@ -237,9 +237,16 @@ var Table = (function () {
     // the other language's name is a hint, so it goes first when the line is too long
     if (gloss && gn.scrollWidth > gn.clientWidth) gn.textContent = game;
     if (gn.scrollWidth > gn.clientWidth) sub.classList.add('nopat');
-    $('scl').textContent = t('score');
-    $('pot').textContent = t('pot', { n: st.pot });
+    // cup tables move no chips, so the pot is not shown
+    $('scl').textContent = st.cup ? '' : t('score');
+    $('score').querySelector('.chip').style.display = st.cup ? 'none' : '';
+    $('pot').textContent = st.cup ? t('score') : t('pot', { n: st.pot });
     $('menu').setAttribute('aria-label', t('menu'));
+    $('cup').hidden = !st.cup;
+    if (st.cup) {
+      $('cupt').textContent = t('cup.table');
+      $('cupr').textContent = t('cup.round.' + st.cup.round) + ', ' + st.cup.buy.toLocaleString(I18n.lang());
+    }
     $('chat').hidden = !App.online();
     $('chat').setAttribute('aria-label', t('chat.open'));
     seatsEl.setAttribute('aria-label', t('seatsLabel'));

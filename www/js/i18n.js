@@ -6,6 +6,7 @@ var I18n = (function () {
   const SUITS = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
   const cards = n => n === 1 ? '1 card' : n + ' cards';
   const chips = n => n === 1 ? '1 chip' : n + ' chips';
+  const ord = n => ['1st', '2nd', '3rd', '4th'][n - 1];
   const num = n => String(n).replace('-', '−');
   const lc = s => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -314,6 +315,7 @@ var I18n = (function () {
         nocode: 'There is no room with that code.',
         started: 'That match has already started.',
         full: 'That room is full.',
+        starting: 'That tournament is starting. Try again in a moment.',
         taken: 'That code is in use. Try again.',
         auth: 'Your account could not be checked. Try again.',
         poor: 'You do not have enough chips for that.',
@@ -353,6 +355,32 @@ var I18n = (function () {
       min: v => 'Min ' + v.n,
       locked: 'Locked',
       level: v => 'Lv ' + v.n
+    },
+
+    cup: {
+      tab: 'Tournaments',
+      title: 'Pick a tournament',
+      line: '8 players, 2 tables, then a final',
+      prize: v => 'First prize ' + v.n,
+      cap: 'Final places and points',
+      table: 'Tournament',
+      buy: v => 'Buy-in ' + v.n,
+      seats: v => v.n + ' of 8 seats taken',
+      prizes: 'Prizes',
+      place: v => ord(v.n),
+      note: 'It starts as soon as all 8 seats are taken. Your buy-in is taken then; cancel now and nothing is taken.',
+      round: { first: 'Round 1', final: 'Final' },
+      through: 'Through to the final',
+      out: 'Out after round 1',
+      finished: v => 'You finished ' + ord(v.n) + '. Waiting for the other table.',
+      outNote: v => 'You finished ' + ord(v.n) + ' at your table. Only the top two go through.',
+      off: 'The tournament was cancelled. Your buy-in was returned.',
+      starting: 'Starting...',
+      won: v => v.you ? 'You won the tournament' : v.name + ' won the tournament',
+      final: v => 'You finished ' + ord(v.n) + ' in the final.',
+      yourPrize: 'Your prize',
+      giveUp: 'Leave the tournament',
+      leaveNote: 'Leaving gives up your place in the tournament and any prize. Your seat is played for you.'
     },
 
     nonet: {
@@ -832,6 +860,7 @@ var I18n = (function () {
         nocode: 'Bu kodla bir oda yok.',
         started: 'Bu maç çoktan başladı.',
         full: 'Oda dolu.',
+        starting: 'Bu turnuva başlıyor. Birazdan tekrar dene.',
         taken: 'Bu kod kullanımda, tekrar dene.',
         auth: 'Hesabın doğrulanamadı. Tekrar dene.',
         poor: 'Bunun için yeterli çipin yok.',
@@ -871,6 +900,32 @@ var I18n = (function () {
       min: v => 'En az ' + v.n,
       locked: 'Kilitli',
       level: v => v.n + '. sv'
+    },
+
+    cup: {
+      tab: 'Turnuvalar',
+      title: 'Bir turnuva seç',
+      line: '8 oyuncu, 2 masa, sonra final',
+      prize: v => 'Birincilik ödülü ' + v.n,
+      cap: 'Son sıralama ve puanlar',
+      table: 'Turnuva',
+      buy: v => 'Giriş ' + v.n,
+      seats: v => '8 koltuktan ' + v.n + ' tanesi dolu',
+      prizes: 'Ödüller',
+      place: v => v.n + '.',
+      note: 'Tüm 8 koltuk dolunca başlar. Giriş bedeli o zaman alınır; şimdi vazgeçersen hiçbir şey alınmaz.',
+      round: { first: '1. tur', final: 'Final' },
+      through: 'Finale yükseldin',
+      out: '1. turda elendin',
+      finished: v => 'Masanda ' + v.n + '. oldun. Diğer masa bekleniyor.',
+      outNote: v => 'Masanda ' + v.n + '. oldun. Finale yalnızca ilk ikisi çıkar.',
+      off: 'Turnuva iptal edildi. Giriş bedelin iade edildi.',
+      starting: 'Başlıyor...',
+      won: v => v.you ? 'Turnuvayı sen kazandın' : v.name + ' turnuvayı kazandı',
+      final: v => 'Finalde ' + v.n + '. oldun.',
+      yourPrize: 'Ödülün',
+      giveUp: 'Turnuvadan çık',
+      leaveNote: 'Çıkarsan turnuvadaki yerini ve olası ödülü kaybedersin. Senin yerine oynanır.'
     },
 
     nonet: {

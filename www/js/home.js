@@ -8,6 +8,8 @@ var UI = (function () {
   let linked = '';
   // a table link opened before signing in waits for the sign-in page
   let later = null;
+  // set when Cancel is pressed, so a count update already on its way does not bring the sheet back
+  let leaving = false;
   // net is wait, up, down or replaced
   const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, f: {}, gate: '', fast: false };
   try { at.fast = localStorage.getItem('amerikano.fast') === '1'; } catch (e) { /* normal pace */ }
@@ -275,7 +277,11 @@ var UI = (function () {
     item(t('pause.how'), 'plain', howTo);
     item(t('pause.settings'), 'plain', settings);
     item(t('pause.leave'), 'plain', () => App.leave(false));
-    body.appendChild(node('p', 'note', t(net ? 'pause.onlineNote' : 'pause.note')));
+    const st = App.state();
+    const cup = net && st && st.cup;
+    // once a tournament table is over, leaving only costs something to a player waiting for the final
+    if (cup && st.phase === 'matchend' && !cup.through) return;
+    body.appendChild(node('p', 'note', t(cup ? 'cup.leaveNote' : net ? 'pause.onlineNote' : 'pause.note')));
   }
 
   const fmt = n => n.toLocaleString(I18n.lang());
@@ -844,6 +850,7 @@ var UI = (function () {
   }
 
   function hub(m) {
+    leaving = false;
     at.net = 'up';
     at.stakes = m.stakes;
     at.entry = m.entry;
@@ -904,6 +911,133 @@ var UI = (function () {
       list.appendChild(b);
     }
     return list;
+  }
+
+  const BUYS = [1000, 5000, 25000];
+
+  function fullOval() {
+    const m = node('span', 'oval eight');
+    m.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8 + .25) * 2 * Math.PI;
+      const d = node('i', 'on');
+      d.style.left = 50 + 50 * Math.cos(a) + '%';
+      d.style.top = 50 + 50 * Math.sin(a) + '%';
+      m.appendChild(d);
+    }
+    return m;
+  }
+
+  // the same wood cards as the rooms, on a tab of their own: the Fast switch does not reach them
+  function cupCards(me) {
+    const list = node('div', 'rooms cups');
+    for (const buy of BUYS) {
+      const ok = !!me && me.chips >= buy;
+      const b = raw('room', () => {
+        leaving = false;
+        cupForm({ buy: buy, n: 1 });
+        Net.cup(buy);
+      });
+      b.disabled = !ok;
+      b.dataset.k = 'cup' + buy;
+      b.appendChild(node('b', 'plaque', short(buy)));
+      b.appendChild(fullOval());
+      const meta = node('span', 'rmeta');
+      meta.appendChild(node('b', '', t('cup.prize', { n: fmt(buy * 4) })));
+      meta.appendChild(node('i', '', t('cup.line')));
+      b.appendChild(meta);
+      if (!ok) {
+        const lock = node('span', 'lock');
+        lock.setAttribute('role', 'img');
+        lock.setAttribute('aria-label', t('hall.locked'));
+        lock.appendChild(Cards.icon('i-lock', 'ic'));
+        b.appendChild(lock);
+      }
+      list.appendChild(b);
+    }
+    return list;
+  }
+
+  function cupBody(buy) {
+    const body = node('div', 'wt cupf');
+    const tb = node('div', 'wt-table');
+    tb.appendChild(node('div', 'felt wt-felt'));
+    const mid = node('div', 'wt-mid');
+    mid.appendChild(node('b', 'plaque', fmt(buy)));
+    tb.appendChild(mid);
+    const marks = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8 + .25) * 2 * Math.PI;
+      const d = node('i', 'cs');
+      d.style.left = 50 + 40 * Math.cos(a) + '%';
+      d.style.top = 50 + 36 * Math.sin(a) + '%';
+      tb.appendChild(d);
+      marks.push(d);
+    }
+    body.appendChild(tb);
+    const side = node('div', 'wt-side');
+    const count = node('p', 'lead');
+    count.setAttribute('role', 'status');
+    side.appendChild(count);
+    const go = node('p', 'note', t('cup.starting'));
+    go.hidden = true;
+    side.appendChild(go);
+    side.appendChild(node('p', 'stake', t('cup.buy', { n: fmt(buy) })));
+    const ul = node('ul', 'pz');
+    ul.setAttribute('aria-label', t('cup.prizes'));
+    [50, 25, 15, 10].forEach((pc, i) => {
+      const li = node('li');
+      li.appendChild(node('span', '', t('cup.place', { n: i + 1 })));
+      const amount = node('b');
+      amount.appendChild(Cards.icon('i-chip', 'chip'));
+      amount.appendChild(node('span', '', fmt(buy * 8 * pc / 100)));
+      li.appendChild(amount);
+      ul.appendChild(li);
+    });
+    side.appendChild(ul);
+    side.appendChild(node('p', 'note', t('cup.note')));
+    body.appendChild(side);
+    return { body: body, marks: marks, count: count, go: go };
+  }
+
+  // the forming sheet sits in the connecting slot, so a refusal takes it down with close()
+  function cupForm(m) {
+    if (App.active()) return;
+    if (!m.buy) {
+      if (wait && wait.cup) close();
+      return;
+    }
+    // a withdraw the hub refused at 8 / 8 comes back as this state, which reopens the sheet
+    if (leaving && m.n < 8) return;
+    leaving = false;
+    if (!wait || !wait.cup || wait.buy !== m.buy || !document.contains(wait.h.wrap)) {
+      close();
+      const f = cupBody(m.buy);
+      wait = {
+        cup: true, buy: m.buy, f: f, n: 0,
+        h: Sheet.open({
+          kind: 'bottom', title: t('cup.table'), body: f.body, dismiss: false,
+          actions: [{ label: t('cancel'), kind: 'plain', fn: () => { leaving = true; wait = null; Net.cup(0); } }]
+        })
+      };
+    }
+    const f = wait.f;
+    f.marks.forEach((d, i) => {
+      const on = i < m.n;
+      if (on && !d.classList.contains('on') && wait.n) d.classList.add('in');
+      d.classList.toggle('on', on);
+    });
+    f.count.textContent = m.n + ' / 8';
+    f.count.setAttribute('aria-label', t('cup.seats', { n: m.n }));
+    wait.n = m.n;
+    f.go.hidden = m.n < 8;
+    wait.h.acts.querySelector('button').disabled = m.n >= 8;
+  }
+
+  const cupSeated = () => { leaving = false; };
+
+  function cupEnd() {
+    Account.refresh().then(redraw, () => {});
   }
 
   // the friends who are around, with the full list a tab away
@@ -1041,7 +1175,7 @@ var UI = (function () {
     return w;
   }
 
-  function tablesTab(body, me) {
+  function tablesTab(body, me, cups) {
     const on = at.net === 'up' && at.stakes;
     const side = node('div', 'hl-side');
     if (on && me) side.appendChild(daily(me));
@@ -1049,10 +1183,10 @@ var UI = (function () {
     if (side.children.length) body.appendChild(side);
     const main = node('div', 'hl-main');
     const head = node('div', 'hl-hd');
-    head.appendChild(node('h2', 'hl-h', t(on ? 'hall.pick' : 'start.title')));
+    head.appendChild(node('h2', 'hl-h', t(on ? cups ? 'cup.title' : 'hall.pick' : 'start.title')));
     const bn = banner();
     if (bn) head.appendChild(bn);
-    if (on) {
+    if (on && !cups) {
       const mode = pace(at.fast, v => { setFast(v); draw();
         const e = document.querySelector('[data-f="mode:' + (v ? 'fast' : 'normal') + '"]');
         if (e) e.focus({ preventScroll: true });
@@ -1061,11 +1195,11 @@ var UI = (function () {
       head.insertBefore(mode, bn);
     }
     main.appendChild(head);
-    if (on) main.appendChild(roomCards(me));
+    if (on) main.appendChild(cups ? cupCards(me) : roomCards(me));
     else if (at.net === 'wait') main.appendChild(waiting());
     else main.appendChild(offline());
     const play = node('div', 'hl-play');
-    if (on) {
+    if (on && !cups) {
       // the second room, or the best one the player can pay for
       const ok = at.stakes.filter(s => afford(me, s));
       const q = ok[Math.min(1, ok.length - 1)];
@@ -1099,7 +1233,7 @@ var UI = (function () {
   function tabs(bar) {
     const list = node('div', 'tabs');
     list.setAttribute('role', 'tablist');
-    for (const [k, label] of [['rooms', t('hall.rooms')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
+    for (const [k, label] of [['rooms', t('hall.rooms')], ['cups', t('cup.tab')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
       const b = raw('tab', () => {
         at.tab = k;
         if (k === 'friends') Social.refresh().then(redraw, () => {});
@@ -1145,6 +1279,13 @@ var UI = (function () {
   // an invitation or a friend's table, taken up from anywhere
   function accept(m) {
     Social.clear();
+    // a full tournament is taking the buy-ins and cannot be left any more
+    if (wait && wait.cup && wait.n >= 8) return notice(t('cup.starting'));
+    if (wait && wait.cup) {
+      leaving = true;
+      wait = null;
+      Net.cup(0);
+    }
     Sheet.closeAll();
     if (Net.busy()) Net.leave(false);
     connecting(true, t('net.title'));
@@ -1169,7 +1310,7 @@ var UI = (function () {
     const me = Account.me();
     home.appendChild(hallBar(me));
     const body = node('main', 'hl-body');
-    if (at.net !== 'up' || at.tab === 'rooms') tablesTab(body, me);
+    if (at.net !== 'up' || at.tab === 'rooms' || at.tab === 'cups') tablesTab(body, me, at.net === 'up' && at.tab === 'cups');
     else {
       const pn = node('section', 'paper pnl');
       const box = pn.appendChild(node('div', 'sbody frs'));
@@ -1237,6 +1378,6 @@ var UI = (function () {
 
   return {
     show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link,
-    accept: accept, up: up, hub: hub, rooms: rooms, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry
+    accept: accept, up: up, hub: hub, rooms: rooms, cup: cupForm, cupSeated: cupSeated, cupEnd: cupEnd, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry
   };
 })();
