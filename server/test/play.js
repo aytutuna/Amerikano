@@ -1582,6 +1582,54 @@ async function cupCancel() {
   h2.ws.close();
 }
 
+// a hello tells a player who is in no tournament, so an app that missed the message can clear its state
+async function cupHello() {
+  const acc = await guest();
+  const c = client('/ws/hub');
+  await c.ready;
+  const none = c.next(m => m.t === 'cup' && m.buy === 0);
+  c.send({ t: 'hello', auth: acc.auth });
+  await within(none, 5000, 'a hello says there is no tournament');
+  c.ws.close();
+  console.log('tournament: a hello from an unregistered player gets buy 0');
+}
+
+// a failure while the buy-ins are taken leaves the form, and the repeat takes nobody's chips twice
+async function cupRetry() {
+  const [a, b] = await Promise.all([guest(), guest()]);
+  sql("CREATE TRIGGER nopay BEFORE INSERT ON chip_log WHEN new.player = '" + b.id + "' AND new.ref LIKE '%:in' BEGIN SELECT RAISE(ABORT, 'down'); END");
+  const ha = await hub(a);
+  const hb = await hub(b);
+  const msgs = [];
+  for (const h of [ha, hb]) h.handlers.push(m => msgs.push(m));
+  const ra = ha.next(m => m.t === 'cup' && m.buy === 1000);
+  ha.send({ t: 'cup', buy: 1000 });
+  await ra;
+  const rb = hb.next(m => m.t === 'cup' && m.buy === 1000);
+  hb.send({ t: 'cup', buy: 1000 });
+  await rb;
+  msgs.length = 0;
+  for (let i = 0; i < 400 && !cupIn(a).length; i++) await sleep(50);
+  assert.strictEqual(cupIn(a).length, 1, 'the first buy-in was taken before the failure');
+  await sleep(300);
+  assert(!msgs.some(m => m.t === 'seated' || m.t === 'cup' && m.buy === 0 || m.t === 'cup' && m.n > 8), 'the form waits');
+  // the form is full and may have charged someone, so a withdraw is refused and the player is told the state again
+  const back = ha.next(m => m.t === 'cup' && m.buy === 1000 && m.n === 8);
+  ha.send({ t: 'cup', buy: 0 });
+  await within(back, 3000, 'a refused withdraw gets the state back');
+  const sa = ha.next(m => m.t === 'seated');
+  const sb = hb.next(m => m.t === 'seated');
+  sql('DROP TRIGGER nopay');
+  assert.strictEqual((await within(sa, 10000, 'the retry seats the first')).cup, 'first');
+  assert.strictEqual((await within(sb, 10000, 'the retry seats the second')).cup, 'first');
+  assert.strictEqual(cupIn(a).length, 1, 'taken once');
+  assert.strictEqual(cupIn(b).length, 1);
+  assert.strictEqual((await call('GET', '/api/me', a)).body.chips, 4000);
+  console.log('tournament: a failed start was retried without charging twice');
+  ha.ws.close();
+  hb.ws.close();
+}
+
 // a tournament whose humans all fail to pay at the start is dropped, not played by personas alone
 async function cupGone() {
   const t0 = Date.now();
@@ -1613,7 +1661,7 @@ async function cupPoor() {
   h.send({ t: 'cup', buy: 5000 });
   assert.strictEqual((await no2).k, 'poor');
   await sleep(200);
-  assert(!seen.some(m => m.t === 'cup'), 'a poor player is not registered');
+  assert(!seen.some(m => m.t === 'cup' && m.buy), 'a poor player is not registered');
   assert.strictEqual(cupIn(acc).length, 0);
   console.log('tournament: a player who cannot cover the buy-in is refused');
   h.ws.close();
@@ -1631,7 +1679,7 @@ async function cupRun(n) {
     const x = { acc: acc, h: h, counts: [], msgs: [], rooms: [], round: null, leaver: n === 6 && hs.length === 5, late: n === 2 };
     x.end = new Promise(res => h.handlers.push(m => {
       x.msgs.push(m);
-      if (m.t === 'cup') x.counts.push(m.n);
+      if (m.t === 'cup' && m.buy) x.counts.push(m.n);
       if (m.t === 'cupout' || m.t === 'cupend') res(m);
       if (m.t !== 'seated' || !m.cup) return;
       assert.strictEqual(m.cup, x.round ? 'final' : 'first');
@@ -1767,6 +1815,8 @@ async function cupRun(n) {
   await cupCancel();
   await cupPoor();
   await cupGone();
+  await cupHello();
+  await cupRetry();
   await cupRun(2);
   await cupRun(6);
   console.log('ok');

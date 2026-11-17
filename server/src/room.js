@@ -444,7 +444,7 @@ export class Room extends DurableObject {
     this.save();
     this.send();
     this.arm();
-    if (!r.over || r.rm) this.report();
+    if (!r.over || r.rm || r.cup) this.report();
     if (r.rm) this.hurry();
   }
 
@@ -828,7 +828,7 @@ export class Room extends DurableObject {
   // Stakes are held for a started match, so the bots play it out even when nobody is connected.
   owes() {
     const r = this.r;
-    return r.started && !r.paid && r.seats.some(s => s && s.esc) || !!r.cup && r.paid && !r.cup.sent;
+    return r.started && !r.paid && (!!r.cup || r.seats.some(s => s && s.esc)) || !!r.cup && r.paid && !r.cup.sent;
   }
 
   due() {
@@ -911,7 +911,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started, cup: r.cup ? r.cup.id : null,
+      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };

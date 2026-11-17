@@ -52,12 +52,17 @@ export class Hub extends DurableObject {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ pid: '', stake: 0, fast: false, at: 'lobby', born: Date.now() });
-    if (!await this.ctx.storage.getAlarm()) await this.ctx.storage.setAlarm(Date.now() + this.hello);
+    const at = await this.ctx.storage.getAlarm();
+    if (!at || at > Date.now() + this.hello) await this.ctx.storage.setAlarm(Date.now() + this.hello);
     return new Response(null, { status: 101, webSocket: client });
   }
 
   // a socket that has not said hello by now never will; a forming tournament takes its next persona
   async alarm() {
+    await this.queue(() => this.fill()).catch(() => {});
+    await this.queue(() => this.resume()).catch(() => {});
+    await this.queue(() => this.sweep()).catch(() => {});
+    // after the awaits, so a socket that connected meanwhile is counted
     const now = Date.now();
     let next = 0;
     for (const w of this.ctx.getWebSockets()) {
@@ -67,13 +72,14 @@ export class Hub extends DurableObject {
       if (due <= now) w.close(1000, 'hello');
       else next = next ? Math.min(next, due) : due;
     }
-    await this.queue(() => this.fill()).catch(() => {});
-    await this.queue(() => this.resume()).catch(() => {});
     for (const f of Object.values(this.cups.form)) {
       const at = f.hs.length ? f.next : f.drop;
       next = next ? Math.min(next, at) : at;
     }
-    if (Object.values(this.cups.run).some(c => Object.keys(c.plan).length)) next = next ? Math.min(next, now + RETRY * this.k) : now + RETRY * this.k;
+    for (const c of Object.values(this.cups.run)) {
+      const at = c.aborting || Object.keys(c.plan).length || !Object.keys(c.tabs).length ? now + RETRY * this.k : c.at + LIFE + 1000;
+      next = next ? Math.min(next, at) : at;
+    }
     if (next) await this.ctx.storage.setAlarm(next);
   }
 
@@ -98,6 +104,7 @@ export class Hub extends DurableObject {
       ws.send(JSON.stringify(this.counts()));
       const f = this.forming(p.id);
       if (f) ws.send(JSON.stringify(this.state(f)));
+      else if (!this.inCup(p.id)) ws.send(JSON.stringify({ t: 'cup', buy: 0 }));
       for (const c of Object.values(this.cups.run)) this.notify(c, p.id);
       return this.tell();
     }
@@ -128,8 +135,12 @@ export class Hub extends DurableObject {
     if (!pid) return;
     this.queue(async () => {
       const f = this.forming(pid);
-      if (f && !this.ctx.getWebSockets().some(w => w.readyState === 1 && w.deserializeAttachment().pid === pid)) await this.leave(f, pid);
+      if (f && !this.online(pid)) await this.leave(f, pid);
     }).catch(() => {});
+  }
+
+  online(pid) {
+    return this.ctx.getWebSockets().some(w => w.readyState === 1 && w.deserializeAttachment().pid === pid);
   }
 
   // a short burst of messages, then two a second
@@ -169,7 +180,7 @@ export class Hub extends DurableObject {
     }
     // a player waiting for the final is still at the table of the first round
     for (const c of Object.values(this.cups.run)) {
-      for (const m of c.mem) if (at[m.pid] && m.at && c.held.includes(m.pid)) at[m.pid] = { w: 'table', code: m.at.code, pub: false, stake: 0, free: 0, started: true };
+      if (!c.aborting) for (const m of c.mem) if (at[m.pid] && m.at && c.held.includes(m.pid)) at[m.pid] = { w: 'table', code: m.at.code, pub: false, stake: 0, free: 0, started: true };
     }
     for (const [code, t] of Object.entries(this.tables)) {
       const free = t.seats.filter(x => !x).length;
@@ -183,7 +194,7 @@ export class Hub extends DurableObject {
   // A table sends this for one of its players. Only a connected friend gets it, wherever they are, and the sender cannot tell why one is missing.
   async invite(from, to, code, stake, pub) {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid === to);
-    if (!socks.length || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
+    if (!socks.length || this.inCup(to) || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
     const p = await player(this.env.DB, to);
     if (!p || p.chips < ENTRY * stake) return false;
     const msg = JSON.stringify({ t: 'invited', from: from, code: code, stake: stake, pub: pub });
@@ -198,9 +209,9 @@ export class Hub extends DurableObject {
     if (t) this.tables[code] = Object.assign({}, this.tables[code], t, { at: Date.now() });
     else delete this.tables[code];
     this.ctx.storage.put('tables', this.tables);
-    // a player who left a tournament table forfeits the prize and is let go
+    // a player who left a tournament table forfeits the prize and is let go; the order of a finished final is fixed
     const c = t && t.cup && this.cups.run[t.cup];
-    if (c && !c.done[code]) {
+    if (c && !c.aborting && !(t.over && c.tabs[code] === 'final')) {
       for (const m of c.mem) if (m.at && m.at.code === code && c.held.includes(m.pid) && !t.pids.includes(m.pid)) this.forfeit(c, m.pid);
       this.save();
     }
@@ -242,7 +253,7 @@ export class Hub extends DurableObject {
 
   // whether the account holds a seat at a pool table other than this one, or is in a tournament
   holds(pid, code) {
-    return !!this.forming(pid) || Object.values(this.cups.run).some(c => c.held.includes(pid)) ||
+    return this.inCup(pid) ||
       Object.entries(this.tables).some(([c, t]) => c !== code && (pool(t) || t.started && !t.cup) && t.pids.includes(pid));
   }
 
@@ -298,6 +309,10 @@ export class Hub extends DurableObject {
     ws.send(JSON.stringify({ t: 'error', k: 'full' }));
   }
 
+  inCup(pid) {
+    return !!this.forming(pid) || Object.values(this.cups.run).some(c => c.held.includes(pid));
+  }
+
   forming(pid) {
     return Object.values(this.cups.form).find(f => f.hs.some(h => h.pid === pid));
   }
@@ -326,19 +341,16 @@ export class Hub extends DurableObject {
     if (buy === 0) return f && this.leave(f, pid);
     if (!BUYINS.includes(buy)) return;
     const now = Date.now();
-    for (const c of Object.values(this.cups.run)) {
-      if (now - c.at <= LIFE) continue;
-      c.held = [];
-      delete this.cups.run[c.id];
-      await release(this.env.DB, c.id);
-    }
+    await this.sweep().catch(() => {});
     const p = await player(this.env.DB, pid);
     if (!p) return this.refuse(ws, 'auth');
     const k = p.chips < buy ? 'poor' : this.holds(pid) ? 'busy' : null;
     if (k) return ws.send(JSON.stringify({ t: 'error', k: k }));
     const g = this.cups.form[buy] || (this.cups.form[buy] = { id: crypto.randomUUID(), buy: buy, hs: [], ps: [], due: now + WAIT * this.k, next: now + between(JOIN, 2 * JOIN) * this.k });
+    // a form that is full is waiting to start
+    if (g.hs.length + g.ps.length >= CUP) return ws.send(JSON.stringify({ t: 'error', k: 'starting' }));
     if (!g.hs.length) {
-      g.due = now + WAIT * this.k;
+      if (!g.ps.length) g.due = now + WAIT * this.k;
       g.drop = 0;
     }
     g.hs.push(seat(p));
@@ -352,6 +364,8 @@ export class Hub extends DurableObject {
   // When the last human withdraws the others stay a few seconds, so signing straight back in finds the same count
   // instead of showing that they were never people. Then the form is dropped and its personas let go.
   async leave(f, pid) {
+    // the buy-ins of a form that is starting may already be taken
+    if (f.hs.length + f.ps.length >= CUP) return this.to(pid, this.state(f));
     f.hs = f.hs.filter(h => h.pid !== pid);
     this.to(pid, { t: 'cup', buy: 0 });
     if (!f.hs.length) f.drop = Date.now() + between(GRACE, 2 * GRACE) * this.k;
@@ -381,7 +395,13 @@ export class Hub extends DurableObject {
         await release(this.env.DB, f.id);
         continue;
       }
+      for (const h of f.hs.slice()) if (!this.online(h.pid)) await this.leave(f, h.pid);
+      if (!f.hs.length) continue;
       if (f.next > Date.now()) continue;
+      if (f.hs.length + f.ps.length >= CUP) {
+        await this.start(f);
+        continue;
+      }
       f.next = Date.now() + (Date.now() >= f.due ? between(200, 900) : between(1500, 5000)) * this.k;
       const p = await this.persona(f, [...f.hs, ...f.ps]);
       if (this.cups.form[f.buy] !== f) {
@@ -395,31 +415,45 @@ export class Hub extends DurableObject {
     }
   }
 
-  // Takes the buy-ins, once, and seats the eight at two tables.
+  // Takes the buy-ins, once, and seats the eight at two tables. The form stays until the run is saved, so a
+  // failure before that tries again later: the buy-in refs make a repeat charge a no-op.
   async start(f) {
     const db = this.env.DB;
-    delete this.cups.form[f.buy];
-    const hs = [];
-    for (const h of f.hs) {
-      if (await credit(db, h.pid, -f.buy, 'cup', f.id + ':in')) hs.push(h);
-      else {
-        this.to(h.pid, { t: 'error', k: 'poor' });
-        this.to(h.pid, { t: 'cup', buy: 0 });
-      }
-    }
-    if (!hs.length) return release(db, f.id);
-    const ps = f.ps.slice();
-    while (hs.length + ps.length < CUP) ps.push(await this.persona(f, [...hs, ...ps]));
-    for (const p of ps) {
-      await spend(db, p.pid, f.buy);
-      await keep(db, p.pid, f.id);
-    }
-    const mem = shuffle([...hs, ...ps]);
-    const c = { id: f.id, buy: f.buy, mem: mem, held: hs.map(h => h.pid), tabs: {}, plan: {}, done: {}, fails: 0, at: Date.now() };
-    this.cups.run[c.id] = c;
+    let c;
     try {
-      await this.plan(c, 'first', mem.slice(0, 4));
-      await this.plan(c, 'first', mem.slice(4));
+      const hs = [];
+      for (const h of f.hs) {
+        if (await credit(db, h.pid, -f.buy, 'cup', f.id + ':in')) hs.push(h);
+        else {
+          f.hs = f.hs.filter(x => x.pid !== h.pid);
+          this.save();
+          this.to(h.pid, { t: 'error', k: 'poor' });
+          this.to(h.pid, { t: 'cup', buy: 0 });
+        }
+      }
+      if (!hs.length) {
+        delete this.cups.form[f.buy];
+        this.save();
+        return release(db, f.id);
+      }
+      while (hs.length + f.ps.length < CUP) f.ps.push(await this.persona(f, [...hs, ...f.ps]));
+      const mem = shuffle([...hs, ...f.ps]);
+      c = { id: f.id, buy: f.buy, mem: mem, held: hs.map(h => h.pid), tabs: {}, plan: {}, done: {}, fails: 0, at: Date.now() };
+      this.cups.run[c.id] = c;
+      delete this.cups.form[f.buy];
+      this.save();
+    } catch (e) {
+      f.next = Date.now() + RETRY * this.k;
+      this.save();
+      return;
+    }
+    try {
+      for (const p of c.mem.filter(m => m.fake)) {
+        await spend(db, p.pid, c.buy);
+        await keep(db, p.pid, c.id);
+      }
+      await this.plan(c, 'first', c.mem.slice(0, 4));
+      await this.plan(c, 'first', c.mem.slice(4));
       this.save();
       await this.reseat(c);
     } catch (e) {
@@ -448,9 +482,9 @@ export class Hub extends DurableObject {
       const tokens = n < 6 && await this.room(code).openCup(code, { id: c.id, round: round, buy: c.buy }, mem);
       if (!tokens) {
         if (n >= 6) throw new Error('no table');
+        await this.plan(c, round, mem);
         delete c.tabs[code];
         delete c.plan[code];
-        await this.plan(c, round, mem);
         continue;
       }
       mem.forEach((m, j) => {
@@ -466,9 +500,22 @@ export class Hub extends DurableObject {
   // finishes opening tables after a restart or a failed call; a cup that cannot be opened is cancelled
   async resume() {
     for (const c of Object.values(this.cups.run)) {
-      if (!Object.keys(c.plan).length) continue;
+      if (c.aborting) {
+        await this.abort(c).catch(() => {});
+        continue;
+      }
+      // no tables at all means start() was cut off before it planned the first round
+      const fresh = !Object.keys(c.tabs).length;
+      if (!fresh && !Object.keys(c.plan).length) continue;
       try {
+        if (fresh) {
+          await this.plan(c, 'first', c.mem.slice(0, 4));
+          await this.plan(c, 'first', c.mem.slice(4));
+          this.save();
+        }
         await this.reseat(c);
+        c.fails = 0;
+        this.save();
         this.notify(c);
       } catch (e) {
         if (++c.fails >= 3) await this.abort(c);
@@ -477,21 +524,35 @@ export class Hub extends DurableObject {
     }
   }
 
-  // the buy-ins go back and the tables that did open are closed
+  // a run that outlived its time is cancelled like a failed one
+  async sweep() {
+    for (const c of Object.values(this.cups.run)) if (Date.now() - c.at > LIFE) await this.abort(c);
+  }
+
+  // The buy-ins go back and the tables that did open are closed. The run is kept until every refund is made,
+  // so a call that fails halfway is finished by the next resume.
   async abort(c) {
-    delete this.cups.run[c.id];
+    c.aborting = true;
     this.save();
     for (const code of Object.keys(c.tabs)) await this.room(code).cupClose(c.id, true).catch(() => {});
-    for (const pid of c.held) {
-      await credit(this.env.DB, pid, c.buy, 'cup', c.id + ':back');
-      this.to(pid, { t: 'error', k: 'full' });
-      this.to(pid, { t: 'cup', buy: 0 });
+    // no prize was paid, so everyone who bought in gets it back, those already out too; a player who left gave it up
+    for (const m of c.mem) {
+      if (m.fake || m.left || m.paid || m.back) continue;
+      await credit(this.env.DB, m.pid, c.buy, 'cup', c.id + ':back');
+      m.back = true;
+      c.held = c.held.filter(x => x !== m.pid);
+      this.save();
+      this.to(m.pid, { t: 'error', k: 'cupoff' });
+      this.to(m.pid, { t: 'cup', buy: 0 });
     }
+    delete this.cups.run[c.id];
+    this.save();
     await release(this.env.DB, c.id);
   }
 
   // tells the humans still in where to sit
   notify(c, pid) {
+    if (c.aborting) return;
     for (const m of c.mem) {
       if (pid && m.pid !== pid || !m.at || !c.held.includes(m.pid)) continue;
       this.to(m.pid, Object.assign({ t: 'seated', cup: c.tabs[m.at.code] }, m.at));
@@ -507,7 +568,7 @@ export class Hub extends DurableObject {
   cupDone(id, code, order) {
     return this.queue(async () => {
       const c = this.cups.run[id];
-      if (!c || !c.tabs[code]) return true;
+      if (!c || c.aborting || !c.tabs[code]) return true;
       if (!c.done[code]) {
         c.done[code] = order;
         for (const e of order) if (e.left && c.held.includes(e.pid)) this.forfeit(c, e.pid);
@@ -525,7 +586,14 @@ export class Hub extends DurableObject {
 
   async out(c, pid) {
     const m = c.mem.find(x => x.pid === pid);
-    if (m.fake) return giveBack(this.env.DB, pid);
+    if (m.fake) {
+      // once: by a repeat the persona may already sit at another table
+      if (m.out) return;
+      await giveBack(this.env.DB, pid);
+      m.out = true;
+      this.save();
+      return;
+    }
     if (!c.held.includes(pid)) return;
     c.held = c.held.filter(x => x !== pid);
     this.save();
