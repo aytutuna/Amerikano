@@ -179,7 +179,7 @@ var Net = (function () {
         UI.conn('up');
         UI.hub(m);
         break;
-      case 'rooms': UI.rooms(m.n); break;
+      case 'rooms': UI.rooms(m.n, m.f); break;
       case 'seated':
         save({ code: m.code, token: m.token, hist: [] });
         open('/ws/' + m.code, { t: 'join', token: m.token });
@@ -271,7 +271,7 @@ var Net = (function () {
   };
 
   N.sit = code => hubSay({ t: 'sit', code: code });
-  N.play = stake => hubSay({ t: 'quick', stake: stake });
+  N.play = (stake, fast) => hubSay({ t: 'quick', stake: stake, fast: fast });
 
   N.create = o => {
     drop();

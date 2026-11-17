@@ -9,7 +9,8 @@ var UI = (function () {
   // a table link opened before signing in waits for the sign-in page
   let later = null;
   // net is wait, up, down or replaced
-  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, gate: '' };
+  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, f: {}, gate: '', fast: false };
+  try { at.fast = localStorage.getItem('amerikano.fast') === '1'; } catch (e) { /* normal pace */ }
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -53,6 +54,18 @@ var UI = (function () {
     return fs;
   }
 
+  function pace(cur, fn) {
+    return choice('mode', t('hall.mode'), [
+      { v: 'normal', label: t('hall.normal'), note: t('hall.normalNote') },
+      { v: 'fast', label: t('hall.fast'), note: t('hall.fastNote') }
+    ], cur ? 'fast' : 'normal', v => fn(v === 'fast'), 'seg');
+  }
+
+  function setFast(on) {
+    at.fast = on;
+    try { localStorage.setItem('amerikano.fast', on ? '1' : '0'); } catch (e) { /* kept for this session only */ }
+  }
+
   function gameOptions(n) {
     const out = [];
     for (let g = n; g <= 16; g += n) out.push(g);
@@ -68,6 +81,7 @@ var UI = (function () {
     const me = Account.me();
     const stakes = room && at.stakes ? at.stakes.filter(x => me && me.chips >= at.entry * x) : [];
     let sk = stakes[0];
+    let fast = at.fast;
     const form = node('div', 'form' + (room ? ' one' : ''));
     const saved = App.saved();
 
@@ -90,6 +104,7 @@ var UI = (function () {
       if (room) {
         const stake = choice('stake', t('hall.stake'), stakes.map(v => ({ v: v, label: fmt(v) })), sk, v => { sk = v; fill(); focusOn('stake:' + v); }, 'seg');
         form.appendChild(stake);
+        form.appendChild(pace(fast, v => { fast = v; }));
       }
       if (saved && !room) form.appendChild(node('p', 'note', t('setup.replace')));
     }
@@ -107,7 +122,7 @@ var UI = (function () {
         Settings.set('players', n, true);
         Settings.set('games', g, true);
         Settings.set('level', lv, true);
-        return { players: n, games: g, level: lv, stake: sk };
+        return { players: n, games: g, level: lv, stake: sk, fast: room ? fast : undefined };
       }
     };
   }
@@ -684,6 +699,7 @@ var UI = (function () {
       code.setAttribute('aria-label', m.code.split('').join(' '));
       mid.appendChild(code);
     }
+    if (m.fast) mid.appendChild(node('i', 'tag', t('hall.fast')));
     box.appendChild(mid);
     const n = m.seats.length;
     const els = m.seats.map((s, i) => {
@@ -740,7 +756,9 @@ var UI = (function () {
     const side = wait.side;
     const keep = side.contains(document.activeElement) ? document.activeElement.dataset.f : null;
     side.textContent = '';
-    side.appendChild(node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) })));
+    const sk = node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) }));
+    if (m.fast) sk.append(' ', node('i', 'tag', t('hall.fast')));
+    side.appendChild(sk);
     const mine = m.you === m.host;
     if (m.finding > 0) {
       const p = node('p', 'lead', t('net.finding', { n: m.finding }));
@@ -833,8 +851,9 @@ var UI = (function () {
     redraw();
   }
 
-  function rooms(n) {
+  function rooms(n, f) {
     at.n = n;
+    at.f = f || {};
     redraw();
   }
 
@@ -864,15 +883,16 @@ var UI = (function () {
       const ok = afford(me, s);
       const b = raw('room', () => {
         connecting(false, t('hall.finding'));
-        Net.play(s);
+        Net.play(s, at.fast);
       });
       b.disabled = !ok;
       b.dataset.k = 'room' + s;
       b.appendChild(node('b', 'plaque', short(s)));
-      b.appendChild(miniTable(at.n[s] || 0));
+      const here = (at.fast ? at.f : at.n)[s] || 0;
+      b.appendChild(miniTable(here));
       const meta = node('span', 'rmeta');
       meta.appendChild(node('b', '', t('hall.min', { n: fmt(at.entry * s) })));
-      meta.appendChild(node('i', '', t('hall.playing', { n: fmt(at.n[s] || 0) })));
+      meta.appendChild(node('i', '', t('hall.playing', { n: fmt(here) })));
       b.appendChild(meta);
       if (!ok) {
         const lock = node('span', 'lock');
@@ -1032,6 +1052,14 @@ var UI = (function () {
     head.appendChild(node('h2', 'hl-h', t(on ? 'hall.pick' : 'start.title')));
     const bn = banner();
     if (bn) head.appendChild(bn);
+    if (on) {
+      const mode = pace(at.fast, v => { setFast(v); draw();
+        const e = document.querySelector('[data-f="mode:' + (v ? 'fast' : 'normal') + '"]');
+        if (e) e.focus({ preventScroll: true });
+      });
+      mode.classList.add('hl-mode');
+      head.insertBefore(mode, bn);
+    }
     main.appendChild(head);
     if (on) main.appendChild(roomCards(me));
     else if (at.net === 'wait') main.appendChild(waiting());
@@ -1043,7 +1071,7 @@ var UI = (function () {
       const q = ok[Math.min(1, ok.length - 1)];
       const quick = twoLines('primary', t('hall.quick'), q ? t('hall.quickAt', { n: fmt(q) }) : t('hall.locked'), () => {
         connecting(false, t('hall.finding'));
-        Net.play(q);
+        Net.play(q, at.fast);
       });
       quick.disabled = !q;
       quick.dataset.k = 'quick';

@@ -10,6 +10,9 @@ const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
 const GRACE = 8000;
 const NEXT = 20000;
+const QUICK = 0.5;
+const FAST = 15000;
+const FAST_NEXT = 8000;
 const TALK = 4;
 const KEEP = 600000;
 const BURST = 3;
@@ -34,12 +37,13 @@ const between = (lo, hi) => Math.round(lo + Math.random() * (hi - lo));
 
 // How long a bot takes over its next move: mostly quick, now and then a long think,
 // and very rarely nearly the whole clock.
-function think(phase) {
+function think(phase, idle) {
   const u = Math.random();
-  if (u < 0.004) return between(0.75 * IDLE, 0.92 * IDLE);
-  if (u < 0.05) return phase === 'claim' ? between(4000, 9000) : between(6000, 15000);
+  if (u < 0.004) return between(0.75 * idle, 0.92 * idle);
+  const f = idle / IDLE;
+  if (u < 0.05) return Math.round(f * (phase === 'claim' ? between(4000, 9000) : between(6000, 15000)));
   const [lo, hi] = phase === 'play' ? [2500, 6500] : phase === 'claim' ? [1200, 3000] : [1500, 3500];
-  return Math.round(lo + (hi - lo) * Math.random() ** 2);
+  return Math.round(f * (lo + (hi - lo) * Math.random() ** 2));
 }
 
 const REPLY = { hello: ['hello', 'smile'], bye: ['bye'], rematch: ['rematch', 'cheer'], luck: ['thanks', 'smile'] };
@@ -89,10 +93,10 @@ export class Room extends DurableObject {
   }
 
   // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
-  openTable(code, stake) {
+  openTable(code, stake, fast) {
     if (this.r) return false;
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, host: -1, seats: Array(4).fill(null),
+      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, fast: !!fast, host: -1, seats: Array(4).fill(null),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
     this.save();
@@ -111,7 +115,7 @@ export class Room extends DurableObject {
     else {
       i = r.seats.indexOf(null);
       r.seats[i] = human(p, Date.now());
-      if (!r.go) r.go = Date.now() + between(4000, 8000) * this.k;
+      if (!r.go) r.go = Date.now() + this.lag(4000, 8000);
     }
     const token = r.seats[i].token;
     if (r.seats.every(Boolean)) this.ctx.waitUntil(this.go());
@@ -171,7 +175,7 @@ export class Room extends DurableObject {
     });
     if (this.pooled() && this.lonely()) return this.wipe();
     if (r.go && Date.now() >= r.go) return this.fill();
-    if (this.pooled() && !r.go) r.go = Date.now() + between(4000, 8000) * this.k;
+    if (this.pooled() && !r.go) r.go = Date.now() + this.lag(4000, 8000);
     if (!r.pub && !r.seats[r.host]) r.host = this.firstHuman();
     this.save();
     this.send();
@@ -203,7 +207,7 @@ export class Room extends DurableObject {
     if (this.r) return this.refuse(ws, 'taken');
     if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, host: -1,
+      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, fast: m.fast === true, host: -1,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
     this.join(ws, a, m, p);
@@ -265,11 +269,20 @@ export class Room extends DurableObject {
     if (r.open || r.started) return;
     if (r.seats.every(Boolean)) return this.go();
     r.open = true;
-    r.go = Date.now() + between(4000, 8000) * this.k;
+    r.go = Date.now() + this.lag(4000, 8000);
     this.save();
     this.send();
     this.arm();
     this.report();
+  }
+
+  idle() {
+    return this.r.fast ? FAST : IDLE;
+  }
+
+  // the wait before a table looks for players, halved at a fast one
+  lag(lo, hi) {
+    return between(lo, hi) * (this.r.fast ? QUICK : 1) * this.k;
   }
 
   pooled() {
@@ -316,7 +329,7 @@ export class Room extends DurableObject {
     const r = this.r;
     if (!await this.seatOne()) return;
     if (r.seats.every(Boolean)) return this.go();
-    r.go = Date.now() + between(3000, 12000) * this.k;
+    r.go = Date.now() + this.lag(3000, 12000);
     this.save();
     this.send();
     this.arm();
@@ -590,7 +603,7 @@ export class Room extends DurableObject {
       this.report(true);
       const ps = r.seats.map((s, i) => i).filter(i => r.seats[i].fake);
       if (ps.length) this.chirp(ps[Math.floor(Math.random() * ps.length)], ['well', 'rematch', 'bye', 'cheer', 'smile'], 0.5);
-    } else if (this.st.phase !== 'matchend') r.wait = think(this.st.phase) * this.k;
+    } else if (this.st.phase !== 'matchend') r.wait = think(this.st.phase, this.idle()) * this.k;
     this.save();
     this.send();
     this.arm();
@@ -675,13 +688,13 @@ export class Room extends DurableObject {
     }
     if (st.phase === 'matchend') return r.paid ? Infinity : Date.now() + 5000 * k;
     if (!this.humans().length && !this.owes()) return Infinity;
-    if (st.phase === 'gameend') return r.since + NEXT * k;
+    if (st.phase === 'gameend') return r.since + (r.fast ? FAST_NEXT : NEXT) * k;
     const i = this.actor();
     const s = r.seats[i];
     const wait = r.wait || 1000 * k;
     if (s.bot || s.auto) return r.since + wait;
     if (!this.here(i)) return Math.max(r.since + wait, s.gone + GRACE * k);
-    return r.since + IDLE * k;
+    return r.since + this.idle() * k;
   }
 
   // How long the acting human has before the bot steps in; null when no clock is running.
@@ -691,7 +704,7 @@ export class Room extends DurableObject {
     const i = this.actor();
     const s = r.seats[i];
     if (s.auto || !s.bot && !this.here(i)) return null;
-    return { p: i, left: Math.max(0, r.since + IDLE * this.k - Date.now()), span: IDLE * this.k };
+    return { p: i, left: Math.max(0, r.since + this.idle() * this.k - Date.now()), span: this.idle() * this.k };
   }
 
   arm() {
@@ -742,7 +755,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, stake: r.stake, started: r.started,
+      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };
@@ -759,7 +772,7 @@ export class Room extends DurableObject {
     const r = this.r;
     return {
       t: 'room', code: r.code, n: r.n, games: r.games, level: r.level, host: r.host, you: me,
-      stake: r.stake, pub: r.pub, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
+      stake: r.stake, fast: !!r.fast, pub: r.pub, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
       seats: r.seats.map(s => s && { name: s.name, seed: s.seed, av: s.av, level: s.level })
     };
   }
@@ -777,7 +790,7 @@ export class Room extends DurableObject {
     const clock = this.clock();
     return {
       t: 'state', lb: sent,
-      n: n, stake: r.stake, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, stake: r.stake, fast: !!r.fast, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),

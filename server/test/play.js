@@ -15,7 +15,7 @@ let payout;
 
 const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
-const TOP = new Set(['t', 'lb', 'n', 'stake', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
+const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
 
@@ -1362,6 +1362,38 @@ async function held() {
   for (const c of [g.a, g.b, hx]) c.ws.close();
 }
 
+// fast tables are their own pool with a shorter turn clock; a friend table takes the switch too
+async function fast() {
+  const [a, b, c] = [await guest(), await guest(), await guest()];
+  const span = async (acc, fastOn) => {
+    const h = await hub(acc);
+    const s = h.next(m => m.t === 'seated');
+    h.send({ t: 'quick', stake: 100, fast: fastOn });
+    const sat = await s;
+    const r = seated(sat);
+    const room = await r.next(m => m.t === 'room');
+    assert.strictEqual(room.fast, fastOn);
+    const st = await r.next(m => m.t === 'state' && m.clock);
+    leakCheck(st);
+    assert.strictEqual(st.fast, fastOn);
+    return { code: sat.code, span: st.clock.span, close: () => { r.ws.close(); h.ws.close(); } };
+  };
+  const f = await span(a, true);
+  const n = await span(b, false);
+  assert.notStrictEqual(f.code, n.code, 'a normal quick play does not sit at a fast table');
+  const k = n.span / 30000;
+  assert.strictEqual(f.span, 15000 * k);
+  const f2 = await span(c, true);
+  assert.notStrictEqual(f2.code, n.code);
+  const host = client('/ws/new');
+  await host.ready;
+  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, level: 'relaxed', stake: 100, fast: true });
+  assert.strictEqual((await host.next(m => m.t === 'room')).fast, true);
+  console.log('fast: own pool, clock span ' + f.span + ' against ' + n.span + ', friend table fast');
+  for (const x of [f, n, f2]) x.close();
+  host.ws.close();
+}
+
 (async () => {
   schema();
   await math();
@@ -1387,6 +1419,7 @@ async function held() {
   await board();
   await fixes();
   await held();
+  await fast();
   console.log('ok');
   process.exit(0);
 })().catch(e => {
