@@ -16,3 +16,4 @@ ios/DerivedData/
 .gradle/
 *.apk
 .wrangler/
+server/test/dev.vars

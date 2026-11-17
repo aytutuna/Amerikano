@@ -1,5 +1,6 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
+import { identity, refresh, revoke } from './apple.js';
 
 const DAY = 86400000;
 const START = 5000;
@@ -10,6 +11,7 @@ export const ENTRY = 10;
 // the stake back plus the match chips at stake/10 each; negative when the match cost more than the stake
 export const payout = (stake, chips) => stake + chips * stake / 10;
 const ROLLS = 20;
+const SESSIONS = 10;
 const TOKEN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
 
 const today = () => Math.floor(Date.now() / DAY);
@@ -55,8 +57,13 @@ export async function credit(db, id, delta, reason, ref) {
 export async function verify(db, token) {
   const m = TOKEN.exec(token || '');
   if (!m) return null;
-  const p = await player(db, m[1]);
-  return p && p.secret_hash === await hash(m[2]) ? p : null;
+  const h = await hash(m[2]);
+  const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2').bind(m[1], h).first();
+  if (p) return p;
+  // a guest the old worker made after 0005 ran has no session yet; give it its one
+  const old = await db.prepare('SELECT * FROM players WHERE id = ?1 AND secret_hash = ?2 AND NOT EXISTS (SELECT 1 FROM sessions WHERE player = ?1)').bind(m[1], h).first();
+  if (old) await db.prepare('INSERT OR IGNORE INTO sessions (player, secret_hash, created) VALUES (?1, ?2, ?3)').bind(old.id, h, Date.now()).run();
+  return old;
 }
 
 export function player(db, id) {
@@ -96,7 +103,8 @@ function profile(p) {
     seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, xp: p.xp, level: p.level,
     from: 50 * p.level * (p.level - 1), to: 50 * p.level * (p.level + 1), games: p.games, wins: p.wins,
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: 500 + 250 * next },
-    bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now
+    bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
+    apple: !!p.apple
   };
 }
 
@@ -112,16 +120,82 @@ async function body(request) {
   }
 }
 
-async function guest(db) {
+// one secret per device, so signing in on a new one leaves the others signed in
+async function sessionStmts(db, id, secret) {
+  return [
+    db.prepare('INSERT INTO sessions (player, secret_hash, created) VALUES (?1, ?2, ?3)').bind(id, await hash(secret), Date.now()),
+    db.prepare('DELETE FROM sessions WHERE player = ?1 AND rowid NOT IN (SELECT rowid FROM sessions WHERE player = ?1 ORDER BY created DESC, rowid DESC LIMIT ?2)').bind(id, SESSIONS)
+  ];
+}
+
+// a is {sub, aud, token} for an account made by signing in with Apple
+async function guest(db, a) {
   const id = random(16);
   const secret = random(32);
   const now = Date.now();
   await db.batch([
-    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), START, now),
+    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), START, now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
+    ...await sessionStmts(db, id, secret),
     db.prepare('INSERT INTO chip_log (player, delta, reason, at) VALUES (?, ?, ?, ?)').bind(id, START, 'start', now)
   ]);
   return json({ id: id, secret: secret });
+}
+
+// every new account starts with chips, so keep one address from minting them in bulk
+const limited = async (env, request) => env.GUESTS && !(await env.GUESTS.limit({ key: request.headers.get('CF-Connecting-IP') || '' })).success;
+
+// A token counts once: its nonce was issued by /api/apple/nonce and is used up here.
+async function appleToken(env, b) {
+  if (typeof b.token !== 'string' || typeof b.nonce !== 'string') return null;
+  const a = await identity(env, b.token, b.nonce);
+  if (!a) return null;
+  const r = await env.DB.prepare('DELETE FROM nonces WHERE raw = ? AND exp > ?').bind(b.nonce, Date.now()).run();
+  return r.meta.changes === 1 ? a : null;
+}
+
+async function signIn(env, request) {
+  const b = await body(request);
+  const a = await appleToken(env, b);
+  if (!a) return fail('apple', 401);
+  // an authorization code works once, so it is exchanged here and not again on the retry
+  a.token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
+  return enter(env, request, a);
+}
+
+async function enter(env, request, a) {
+  const db = env.DB;
+  const old = await db.prepare('SELECT id FROM players WHERE apple = ?').bind(a.sub).first();
+  if (old) {
+    const secret = random(32);
+    await db.batch([
+      db.prepare('UPDATE players SET apple_refresh = COALESCE(?1, apple_refresh), apple_client = CASE WHEN ?1 IS NULL THEN apple_client ELSE ?2 END WHERE id = ?3').bind(a.token, a.aud, old.id),
+      ...await sessionStmts(db, old.id, secret)
+    ]);
+    return json({ id: old.id, secret: secret });
+  }
+  if (await limited(env, request)) return fail('slow', 429);
+  try {
+    return await guest(db, a);
+  } catch (e) {
+    if (!/UNIQUE/.test(e.message)) throw e;
+    // a parallel sign-in made the account first
+    return enter(env, request, a);
+  }
+}
+
+async function link(env, request, p) {
+  const b = await body(request);
+  const a = await appleToken(env, b);
+  if (!a) return fail('apple', 401);
+  const token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
+  try {
+    const r = await env.DB.prepare('UPDATE players SET apple = ?1, apple_refresh = COALESCE(?2, apple_refresh), apple_client = CASE WHEN ?2 IS NULL THEN apple_client ELSE ?4 END WHERE id = ?3 AND (apple IS NULL OR apple = ?1)').bind(a.sub, token, p.id, a.aud).run();
+    if (r.meta.changes !== 1) return json({ k: 'linked' }, 409);
+  } catch (e) {
+    if (/UNIQUE/.test(e.message)) return json({ k: 'taken' }, 409);
+    throw e;
+  }
 }
 
 async function reroll(db, p) {
@@ -162,15 +236,38 @@ export async function api(request, env) {
   const path = new URL(request.url).pathname;
   const method = request.method;
   if (path === '/api/guest' && method === 'POST') {
-    // every new account starts with chips, so keep one address from minting them in bulk
-    const ip = request.headers.get('CF-Connecting-IP') || '';
-    if (env.GUESTS && !(await env.GUESTS.limit({ key: ip })).success) return fail('slow', 429);
+    if (await limited(env, request)) return fail('slow', 429);
     return guest(db);
   }
+  if (path.startsWith('/api/apple') && !env.APPLE_KEY) return fail('apple', 503);
+  if (path === '/api/apple/nonce' && method === 'POST') {
+    if (env.NONCES && !env.PACE && !(await env.NONCES.limit({ key: request.headers.get('CF-Connecting-IP') || '' })).success) return fail('slow', 429);
+    const raw = random(16);
+    const now = Date.now();
+    await db.batch([
+      db.prepare('DELETE FROM nonces WHERE exp < ?').bind(now),
+      db.prepare('INSERT INTO nonces (raw, exp) VALUES (?, ?)').bind(raw, now + 600000)
+    ]);
+    return json({ nonce: raw });
+  }
+  if (path === '/api/apple' && method === 'POST') return signIn(env, request);
   const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
   if (!p) return fail('auth', 401);
   if (path === '/api/me' && method === 'DELETE') {
+    let token = p.apple_refresh;
+    let client = p.apple_client;
+    if (p.apple && !token && env.APPLE_KEY) {
+      // no token was kept, so Apple has to be asked again before the account goes
+      const b = await body(request);
+      const a = await appleToken(env, b);
+      if (!a || a.sub !== p.apple) return fail('reauth', 409);
+      token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
+      if (!token) return fail('apple', 502);
+      client = a.aud;
+    }
+    await revoke(env, token, client);
     await db.batch([
+      db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
@@ -187,6 +284,7 @@ export async function api(request, env) {
     await db.prepare('UPDATE players SET avatar = ? WHERE id = ?').bind(b.avatar.join(','), p.id).run();
   } else if (path === '/api/daily') err = await daily(db, p);
   else if (path === '/api/bailout') err = await bailout(db, p);
+  else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);
   if (err) return err;
   const row = await db.prepare('SELECT * FROM players WHERE id = ?').bind(p.id).first();

@@ -1,10 +1,16 @@
-// Plays whole matches through the socket API against a running `wrangler dev --var PACE:0.02`.
+// Make the env file first (it is gitignored):
+//   node -e "const c=require('crypto');console.log('PACE=0.02\nAPPLE_BASE=http://localhost:8791\nAPPLE_KEY='+c.generateKeyPairSync('ec',{namedCurve:'P-256'}).privateKey.export({type:'pkcs8',format:'der'}).toString('base64'))" > test/dev.vars
+// Plays whole matches through the socket API against a running
+// `wrangler dev --port 8787 --env-file test/dev.vars`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
+// The Apple tests play Apple's servers on port 8791.
 const assert = require('assert');
 const WebSocket = require('ws');
 const Game = require('../../www/js/game.js');
 const Chat = require('../../www/js/chat.js');
 
 const { execSync } = require('child_process');
+const crypto = require('crypto');
+const httpServer = require('http');
 let payout;
 
 const base = process.env.URL || 'ws://localhost:8787';
@@ -20,7 +26,7 @@ async function call(method, path, acc, body, origin) {
   if (acc) headers.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
   if (origin) headers.Origin = origin;
   // guests are rate limited per address
-  if (path === '/api/guest') headers['CF-Connecting-IP'] = '10.0.0.' + (++ips % 250);
+  if (path === '/api/guest' || path === '/api/apple') headers['CF-Connecting-IP'] = '10.0.0.' + (++ips % 250);
   const go = () => fetch(http + path, { method: method, headers: headers, body: body && JSON.stringify(body) });
   // the dev server drops idle connections while sql() runs
   const r = await go().catch(go);
@@ -570,6 +576,157 @@ async function accounts() {
   assert.strictEqual((await call('GET', '/api/me', acc)).status, 401);
   assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player = '" + acc.id + "'")[0].n, 0);
   console.log('account deleted with its rows');
+
+  // a guest the old worker made between migration 0005 and the deploy has no session row
+  const old = { id: crypto.randomBytes(16).toString('hex'), secret: crypto.randomBytes(32).toString('hex') };
+  const oh = crypto.createHash('sha256').update(old.secret).digest('hex');
+  sql("INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created) VALUES ('" + old.id + "', '" + oh + "', 1, '0,0,0,0', 5000, 0)");
+  assert.strictEqual((await call('GET', '/api/me', old)).status, 200);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM sessions WHERE player = '" + old.id + "'")[0].n, 1);
+  assert.strictEqual((await call('GET', '/api/me', { id: old.id, secret: '0'.repeat(64) })).status, 401);
+  console.log('a guest from before the sessions table gets its session on first use');
+}
+
+const b64u = x => Buffer.from(x).toString('base64url');
+
+async function apple() {
+  const pair = () => crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const good = pair();
+  const kid = 'k' + Date.now();
+  const jwk = Object.assign(good.publicKey.export({ format: 'jwk' }), { kid: kid, alg: 'RS256', use: 'sig' });
+  const spent = new Set();
+  const revoked = [];
+  const form = req => new Promise(res => { let d = ''; req.on('data', c => { d += c; }); req.on('end', () => res(Object.fromEntries(new URLSearchParams(d)))); });
+  const stub = httpServer.createServer(async (q, r) => {
+    if (q.url === '/auth/keys') return r.end(JSON.stringify({ keys: [jwk] }));
+    const f = await form(q);
+    if (f.client_secret.split('.').length !== 3) r.statusCode = 400;
+    else if (q.url === '/auth/revoke') revoked.push({ token: f.token, client: f.client_id });
+    else if (spent.has(f.code) || f.code.startsWith('bad') || (f.client_id === 'com.aytutuna.amerikano.web') !== (f.redirect_uri === 'https://amerikano.pages.dev/')) r.statusCode = 400;
+    else {
+      spent.add(f.code);
+      return r.end(JSON.stringify({ refresh_token: 'rt.' + f.code }));
+    }
+    r.end('{}');
+  });
+  await new Promise(res => stub.listen(8791, res));
+  const sha = raw => crypto.createHash('sha256').update(raw).digest('hex');
+  const mint = (o, key) => {
+    o = Object.assign({ iss: 'https://appleid.apple.com', aud: 'com.aytutuna.amerikano', exp: Math.floor(Date.now() / 1000) + 600 }, o);
+    const head = b64u(JSON.stringify({ alg: 'RS256', kid: kid })) + '.' + b64u(JSON.stringify(o));
+    return head + '.' + crypto.sign('RSA-SHA256', Buffer.from(head), (key || good).privateKey).toString('base64url');
+  };
+  // what the client sends once Apple has signed the nonce the server handed out
+  const cred = async (o, key, code) => {
+    o = Object.assign({ sub: 'sub.' + crypto.randomBytes(6).toString('hex') }, o);
+    const n = (await call('POST', '/api/apple/nonce')).body.nonce;
+    return { token: mint(Object.assign({ nonce: sha(n) }, o), key), nonce: n, code: code, sub: o.sub };
+  };
+  const post = (path, acc, c) => call('POST', path, acc, { token: c.token, nonce: c.nonce, code: c.code });
+  const row = id => sql("SELECT apple, apple_refresh, apple_client FROM players WHERE id = '" + id + "'")[0];
+  const sessions = id => sql("SELECT count(*) AS n FROM sessions WHERE player = '" + id + "'")[0].n;
+  const APP = 'com.aytutuna.amerikano';
+  const WEB = APP + '.web';
+
+  const t = await cred({}, null, 'c1');
+  let r = await post('/api/apple', null, t);
+  assert.strictEqual(r.status, 200);
+  const acc = r.body;
+  const me = (await call('GET', '/api/me', acc)).body;
+  assert.strictEqual(me.chips, 5000);
+  assert.strictEqual(me.apple, true);
+  assert.deepStrictEqual(row(acc.id), { apple: t.sub, apple_refresh: 'rt.c1', apple_client: APP });
+  assert.strictEqual((await post('/api/apple', null, t)).status, 401);
+  const again = await post('/api/apple', null, await cred({ sub: t.sub }, null, 'c2'));
+  assert.strictEqual(again.body.id, acc.id);
+  assert.notStrictEqual(again.body.secret, acc.secret);
+  assert.strictEqual((await call('GET', '/api/me', acc)).status, 200);
+  assert.strictEqual((await call('GET', '/api/me', again.body)).status, 200);
+  assert.strictEqual(row(acc.id).apple_refresh, 'rt.c2');
+  assert.strictEqual(sessions(acc.id), 2);
+  const web = await post('/api/apple', null, await cred({ aud: WEB }, null, 'w1'));
+  assert.strictEqual(web.status, 200);
+  assert.deepStrictEqual(row(web.body.id).apple_client, WEB);
+  assert.deepStrictEqual(row(web.body.id).apple_refresh, 'rt.w1');
+  console.log('apple sign-in makes an account, the same subject gets it back, every device stays signed in');
+
+  const racer = 'race.' + t.sub;
+  const burst = await Promise.all([1, 2, 3, 4].map(async i => post('/api/apple', null, await cred({ sub: racer }, null, 'r' + i))));
+  assert.strictEqual(new Set(burst.map(x => x.body.id)).size, 1);
+  assert.ok(row(burst[0].body.id).apple_refresh);
+  assert.strictEqual(sessions(burst[0].body.id), 4);
+  for (let i = 0; i < 12; i++) await post('/api/apple', null, await cred({ sub: racer }, null, 'm' + i));
+  assert.strictEqual(sessions(burst[0].body.id), 10);
+  console.log('parallel first sign-ins keep the token, a player keeps at most 10 devices');
+
+  const g = await guest();
+  await call('POST', '/api/daily', g);
+  const chips = (await call('GET', '/api/me', g)).body.chips;
+  assert.strictEqual((await call('GET', '/api/me', g)).body.apple, false);
+  const mine = await cred({}, null, 'l1');
+  r = await post('/api/apple/link', g, mine);
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.apple, true);
+  assert.strictEqual(r.body.chips, chips);
+  assert.strictEqual(row(g.id).apple_refresh, 'rt.l1');
+  assert.strictEqual((await post('/api/apple/link', g, mine)).status, 401);
+  const back = await post('/api/apple', null, await cred({ sub: mine.sub }, null, 'l2'));
+  assert.strictEqual(back.body.id, g.id);
+  r = await post('/api/apple/link', back.body, await cred({ sub: mine.sub }));
+  assert.strictEqual(r.status, 200);
+  r = await post('/api/apple/link', back.body, await cred({}));
+  assert.strictEqual(r.status, 409);
+  assert.deepStrictEqual(r.body, { k: 'linked' });
+  console.log('a guest keeps its chips when linking');
+
+  const other = await guest();
+  r = await post('/api/apple/link', other, await cred({ sub: t.sub }));
+  assert.strictEqual(r.status, 409);
+  assert.deepStrictEqual(r.body, { k: 'taken' });
+  assert.strictEqual((await call('GET', '/api/me', other)).body.apple, false);
+  assert.strictEqual((await post('/api/apple/link', null, await cred({ sub: t.sub }))).status, 401);
+  console.log('a subject owned by another account is refused, nothing merged');
+
+  const now = Math.floor(Date.now() / 1000);
+  const bad = [
+    await cred({ aud: 'com.example.other' }), await cred({ iss: 'https://evil.example' }), await cred({ exp: now - 10 }),
+    await cred({ nonce: sha('n2') }), await cred({}, pair()), { token: 'x.y.z', nonce: 'n1' }, { token: t.token }, {}
+  ];
+  for (const b of bad) assert.strictEqual((await call('POST', '/api/apple', null, b)).status, 401, JSON.stringify(b).slice(0, 60));
+  const wrong = await cred({});
+  assert.strictEqual((await call('POST', '/api/apple', null, { token: wrong.token, nonce: 'n1' })).status, 401);
+  const stale = await cred({});
+  sql("UPDATE nonces SET exp = 1 WHERE raw = '" + stale.nonce + "'");
+  assert.strictEqual((await post('/api/apple', null, stale)).status, 401);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE apple IN ('" + wrong.sub + "', '" + stale.sub + "')")[0].n, 0);
+  console.log('bad audience, issuer, expiry, nonce and signature are refused, a nonce works once');
+
+  const none = await post('/api/apple', null, await cred({}, null, 'bad1'));
+  assert.strictEqual(none.status, 200);
+  assert.strictEqual(row(none.body.id).apple_refresh, null);
+  r = await call('DELETE', '/api/me', none.body);
+  assert.strictEqual(r.status, 409);
+  assert.strictEqual(r.body.error, 'reauth');
+  r = await call('DELETE', '/api/me', none.body, await cred({}, null, 'd1'));
+  assert.strictEqual(r.status, 409);
+  assert.strictEqual((await call('GET', '/api/me', none.body)).status, 200);
+  const sub = row(none.body.id).apple;
+  assert.strictEqual((await call('DELETE', '/api/me', none.body, await cred({ sub: sub }, null, 'bad2'))).status, 502);
+  assert.strictEqual((await call('GET', '/api/me', none.body)).status, 200);
+  assert.strictEqual((await call('DELETE', '/api/me', none.body, await cred({ sub: sub }, null, 'd2'))).status, 200);
+  assert.deepStrictEqual(revoked.pop(), { token: 'rt.d2', client: APP });
+  assert.strictEqual(sessions(none.body.id), 0);
+
+  assert.strictEqual((await call('DELETE', '/api/me', web.body)).status, 200);
+  assert.deepStrictEqual(revoked.pop(), { token: 'rt.w1', client: WEB });
+  assert.strictEqual((await call('DELETE', '/api/me', acc)).status, 200);
+  assert.deepStrictEqual(revoked.pop(), { token: 'rt.c2', client: APP });
+  assert.strictEqual((await call('GET', '/api/me', again.body)).status, 401);
+  assert.strictEqual((await call('DELETE', '/api/me', g)).status, 200);
+  assert.strictEqual((await call('DELETE', '/api/me', other)).status, 200);
+  console.log('deleting an account revokes its Apple token with the client it came from');
+  for (const a of burst) await call('DELETE', '/api/me', a.body);
+  stub.close();
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1209,6 +1366,7 @@ async function held() {
   schema();
   await math();
   await accounts();
+  await apple();
   await races();
   await solo();
   await lobby();

@@ -3,6 +3,10 @@ main = "src/index.js"
 compatibility_date = "2026-10-01"
 account_id = "9c6272920c31b05b8706ebf88975188b"
 
+[vars]
+APPLE_TEAM = "8XT2U634Z4"
+APPLE_KEY_ID = "D6PRTQ85P3"
+
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "Room"
@@ -29,3 +33,8 @@ database_id = "30a1af0c-2671-4aed-8018-35fbcf9f2f89"
 name = "GUESTS"
 namespace_id = "1001"
 simple = { limit = 3, period = 60 }
+
+[[ratelimits]]
+name = "NONCES"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
