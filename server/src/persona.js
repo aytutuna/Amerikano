@@ -93,3 +93,8 @@ export async function payoff(db, id, pay, add) {
   await db.prepare('UPDATE personas SET level = ?1, chips = chips + ?2 WHERE id = ?3').bind(to, bonus, id).run();
   return p.chips + bonus;
 }
+
+// a tournament prize, on top of what the match already added
+export function grant(db, id, n) {
+  return db.prepare('UPDATE personas SET chips = chips + ? WHERE id = ?').bind(n, id).run();
+}

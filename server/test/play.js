@@ -16,8 +16,9 @@ let payout;
 const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
-  'chooser', 'clock', 'rm', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
+  'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
+const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
 const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
 
 let ips = 0;
@@ -80,6 +81,7 @@ function leakCheck(m) {
   for (const k of Object.keys(m)) assert(TOP.has(k), 'unexpected key ' + k);
   assert.strictEqual(typeof m.stock, 'number');
   if (m.rm) for (const k of Object.keys(m.rm)) assert(RM.has(k), 'unexpected rematch key ' + k);
+  if (m.cup) for (const k of Object.keys(m.cup)) assert(CUP.has(k), 'unexpected tournament key ' + k);
   if (m.clock) assert(m.clock.p >= 0 && m.clock.p < m.n && m.clock.left >= 0 && m.clock.left <= m.clock.span, 'bad clock');
   m.players.forEach((p, k) => {
     for (const x of Object.keys(p)) assert(SEAT.has(x), 'unexpected player key ' + x);
@@ -1541,6 +1543,196 @@ async function rematchFriends() {
   b.ws.close();
 }
 
+const cupIn = acc => sql("SELECT delta, ref FROM chip_log WHERE reason = 'cup' AND player = '" + acc.id + "' ORDER BY id");
+
+// withdrawing, by message or by closing the app, costs nothing and frees the player
+async function cupCancel() {
+  const acc = await guest();
+  const h = await hub(acc);
+  const counts = [];
+  h.handlers.push(m => m.t === 'cup' && m.buy && counts.push(m.n));
+  const first = h.next(m => m.t === 'cup' && m.buy === 5000);
+  h.send({ t: 'cup', buy: 5000 });
+  const f = await first;
+  assert.strictEqual(f.n, 1);
+  assert(f.left > 0 && f.left <= 20000 * 0.02 + 1);
+  const no = h.next(m => m.t === 'error');
+  h.send({ t: 'quick', stake: 100 });
+  assert.strictEqual((await no).k, 'busy', 'a registered player is held');
+  // cancel early: under the test pace the eight can be there within half a second, and a started tournament has no way out
+  await h.next(m => m.t === 'cup' && m.n >= 3);
+  const before = Math.max(...counts);
+  const out = h.next(m => m.t === 'cup' && m.buy === 0);
+  h.send({ t: 'cup', buy: 0 });
+  await out;
+  const again = h.next(m => m.t === 'cup' && m.buy === 5000);
+  h.send({ t: 'cup', buy: 5000 });
+  assert((await again).n >= before, 'signing straight back in finds the same count');
+  h.ws.close();
+  await sleep(800);
+  const h2 = await hub(acc);
+  const fresh = h2.next(m => m.t === 'cup' && m.buy === 5000);
+  h2.send({ t: 'cup', buy: 5000 });
+  assert.strictEqual((await fresh).n, 1, 'closing the app withdrew the player');
+  h2.send({ t: 'cup', buy: 0 });
+  await h2.next(m => m.t === 'cup' && m.buy === 0);
+  assert.strictEqual(cupIn(acc).length, 0, 'nothing was taken');
+  assert.strictEqual((await call('GET', '/api/me', acc)).body.chips, 5000);
+  console.log('tournament: withdrawing costs nothing and frees the player');
+  h2.ws.close();
+}
+
+// a tournament whose humans all fail to pay at the start is dropped, not played by personas alone
+async function cupGone() {
+  const t0 = Date.now();
+  const acc = await guest();
+  // the account can register, but its chips never move, as if it were deleted before the start
+  sql("CREATE TRIGGER frozen BEFORE UPDATE ON players WHEN old.id = '" + acc.id + "' AND new.chips < old.chips BEGIN SELECT RAISE(IGNORE); END");
+  const h = await hub(acc);
+  const poor = h.next(m => m.t === 'error' && m.k === 'poor');
+  h.send({ t: 'cup', buy: 1000 });
+  await within(poor, 10000, 'the start fails');
+  await sleep(1500);
+  sql('DROP TRIGGER frozen');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE busy IS NOT NULL AND busy_at >= ' + t0)[0].n, 0, 'no personas are left claimed');
+  console.log('tournament: nobody paid, so nothing started');
+  h.ws.close();
+}
+
+async function cupPoor() {
+  const acc = await guest();
+  sql("UPDATE players SET chips = 999 WHERE id = '" + acc.id + "'");
+  const h = await hub(acc);
+  const seen = [];
+  h.handlers.push(m => seen.push(m));
+  const no = h.next(m => m.t === 'error');
+  h.send({ t: 'cup', buy: 1000 });
+  assert.strictEqual((await no).k, 'poor');
+  const no2 = h.next(m => m.t === 'error');
+  h.send({ t: 'cup', buy: 12 });
+  h.send({ t: 'cup', buy: 5000 });
+  assert.strictEqual((await no2).k, 'poor');
+  await sleep(200);
+  assert(!seen.some(m => m.t === 'cup'), 'a poor player is not registered');
+  assert.strictEqual(cupIn(acc).length, 0);
+  console.log('tournament: a player who cannot cover the buy-in is refused');
+  h.ws.close();
+}
+
+// Humans enter and personas fill the rest. Nothing moves at the first tables, and the final pays 50/25/15/10 of eight buy-ins.
+// With six humans one leaves right after the start: it is let go at once, gets no prize, and its share stays unpaid.
+async function cupRun(n) {
+  const buy = 1000;
+  const prizes = [4000, 2000, 1200, 800];
+  const hs = [];
+  let snap = null;
+  for (const acc of await Promise.all(Array.from({ length: n }, guest))) {
+    const h = await hub(acc);
+    const x = { acc: acc, h: h, counts: [], msgs: [], rooms: [], round: null, leaver: n === 6 && hs.length === 5, late: n === 2 };
+    x.end = new Promise(res => h.handlers.push(m => {
+      x.msgs.push(m);
+      if (m.t === 'cup') x.counts.push(m.n);
+      if (m.t === 'cupout' || m.t === 'cupend') res(m);
+      if (m.t !== 'seated' || !m.cup) return;
+      assert.strictEqual(m.cup, x.round ? 'final' : 'first');
+      assert(x.rooms.every(r => r.ws.readyState === 1), 'the first table is kept until the final opens');
+      x.round = m.cup;
+      for (const r of x.rooms) r.ws.close();
+      const r = seated(m);
+      play(r, { finish: c => {
+        if (!x.late || x.round !== 'final' || x.sent) return;
+        x.sent = true;
+        c.send({ t: 'leave' });
+      } });
+      x.rooms = [r];
+      if (x.leaver) r.ready.then(() => sleep(300)).then(() => {
+        r.send({ t: 'leave' });
+        res({ t: 'left' });
+      });
+      // the personas of this tournament stay level so no match brings a bonus, and their chips are noted
+      if (!snap) {
+        const id = cupIn(acc)[0].ref.split(':')[0];
+        sql("UPDATE personas SET level = 20, xp = 19000 WHERE busy = '" + id + "'");
+        snap = { id: id, rows: sql("SELECT id, chips FROM personas WHERE busy = '" + id + "'") };
+      }
+    }));
+    hs.push(x);
+  }
+  const a = hs[0];
+  const t0 = Date.now();
+  const first = a.h.next(m => m.t === 'cup');
+  a.h.send({ t: 'cup', buy: buy });
+  assert.strictEqual((await first).n, 1);
+  for (const x of hs.slice(1)) {
+    x.h.send({ t: 'cup', buy: buy });
+    await sleep(20);
+  }
+  const held = a.h.next(m => m.t === 'error');
+  a.h.send({ t: 'quick', stake: 100 });
+  assert.strictEqual((await held).k, 'busy');
+  for (let i = 0; i < 600 && !a.counts.includes(8); i++) await sleep(50);
+  assert.deepStrictEqual(a.counts, [1, 2, 3, 4, 5, 6, 7, 8], 'the count climbs one at a time');
+  console.log('tournament: the count climbed to 8 in ' + (Date.now() - t0) + 'ms');
+
+  await within(Promise.all(hs.map(x => x.end)), 400000, 'tournament');
+  const ids = () => snap.rows.map(r => "'" + r.id + "'").join(',');
+  for (let i = 0; i < 480 && sql("SELECT count(*) AS n FROM personas WHERE busy = '" + snap.id + "'")[0].n; i++) await sleep(500);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM personas WHERE busy = '" + snap.id + "'")[0].n, 0, 'the personas are free again');
+  await sleep(500);
+
+  let paid = 0;
+  for (const x of hs) {
+    assert(!x.msgs.some(m => /bot|fake|persona/i.test(JSON.stringify(m))), 'no hub message says bot');
+    const rows = cupIn(x.acc);
+    assert.deepStrictEqual(rows[0], { delta: -buy, ref: snap.id + ':in' }, 'the buy-in is taken once');
+    assert.strictEqual(new Set(rows.map(r => r.ref)).size, rows.length, 'refs are unique');
+    const log = sql("SELECT reason, delta FROM chip_log WHERE player = '" + x.acc.id + "'");
+    assert(!log.some(r => r.reason === 'escrow' || r.reason === 'match'), 'no chips moved at a table');
+    const me = (await call('GET', '/api/me', x.acc)).body;
+    assert.strictEqual(me.chips, log.reduce((n, r) => n + r.delta, 0), 'every chip change is logged');
+    const end = x.msgs.find(m => m.t === 'cupend');
+    if (x.leaver) {
+      assert(!end && rows.length === 1 && !x.msgs.some(m => m.t === 'cupout'), 'the leaver got nothing');
+      const sat = x.h.next(m => m.t === 'seated');
+      x.h.send({ t: 'quick', stake: 100 });
+      await within(sat, 5000, 'the leaver is free');
+      console.log('tournament: a human who left was let go and paid only the buy-in');
+      continue;
+    }
+    const week = sql("SELECT week_won AS n FROM players WHERE id = '" + x.acc.id + "'")[0].n;
+    if (!end) {
+      assert.strictEqual(rows.length, 1);
+      assert(x.msgs.some(m => m.t === 'cupout'));
+      assert.strictEqual(week, 0);
+      console.log('tournament: a human went out after the first round and paid only the buy-in');
+      continue;
+    }
+    assert.strictEqual(x.round, 'final');
+    assert.strictEqual(end.prize, prizes[end.place - 1], 'leaving after the final does not cost the prize');
+    assert.deepStrictEqual(rows[1], { delta: end.prize, ref: snap.id + ':out' });
+    const st = x.rooms[0].st;
+    assert.strictEqual(st.cup.round, 'final');
+    assert.strictEqual(st.cup.place, end.place);
+    assert.strictEqual(st.stake, 0);
+    assert.deepStrictEqual(st.cup.prizes, prizes);
+    assert.strictEqual(week, Math.max(0, end.prize - buy));
+    paid += end.prize;
+    console.log('tournament: a human placed ' + end.place + ' at the final and got ' + end.prize);
+  }
+  const after = sql('SELECT sum(chips) AS n FROM personas WHERE id IN (' + ids() + ')')[0].n;
+  paid += after - snap.rows.reduce((n, r) => n + r.chips, 0);
+  const unpaid = 8 * buy - paid;
+  assert(n === 6 ? [0, ...prizes].includes(unpaid) : unpaid === 0, 'the pool was paid out, less the share of a leaver: ' + unpaid);
+  const free = a.h.next(m => m.t === 'seated');
+  a.h.send({ t: 'quick', stake: 100 });
+  await within(free, 5000, 'free after the tournament');
+  console.log('tournament: 8 x ' + buy + ' paid out by place, players held during and free after');
+  for (const x of hs) {
+    for (const r of x.rooms) r.ws.close();
+    x.h.ws.close();
+  }
+}
+
 (async () => {
   schema();
   await math();
@@ -1572,6 +1764,11 @@ async function rematchFriends() {
   await rematchAway();
   await rematchNone();
   await rematchFriends();
+  await cupCancel();
+  await cupPoor();
+  await cupGone();
+  await cupRun(2);
+  await cupRun(6);
   console.log('ok');
   process.exit(0);
 })().catch(e => {

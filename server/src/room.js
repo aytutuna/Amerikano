@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
-import { verify, player, award, seat, credit, payout, STAKES, ENTRY } from './account.js';
+import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
 import { won, rel } from './social.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
 
@@ -17,6 +17,7 @@ const REMATCH = 15000;
 const STAYS = 0.6;
 const TALK = 4;
 const KEEP = 600000;
+const CUP_KEEP = 3 * 3600000;
 const BURST = 3;
 const EVERY = 2000;
 const GAP = 5000;
@@ -106,6 +107,32 @@ export class Room extends DurableObject {
     return true;
   }
 
+  // Called by the Hub for a tournament table: a private room that is full and starts at once. Chips never
+  // move here (the stake is 0), so the match runs as usual and the Hub settles the prizes. Returns the seat tokens,
+  // the same ones again if the Hub asks twice for the same tournament.
+  openCup(code, cup, seats) {
+    if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
+    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, bot: true }, more);
+    this.r = {
+      code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, fast: false, host: -1, cup: cup,
+      seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
+      started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
+    };
+    this.save();
+    this.ctx.waitUntil(this.go());
+    return this.r.seats.map(s => s.bot ? null : s.token);
+  }
+
+  // The Hub is done with a first-round table once the final is seated, or at once when the tournament is cancelled.
+  async cupClose(id, now) {
+    const r = this.r;
+    if (!r || !r.cup || r.cup.id !== id) return;
+    if (now) return this.wipe();
+    r.dead = Date.now() + KEEP * this.k;
+    this.save();
+    this.arm();
+  }
+
   // Called by the Hub for a player it has checked. The socket joins afterwards with the token.
   // A refusal still carries the table as it is now, so the Hub keeps it listed.
   sit(p) {
@@ -159,6 +186,7 @@ export class Room extends DurableObject {
     const r = this.r;
     if (!r) return;
     if (r.over && !r.paid) await this.settle().catch(() => {});
+    if (this.owes() && r.paid) await this.sendCup().catch(() => {});
     if (r.rm) return this.tick();
     if (r.dead && Date.now() >= r.dead && (!r.over || r.paid) && !this.owes()) return this.wipe();
     if (r.over) return this.arm();
@@ -603,7 +631,8 @@ export class Room extends DurableObject {
     this.watch();
     if (this.st.phase === 'matchend' && !r.over) {
       r.over = true;
-      r.dead = Date.now() + KEEP * this.k;
+      // a first-round table stays until the Hub closes it, as its qualifiers wait on the other table
+      r.dead = Date.now() + (r.cup && r.cup.round === 'first' ? CUP_KEEP : KEEP) * this.k;
       this.outcome();
       if (!this.humans().length) this.report(true);
       const ps = r.seats.map((s, i) => i).filter(i => r.seats[i].fake);
@@ -638,6 +667,8 @@ export class Room extends DurableObject {
       const xp = played ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
       return { pid: s.pid, pay: pay, net: pay - r.stake, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > r.stake ? pay - r.stake : 0, fake: s.fake, done: false };
     });
+    // taken now: a seat that leaves after the end must not change what the Hub is told
+    if (r.cup) r.cup.order = st.final.order.map(i => ({ pid: r.seats[i].pid, left: !r.seats[i].fake && !!r.seats[i].bot, played: !!(r.res[i] && r.res[i].xp) }));
   }
 
   // a second call while the first is running waits for it
@@ -671,7 +702,8 @@ export class Room extends DurableObject {
       const p = await player(this.env.DB, x.pid);
       if (p) r.seats[i].bank = p.chips;
     }
-    if (this.humans().length) {
+    if (r.cup) r.paid = true;
+    else if (this.humans().length) {
       r.paid = true;
       this.ask();
     } else {
@@ -681,6 +713,15 @@ export class Room extends DurableObject {
     }
     this.save();
     this.send();
+    if (r.cup) await this.sendCup();
+  }
+
+  // The Hub gets the finishing order, and again on the next alarm until it has taken it.
+  async sendCup() {
+    const { r } = this;
+    await this.env.HUB.get(this.env.HUB.idFromName('h')).cupDone(r.cup.id, r.code, r.cup.order);
+    r.cup.sent = true;
+    this.save();
   }
 
   // personas stay claimed and the table stays held by the hub until the window closes
@@ -787,7 +828,7 @@ export class Room extends DurableObject {
   // Stakes are held for a started match, so the bots play it out even when nobody is connected.
   owes() {
     const r = this.r;
-    return r.started && !r.paid && r.seats.some(s => s && s.esc);
+    return r.started && !r.paid && r.seats.some(s => s && s.esc) || !!r.cup && r.paid && !r.cup.sent;
   }
 
   due() {
@@ -800,7 +841,7 @@ export class Room extends DurableObject {
     }
     if (st.phase === 'matchend') {
       if (r.rm) return Math.min(r.rm.end, ...Object.values(r.rm.p).map(d => d.at));
-      return r.paid ? Infinity : Date.now() + 5000 * k;
+      return r.paid && !this.owes() ? Infinity : Date.now() + 5000 * k;
     }
     if (!this.humans().length && !this.owes()) return Infinity;
     if (st.phase === 'gameend') return r.since + (r.fast ? FAST_NEXT : NEXT) * k;
@@ -870,7 +911,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started,
+      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started, cup: r.cup ? r.cup.id : null,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };
@@ -887,7 +928,7 @@ export class Room extends DurableObject {
     const r = this.r;
     return {
       t: 'room', code: r.code, n: r.n, games: r.games, level: r.level, host: r.host, you: me,
-      stake: r.stake, fast: !!r.fast, pub: r.pub, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
+      stake: r.stake, fast: !!r.fast, pub: r.pub, cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy) }, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
       seats: r.seats.map(s => s && { name: s.name, seed: s.seed, av: s.av, level: s.level })
     };
   }
@@ -903,6 +944,7 @@ export class Room extends DurableObject {
     const ids = cs => cs.map(c => c.id);
     const res = st.result;
     const clock = this.clock();
+    const place = st.final ? st.final.order.indexOf(me) + 1 : 0;
     return {
       t: 'state', lb: sent,
       n: n, stake: r.stake, fast: !!r.fast, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
@@ -922,6 +964,7 @@ export class Room extends DurableObject {
         if (k === 0) o.hand = ids(p.hand);
         return o;
       }),
+      cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy), place: place || undefined, through: r.cup.round === 'first' && place ? place <= 2 : undefined },
       rm: r.rm && { left: Math.max(0, r.rm.end - Date.now()), want: this.wanting().length, mine: r.rm.want.includes(me) },
       res: r.res && r.res[me] ? { net: r.res[me].net, xp: r.res[me].xp, from: r.res[me].from } : undefined,
       result: res && { rows: per(res.rows), finisher: rot(res.finisher) },

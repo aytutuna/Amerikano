@@ -7,6 +7,10 @@ const START = 5000;
 const MIN_ROOM = 1000;
 export const STAKES = [100, 500, 2500, 10000, 50000];
 export const ENTRY = 10;
+export const BUYINS = [1000, 5000, 25000];
+
+// what the final table of a tournament shares out, from first place down: half, a quarter, 15 % and 10 % of the buy-ins
+export const prizes = buy => [50, 25, 15, 10].map(x => 8 * buy * x / 100);
 
 // the stake back plus the match chips at stake/10 each; negative when the match cost more than the stake
 export const payout = (stake, chips) => stake + chips * stake / 10;
