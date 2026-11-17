@@ -1085,6 +1085,8 @@ async function whereabouts() {
   hf.ws.close();
   hp.ws.close();
   console.log('join a friend: poor refused, public table sat through the hub');
+  // the public table can start before the sockets close, and leaving then costs the stake
+  sql("UPDATE players SET chips = 5000 WHERE id IN ('" + a.id + "', '" + f.id + "')");
 
   // a private room is joined by its code, with the same chip check
   const host = client('/ws/new');
