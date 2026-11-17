@@ -31,6 +31,13 @@ var Social = (function () {
 
   S.refresh = () => Account.call('GET', '/api/friends').then(d => (book = d));
 
+  // another account is signed in now
+  S.reset = () => {
+    book = { friends: [], incoming: [], outgoing: [], blocked: [] };
+    board = null;
+    late = null;
+  };
+
   S.list = () => book.friends;
 
   S.blocked = pid => !!pid && book.blocked.some(x => x.id === pid);

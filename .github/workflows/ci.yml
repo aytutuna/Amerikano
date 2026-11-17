@@ -109,6 +109,10 @@ jobs:
               page.on('pageerror', e => errors.push(name + ': ' + e.message));
               page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push(name + ': ' + m.text()); });
               await page.goto('http://localhost:8080/');
+              // a fresh browser has no account, so the sign-in page comes first
+              await page.waitForSelector('#home [data-k=guest]', { timeout: 15000 });
+              await page.screenshot({ path: out + '/' + name + '-signin.png' });
+              await page.click('#home [data-k=guest]');
               await page.waitForSelector('#home [data-k=go]', { timeout: 15000 });
               await page.waitForTimeout(1500);
               await page.screenshot({ path: out + '/' + name + '-lobby.png' });
@@ -146,7 +150,7 @@ jobs:
               page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push('portrait: ' + m.text()); });
               await page.goto('http://localhost:8080/');
               await page.waitForSelector('#rot', { state: 'visible', timeout: 15000 });
-              await page.waitForSelector('#home [data-k=go]', { state: 'attached', timeout: 15000 });
+              await page.waitForSelector('#home [data-k=guest]', { state: 'attached', timeout: 15000 });
               await page.screenshot({ path: out + '/portrait-rot.png' });
               await ctx.close();
             } catch (e) {

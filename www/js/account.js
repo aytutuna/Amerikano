@@ -25,11 +25,11 @@ var Account = (function () {
   async function call(method, path, body) {
     const h = {};
     if (body) h['Content-Type'] = 'application/json';
-    if (acc && path !== '/api/guest') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
+    if (acc && path !== '/api/guest' && path !== '/api/apple') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
     const r = await fetch(base() + path, { method: method, headers: h, body: body && JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    if (r.status === 401 && acc) forget();
-    if (!r.ok) throw Object.assign(new Error(d.error || 'api'), { status: r.status });
+    if (r.status === 401 && acc && d.error === 'auth') forget();
+    if (!r.ok) throw Object.assign(new Error(d.error || d.k || 'api'), { status: r.status });
     return d;
   }
 
@@ -72,13 +72,26 @@ var Account = (function () {
     return me || A.refresh();
   };
 
+  // c is {token, nonce, code} from Apple; the account linked to that Apple ID replaces the stored one
+  A.signIn = async c => {
+    const g = await call('POST', '/api/apple', c);
+    acc = g;
+    me = null;
+    keep(KEY, g);
+    keep(ME, null);
+    return A.refresh();
+  };
+
+  A.link = async c => set(await call('POST', '/api/apple/link', c));
+
   A.reroll = async () => set(await call('POST', '/api/name'));
   A.look = async avatar => set(await call('POST', '/api/avatar', { avatar: avatar }));
   A.daily = async () => set(await call('POST', '/api/daily'));
   A.bailout = async () => set(await call('POST', '/api/bailout'));
 
-  A.remove = async () => {
-    await call('DELETE', '/api/me');
+  // an Apple account the server holds no token for has to send a fresh credential
+  A.remove = async cred => {
+    await call('DELETE', '/api/me', cred);
     forget();
   };
 

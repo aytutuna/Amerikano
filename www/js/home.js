@@ -6,8 +6,10 @@ var UI = (function () {
   let again = 0;
   let pressed = false;
   let linked = '';
+  // a table link opened before signing in waits for the sign-in page
+  let later = null;
   // net is wait, up, down or replaced
-  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {} };
+  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, gate: '' };
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -191,7 +193,13 @@ var UI = (function () {
       form.appendChild(choice('speed', t('set.speed'), ['slow', 'normal', 'fast'].map(v => ({ v: v, label: t('set.' + v) })), Settings.get('speed'), v => Settings.set('speed', v), 'seg'));
       form.appendChild(choice('back', t('set.back'), ['red', 'blue', 'green', 'graphite'].map(v => ({ v: v, label: t('set.' + v), pic: () => backSwatch(v) })), Settings.get('back'), v => Settings.set('back', v), 'seg pics'));
       form.appendChild(choice('felt', t('set.felt'), ['green', 'blue', 'wine', 'walnut'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => Settings.set('felt', v), 'seg pics'));
-      if (Account.has() && Account.me() && !App.active()) form.appendChild(button(t('pf.delete'), 'quiet', () => { h.close(); profile(true); }));
+      const acct = Account.has() && Account.me() && !App.active() ? Account.me() : null;
+      if (acct) {
+        const ex = node('div', 'exit');
+        if (acct.apple) ex.appendChild(button(t('set.out'), 'quiet', () => { h.close(); signOut(); }));
+        ex.appendChild(button(t('pf.delete'), 'quiet', () => { h.close(); profile(true); }));
+        form.appendChild(ex);
+      }
       if (was) {
         const e = form.querySelector('[data-f="' + was + '"]');
         if (e) e.focus({ preventScroll: true });
@@ -272,7 +280,7 @@ var UI = (function () {
   }
 
   function capsule(me) {
-    const b = raw('me', profile);
+    const b = raw('me', () => profile());
     b.dataset.k = 'me';
     b.setAttribute('aria-label', who(me.seed) + ', ' + t('pf.level', { n: me.level }));
     const pic = node('span', 'mypic');
@@ -289,7 +297,7 @@ var UI = (function () {
 
   // the chips, with the profile behind it where a top-up lives
   function purse(me) {
-    const b = raw('pq', profile);
+    const b = raw('pq', () => profile());
     b.dataset.k = 'chips';
     b.setAttribute('aria-label', t('pf.chips') + ' ' + fmt(me.chips));
     b.appendChild(Cards.icon('i-chip', 'chip'));
@@ -342,10 +350,142 @@ var UI = (function () {
 
   const LOOK = ['skin', 'eyes', 'hair', 'acc'];
 
+  // black, with Apple's mark, as Apple's button rules ask on a light background
+  function appleButton(fn) {
+    const b = node('button', 'btn apple');
+    b.type = 'button';
+    b.appendChild(Cards.icon('i-apple', 'ic'));
+    b.appendChild(node('span', '', t('signin.apple')));
+    b.addEventListener('click', fn);
+    Apple.warm();
+    return b;
+  }
+
+  function linkApple(b, fill) {
+    b.disabled = true;
+    Apple.signIn().then(c => Account.link(c)).then(fill, e => {
+      b.disabled = false;
+      if (e.cancelled) return;
+      if (e.message === 'taken') return takenAsk();
+      notice(t(e.message === 'linked' ? 'pf.other' : e instanceof TypeError ? 'net.err.lost' : 'signin.fail'));
+    });
+  }
+
+  // that Apple ID already has an account: offer it in place of this guest
+  function takenAsk() {
+    Sheet.open({
+      kind: 'center', title: t('pf.taken'), body: node('p', '', t('pf.takenAsk')),
+      actions: [
+        { label: t('pf.switch'), kind: 'plain', fn: switchTo },
+        { label: t('cancel'), kind: 'primary' }
+      ]
+    });
+  }
+
+  // Apple's credential was spent on the link, so it is asked for again
+  function switchTo() {
+    Sheet.closeAll();
+    Apple.signIn().then(c => Account.signIn(c)).then(() => {
+      Net.cancel();
+      Social.reset();
+      retry();
+    }, e => { if (!e.cancelled) notice(t(e instanceof TypeError ? 'net.err.lost' : 'signin.fail')); });
+  }
+
+  function signOut() {
+    Net.cancel();
+    Account.forget();
+    Social.reset();
+    Net.up();
+    at.net = 'wait';
+    at.tab = 'rooms';
+    at.stakes = null;
+    at.gate = '';
+    draw();
+  }
+
+  function signApple() {
+    at.gate = 'busy';
+    draw();
+    Apple.signIn().then(c => Account.signIn(c)).then(enter, fail);
+  }
+
+  function signGuest() {
+    at.gate = 'busy';
+    draw();
+    Account.ensure().then(enter, fail);
+  }
+
+  function enter() {
+    at.gate = '';
+    boot();
+  }
+
+  function fail(e) {
+    // the account came through but its profile did not; the lobby has the offline card for that
+    if (Account.has()) return enter();
+    at.gate = e.cancelled ? '' : e instanceof TypeError || e.status >= 500 ? 'down' : 'fail';
+    draw();
+  }
+
+  // the first screen without an account: Apple, a guest, or Training when the server is out of reach
+  function gate() {
+    const home = $('home');
+    const keep = home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+    home.hidden = false;
+    home.textContent = '';
+    const bar = node('div', 'hl-top');
+    const end = node('div', 'hl-end');
+    const gear = raw('ib', settings);
+    gear.dataset.k = 'set';
+    gear.setAttribute('aria-label', t('start.settings'));
+    gear.appendChild(Cards.icon('i-gear', 'ic'));
+    end.appendChild(gear);
+    bar.appendChild(end);
+    home.appendChild(bar);
+    const busy = at.gate === 'busy';
+    const down = at.gate === 'down';
+    const box = node('main', 'gate-box');
+    const pn = node('section', 'paper gate');
+    pn.appendChild(node('h2', 'gate-t', t('start.title')));
+    if (down) {
+      pn.appendChild(node('p', 'gate-s', t('nonet.down')));
+      const p = node('p', 'note', t('nonet.downNote'));
+      p.setAttribute('role', 'alert');
+      pn.appendChild(p);
+    } else pn.appendChild(node('p', 'gate-s', t(Apple.can() ? 'signin.lead' : 'signin.leadGuest')));
+    if (Apple.can()) {
+      const a = appleButton(signApple);
+      a.dataset.k = 'apple';
+      a.disabled = busy;
+      pn.appendChild(a);
+    }
+    const g = button(t('signin.guest'), 'primary', signGuest);
+    g.dataset.k = 'guest';
+    g.disabled = busy;
+    pn.appendChild(g);
+    if (down) {
+      const tr = button(t('start.go'), 'quiet', setup);
+      tr.dataset.k = 'go';
+      pn.appendChild(tr);
+    } else {
+      const p = node('p', 'note', t(busy ? 'net.connecting' : at.gate === 'fail' ? 'signin.fail' : 'signin.note'));
+      if (busy || at.gate === 'fail') p.setAttribute('role', busy ? 'status' : 'alert');
+      pn.appendChild(p);
+    }
+    box.appendChild(pn);
+    home.appendChild(box);
+    if (keep) {
+      const e = home.querySelector('[data-k="' + keep + '"]');
+      if (e && !e.disabled) e.focus({ preventScroll: true });
+    }
+  }
+
   function profile(ask) {
     if (!Account.me()) return;
     const body = node('div', 'prof');
     let sure = !!ask;
+    let again = false;
     let h = null;
 
     function swap(me, k, v) {
@@ -428,6 +568,20 @@ var UI = (function () {
         right.appendChild(fs);
       });
 
+      if (me.apple || Apple.can()) {
+        const ap = node('div', 'pf-apple' + (me.apple ? ' on' : ''));
+        if (me.apple) {
+          ap.appendChild(Cards.icon('i-apple', 'ic'));
+          ap.appendChild(node('b', '', t('pf.linked')));
+        } else {
+          const b = appleButton(() => linkApple(b, fill));
+          b.dataset.f = 'apple';
+          ap.appendChild(b);
+          ap.appendChild(node('p', 'note', t('pf.appleNote')));
+        }
+        left.appendChild(ap);
+      }
+
       const del = node('div', 'danger');
       if (!sure) {
         const d = button(t('pf.delete'), 'quiet', () => { sure = true; fill(); });
@@ -439,11 +593,20 @@ var UI = (function () {
         del.appendChild(p);
         const go = button(t('pf.deleteGo'), 'plain', () => {
           go.disabled = true;
-          Account.remove().then(() => {
+          (again ? Apple.signIn().then(c => Account.remove(c)) : Account.remove()).then(() => {
             h.close();
+            Net.cancel();
+            Social.reset();
+            Net.up();
             retry();
-          }, () => {
+          }, e => {
             go.disabled = false;
+            if (e.cancelled) return;
+            if (e.message === 'reauth') {
+              again = true;
+              Apple.warm();
+              return notice(t('pf.reauth'));
+            }
             notice(t('net.err.lost'));
           });
         });
@@ -620,6 +783,7 @@ var UI = (function () {
   // sets the lobby up on first sight and whenever the account has to be made again
   function boot(quiet) {
     clearTimeout(again);
+    if (!Account.has()) return draw();
     if (!quiet) {
       at.net = 'wait';
       draw();
@@ -799,7 +963,7 @@ var UI = (function () {
     const j = button(t('net.joinGo'), 'primary', () => {
       h.close();
       connecting(true, t('net.title'));
-      Account.ensure().then(() => Net.join(c.value), () => { close(); notice(t('net.err.lost')); });
+      account().then(() => Net.join(c.value), () => { close(); notice(t('net.err.lost')); });
     });
     j.disabled = true;
     c.addEventListener('input', () => {
@@ -938,6 +1102,18 @@ var UI = (function () {
     return bar;
   }
 
+  // a first table link makes the guest account on the way, which still needs its lobby and hub afterwards
+  function account() {
+    const fresh = !Account.has();
+    return Account.ensure().then(r => {
+      if (fresh) {
+        at.gate = '';
+        Net.up();
+      }
+      return r;
+    });
+  }
+
   // an invitation or a friend's table, taken up from anywhere
   function accept(m) {
     Social.clear();
@@ -945,11 +1121,17 @@ var UI = (function () {
     if (Net.busy()) Net.leave(false);
     connecting(true, t('net.title'));
     if (m.pub) Net.sit(m.code);
-    else Account.ensure().then(() => Net.join(m.code), () => { close(); notice(t('net.err.lost')); });
+    else account().then(() => Net.join(m.code), () => { close(); notice(t('net.err.lost')); });
   }
 
   // The lobby is the home screen: the stake rooms, the friends and the leaderboard.
   function draw() {
+    if (!Account.has()) return gate();
+    if (later) {
+      const c = later;
+      later = null;
+      setTimeout(() => online(c));
+    }
     const home = $('home');
     const keep = home.contains(document.activeElement) ? document.activeElement.dataset.k : null;
     const sb = home.querySelector('.sbody');
@@ -1000,6 +1182,10 @@ var UI = (function () {
     if (!url && m) history.replaceState(history.state, '', '/');
     if (!m || App.online() || Net.busy()) return;
     const code = m[1].toUpperCase();
+    if (!Account.has()) {
+      later = code;
+      return;
+    }
     // the cold start can report the same link twice
     if (linked === code + Math.floor(Date.now() / 3000)) return;
     linked = code + Math.floor(Date.now() / 3000);
