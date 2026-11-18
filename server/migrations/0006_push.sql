@@ -1,0 +1,32 @@
+CREATE TABLE devices (
+  token TEXT PRIMARY KEY,
+  player TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  lang TEXT NOT NULL,
+  tz INTEGER NOT NULL,
+  sandbox INTEGER NOT NULL DEFAULT 0,
+  session TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  seen INTEGER NOT NULL
+);
+CREATE INDEX devices_player ON devices (player);
+CREATE INDEX devices_tz ON devices (tz);
+
+CREATE TABLE push_log (
+  kind TEXT NOT NULL,
+  sender TEXT NOT NULL,
+  target TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (kind, sender, target)
+);
+
+ALTER TABLE players ADD COLUMN push_on INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN push_invite INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN push_daily INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN push_friend INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN push_week INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE players ADD COLUMN daily_sent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN week_sent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN prev_week INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN prev_won INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX players_prev ON players (prev_week, prev_won DESC);

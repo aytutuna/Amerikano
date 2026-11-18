@@ -7,8 +7,8 @@ const HOUR = 3600000;
 let jwks = null;
 let fetched = 0;
 
-const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+export const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const part = s => JSON.parse(new TextDecoder().decode(unb64(s)));
 
 // PACE only exists on a dev server, so a stray APPLE_BASE can never point production at other keys

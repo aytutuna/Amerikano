@@ -6,11 +6,11 @@ const TOP = 50;
 const ID = /^[0-9a-f]{32}$/;
 
 // weeks run Monday to Monday, UTC; the epoch day 4 was the first Monday
-export const week = () => Math.floor((Date.now() - 4 * DAY) / (7 * DAY));
+export const week = (now = Date.now()) => Math.floor((now - 4 * DAY) / (7 * DAY));
 
-// A player whose last week was an earlier one starts again from this win.
+// A player whose last week was an earlier one starts again from this win, and keeps that week for the weekly push.
 export function won(db, id, n) {
-  return db.prepare('UPDATE players SET week_won = CASE WHEN week = ?1 THEN week_won + ?2 ELSE ?2 END, week = ?1 WHERE id = ?3').bind(week(), n, id).run();
+  return db.prepare('UPDATE players SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, week_won = CASE WHEN week = ?1 THEN week_won + ?2 ELSE ?2 END, week = ?1 WHERE id = ?3').bind(week(), n, id).run();
 }
 
 // how a stands to b: block (a blocked b), blocked (b blocked a), friend, sent (a asked), got (b asked), none
@@ -29,6 +29,7 @@ const count = async (db, sql, id) => (await db.prepare(sql).bind(id).first()).n;
 
 const mark = r => ({ id: r.id, seed: r.name_seed, avatar: r.avatar.split(',').map(Number), level: r.level });
 
+// a failure is a response; otherwise it says what changed, req or friend, or is null when nothing did
 async function befriend(db, p, id) {
   if (id === p.id) return fail('self');
   const q = await who(db, id);
@@ -44,12 +45,12 @@ async function befriend(db, p, id) {
       db.prepare("UPDATE friends SET state = 'friend' WHERE a = ? AND b = ? AND state = 'req'").bind(id, p.id),
       db.prepare("DELETE FROM friends WHERE a = ? AND b = ? AND state = 'req'").bind(p.id, id)
     ]);
-    return null;
+    return 'friend';
   }
   const full = !q.persona && await count(db, "SELECT count(*) AS n FROM friends WHERE b = ? AND state = 'req'", id) >= CAP;
   if (full) return fail('cap', 409);
   await db.prepare("INSERT OR IGNORE INTO friends (a, b, state) VALUES (?, ?, 'req')").bind(p.id, id).run();
-  return null;
+  return 'req';
 }
 
 // removes a friendship or a request in either direction, which also declines and cancels
@@ -125,7 +126,7 @@ async function top(db, p) {
   });
 }
 
-export async function social(request, env) {
+export async function social(request, env, ctx) {
   const db = env.DB;
   const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
   if (!p) return fail('auth', 401);
@@ -139,7 +140,11 @@ export async function social(request, env) {
     let id;
     try { id = (await request.json()).id; } catch (e) { /* no body */ }
     if (!ID.test(id)) return fail('id');
-    err = await befriend(db, p, id);
+    const r = await befriend(db, p, id);
+    if (r instanceof Response) err = r;
+    // the hub knows whether the other player's app is open, and only an app that is closed gets a push
+    // and it runs after the answer, so the answer takes the same time whoever the other player is
+    else if (r) ctx.waitUntil(env.HUB.get(env.HUB.idFromName('h')).ring(p.id, id, r === 'req' ? 'req' : 'accept', { seed: p.name_seed }).catch(() => {}));
   } else if ((what === 'friend' || what === 'block') && ID.test(arg) && (m === 'DELETE' || what === 'block' && m === 'POST')) {
     if (what === 'friend') await unfriend(db, p, arg);
     else if (m === 'POST') err = await block(db, p, arg);

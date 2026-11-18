@@ -6,6 +6,11 @@ account_id = "9c6272920c31b05b8706ebf88975188b"
 [vars]
 APPLE_TEAM = "8XT2U634Z4"
 APPLE_KEY_ID = "D6PRTQ85P3"
+APNS_KEY_ID = "WA2367HVZ2"
+FCM_PROJECT = "amerikano-514707"
+
+[triggers]
+crons = ["0 * * * *"]
 
 [[durable_objects.bindings]]
 name = "ROOM"

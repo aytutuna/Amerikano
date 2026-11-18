@@ -3,6 +3,7 @@ import { freeCode } from './room.js';
 import { verify, player, seat, credit, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
 import { claim, release, keep, giveBack, spend, grant } from './persona.js';
+import { ring } from './push.js';
 
 const LIFE = 3 * 3600000;
 const MAX = 4000;
@@ -191,12 +192,22 @@ export class Hub extends DurableObject {
     return out;
   }
 
-  // A table sends this for one of its players. Only a connected friend gets it, wherever they are, and the sender cannot tell why one is missing.
+  // A push for a player whose app has no socket here.
+  async ring(from, to, k, v) {
+    if (!this.online(to)) await ring(this.env, from, to, k, v);
+  }
+
+  // A table sends this for one of its players. Only a friend gets it, by socket wherever they are, and one whose app is closed gets a push
+  // after the answer. The answer is false for both, whatever the push does, so the sender cannot tell why one is missing.
   async invite(from, to, code, stake, pub) {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid === to);
-    if (!socks.length || this.inCup(to) || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
+    if (this.inCup(to) || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
     const p = await player(this.env.DB, to);
     if (!p || p.chips < ENTRY * stake) return false;
+    if (!socks.length) {
+      this.ctx.waitUntil(this.ring(from.pid, to, 'invite', { seed: from.seed, code: code }).catch(() => {}));
+      return false;
+    }
     const msg = JSON.stringify({ t: 'invited', from: from, code: code, stake: stake, pub: pub });
     for (const w of socks) w.send(msg);
     return true;

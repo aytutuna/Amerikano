@@ -16,6 +16,8 @@ export const prizes = buy => [50, 25, 15, 10].map(x => 8 * buy * x / 100);
 export const payout = (stake, chips) => stake + chips * stake / 10;
 const ROLLS = 20;
 const SESSIONS = 10;
+const DEVICES = 10;
+const PUSH = ['on', 'invite', 'daily', 'friend', 'week'];
 const TOKEN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
 
 const today = () => Math.floor(Date.now() / DAY);
@@ -63,11 +65,11 @@ export async function verify(db, token) {
   if (!m) return null;
   const h = await hash(m[2]);
   const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2').bind(m[1], h).first();
-  if (p) return p;
+  if (p) return Object.assign(p, { session: h });
   // a guest the old worker made after 0005 ran has no session yet; give it its one
   const old = await db.prepare('SELECT * FROM players WHERE id = ?1 AND secret_hash = ?2 AND NOT EXISTS (SELECT 1 FROM sessions WHERE player = ?1)').bind(m[1], h).first();
   if (old) await db.prepare('INSERT OR IGNORE INTO sessions (player, secret_hash, created) VALUES (?1, ?2, ?3)').bind(old.id, h, Date.now()).run();
-  return old;
+  return old && Object.assign(old, { session: h });
 }
 
 export function player(db, id) {
@@ -99,16 +101,21 @@ export async function award(db, id, add) {
   for (let l = p.level + 1; l <= to; l++) await credit(db, id, 1000 * l, 'level');
 }
 
+// what a claim made at this moment pays
+export function reward(p, at = Date.now()) {
+  return 500 + 250 * (Math.floor(p.daily_at / DAY) === Math.floor(at / DAY) - 1 ? Math.min(p.streak + 1, 7) : 1);
+}
+
 function profile(p) {
   const last = Math.floor(p.daily_at / DAY);
   const now = today();
-  const next = last === now - 1 ? Math.min(p.streak + 1, 7) : 1;
   return {
     seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, xp: p.xp, level: p.level,
     from: 50 * p.level * (p.level - 1), to: 50 * p.level * (p.level + 1), games: p.games, wins: p.wins,
-    daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: 500 + 250 * next },
+    daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
-    apple: !!p.apple
+    apple: !!p.apple,
+    push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
   };
 }
 
@@ -124,11 +131,12 @@ async function body(request) {
   }
 }
 
-// one secret per device, so signing in on a new one leaves the others signed in
+// one secret per device, so signing in on a new one leaves the others signed in; a pruned session takes its device along
 async function sessionStmts(db, id, secret) {
   return [
     db.prepare('INSERT INTO sessions (player, secret_hash, created) VALUES (?1, ?2, ?3)').bind(id, await hash(secret), Date.now()),
-    db.prepare('DELETE FROM sessions WHERE player = ?1 AND rowid NOT IN (SELECT rowid FROM sessions WHERE player = ?1 ORDER BY created DESC, rowid DESC LIMIT ?2)').bind(id, SESSIONS)
+    db.prepare('DELETE FROM sessions WHERE player = ?1 AND rowid NOT IN (SELECT rowid FROM sessions WHERE player = ?1 ORDER BY created DESC, rowid DESC LIMIT ?2)').bind(id, SESSIONS),
+    db.prepare('DELETE FROM devices WHERE player = ?1 AND session NOT IN (SELECT secret_hash FROM sessions WHERE player = ?1)').bind(id)
   ];
 }
 
@@ -225,6 +233,28 @@ async function daily(db, p) {
   if (r[1].meta.changes !== 1) return fail('claimed', 409);
 }
 
+// the token comes from the phone, so its shape is checked: an APNs one goes into a URL
+async function device(db, p, request) {
+  const b = await body(request);
+  if (b.kind !== 'apns' && b.kind !== 'fcm') return fail('kind');
+  if (typeof b.token !== 'string' || !(b.kind === 'apns' ? /^[0-9a-fA-F]{32,200}$/ : /^[\w:.-]{20,4096}$/).test(b.token)) return fail('token');
+  if (!Number.isInteger(b.tz) || b.tz < -840 || b.tz > 840) return fail('tz');
+  const token = b.kind === 'apns' ? b.token.toLowerCase() : b.token;
+  const now = Date.now();
+  await db.batch([
+    db.prepare('INSERT INTO devices (token, player, kind, lang, tz, session, created, seen) VALUES (?1, ?2, ?3, ?4, ?5, ?7, ?6, ?6) ON CONFLICT (token) DO UPDATE SET player = ?2, kind = ?3, lang = ?4, tz = ?5, session = ?7, seen = ?6')
+      .bind(token, p.id, b.kind, b.lang === 'tr' ? 'tr' : 'en', b.tz, now, p.session),
+    db.prepare('DELETE FROM devices WHERE player = ?1 AND rowid NOT IN (SELECT rowid FROM devices WHERE player = ?1 ORDER BY seen DESC, rowid DESC LIMIT ?2)').bind(p.id, DEVICES)
+  ]);
+}
+
+async function prefs(db, p, request) {
+  const b = await body(request);
+  const keys = PUSH.filter(k => typeof b[k] === 'boolean');
+  if (!keys.length) return fail('push');
+  await db.prepare('UPDATE players SET ' + keys.map(k => 'push_' + k + ' = ?').join(', ') + ' WHERE id = ?').bind(...keys.map(k => +b[k]), p.id).run();
+}
+
 async function bailout(db, p) {
   if (p.chips >= MIN_ROOM) return fail('rich', 409);
   const now = Date.now();
@@ -272,6 +302,7 @@ export async function api(request, env) {
     await revoke(env, token, client);
     await db.batch([
       db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
@@ -279,6 +310,11 @@ export async function api(request, env) {
     return json({ ok: true });
   }
   if (path === '/api/me' && method === 'GET') return json(profile(p));
+  if (path === '/api/device' && method === 'DELETE') {
+    const b = await body(request);
+    await db.prepare('DELETE FROM devices WHERE (token = ?1 OR token = lower(?1)) AND player = ?2').bind(String(b.token), p.id).run();
+    return json({ ok: true });
+  }
   if (method !== 'POST') return fail('nope', 404);
   let err = null;
   if (path === '/api/name') err = await reroll(db, p);
@@ -288,6 +324,8 @@ export async function api(request, env) {
     await db.prepare('UPDATE players SET avatar = ? WHERE id = ?').bind(b.avatar.join(','), p.id).run();
   } else if (path === '/api/daily') err = await daily(db, p);
   else if (path === '/api/bailout') err = await bailout(db, p);
+  else if (path === '/api/device') err = await device(db, p, request);
+  else if (path === '/api/push') err = await prefs(db, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);
   if (err) return err;

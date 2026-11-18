@@ -1,14 +1,20 @@
 // Make the env file first (it is gitignored):
 //   node -e "const c=require('crypto');console.log('PACE=0.02\nAPPLE_BASE=http://localhost:8791\nAPPLE_KEY='+c.generateKeyPairSync('ec',{namedCurve:'P-256'}).privateKey.export({type:'pkcs8',format:'der'}).toString('base64'))" > test/dev.vars
 // Plays whole matches through the socket API against a running
-// `wrangler dev --port 8787 --env-file test/dev.vars`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
-// The Apple tests play Apple's servers on port 8791.
+// `wrangler dev --port 8787 --env-file test/dev.vars --test-scheduled`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
+// The Apple tests play Apple's servers on port 8791. The push tests play APNs on 8792 and 8793 and FCM with Google's token
+// endpoint on 8794, and need throwaway keys in the same file:
+//   APNS_KEY (base64 pkcs8 P-256 like APPLE_KEY), APNS_KEY_ID=testkid, APNS_BASE=http://localhost:8792, APNS_SANDBOX=http://localhost:8793,
+//   FCM_BASE=http://localhost:8794, FCM_TOKEN_URL=http://localhost:8794/token,
+//   FCM_KEY='{"client_email":"push-test@example.iam.gserviceaccount.com","private_key":"<a PEM pkcs8 RSA key, newlines as backslash n>"}'
 const assert = require('assert');
 const WebSocket = require('ws');
 const Game = require('../../www/js/game.js');
 const Chat = require('../../www/js/chat.js');
 
 const { execSync } = require('child_process');
+const fs = require('fs');
+const Names = require('../../www/js/names.js');
 const crypto = require('crypto');
 const httpServer = require('http');
 let payout;
@@ -663,6 +669,18 @@ async function apple() {
   assert.strictEqual(sessions(burst[0].body.id), 10);
   console.log('parallel first sign-ins keep the token, a player keeps at most 10 devices');
 
+  const first = await post('/api/apple', null, await cred({ sub: 'dev.' + t.sub }, null, 'p0'));
+  await reg(first.body, 'fcm', fcmTok(), 'en', 0);
+  const held = () => sql("SELECT count(*) AS n FROM devices WHERE player = '" + first.body.id + "'")[0].n;
+  let newest;
+  for (let i = 1; i < 10; i++) newest = await post('/api/apple', null, await cred({ sub: 'dev.' + t.sub }, null, 'p' + i));
+  assert.strictEqual(held(), 1, 'ten sessions keep their devices');
+  await reg(newest.body, 'fcm', fcmTok(), 'en', 0);
+  await post('/api/apple', null, await cred({ sub: 'dev.' + t.sub }, null, 'p10'));
+  assert.strictEqual((await call('GET', '/api/me', first.body)).status, 401);
+  assert.strictEqual(held(), 1, 'the eleventh sign-in prunes the oldest session and its device, and only that');
+  console.log('a pruned session takes its device with it');
+
   const g = await guest();
   await call('POST', '/api/daily', g);
   const chips = (await call('GET', '/api/me', g)).body.chips;
@@ -1170,6 +1188,8 @@ async function board() {
     const p = (await call('GET', '/api/player/' + acc.id, acc)).body;
     assert.strictEqual(p.won, net > 0 ? net : 0, 'weekly chips ' + p.won + ' for net ' + net);
     assert.strictEqual(sql('SELECT week AS n FROM players WHERE id = ' + who(acc))[0].n, net > 0 ? w : w - 1);
+    const pv = sql('SELECT prev_week, prev_won FROM players WHERE id = ' + who(acc))[0];
+    assert.deepStrictEqual([pv.prev_week, pv.prev_won], net > 0 ? [w - 1, 999] : [0, 0], 'a new week keeps the old one for the weekly push');
     console.log('two humans: net', net, 'counted', p.won);
   }
   g.a.ws.close();
@@ -1781,6 +1801,546 @@ async function cupRun(n) {
   }
 }
 
+// Plays APNs (8792 production, 8793 sandbox), FCM and Google's token endpoint (8794), and records what the worker sends.
+// A rule per token picks the answer: { apns: [400, 'BadDeviceToken'], sandbox: [...], fcm: [404, 'UNREGISTERED', status, message] }.
+function fakePush() {
+  const f = { apns: [], sandbox: [], fcm: [], exchanges: [], rules: {}, dead: new Set(), revoke: false };
+  f.clear = () => { f.apns.length = f.sandbox.length = f.fcm.length = 0; };
+  const serve = (port, fn) => httpServer.createServer((req, res) => {
+    let b = '';
+    req.on('data', d => { b += d; });
+    req.on('end', () => {
+      const [status, o] = fn(req, b);
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(o || {}));
+    });
+  }).listen(port);
+  const servers = [['apns', 8792], ['sandbox', 8793]].map(([k, port]) => serve(port, (req, b) => {
+    const token = req.url.split('/').pop();
+    f[k].push({ token: token, url: req.url, headers: req.headers, body: JSON.parse(b) });
+    const rule = (f.rules[token] || {})[k] || [200];
+    return [rule[0], rule[1] && { reason: rule[1] }];
+  }));
+  servers.push(serve(8794, (req, b) => {
+    if (req.url === '/token') {
+      const at = 'at-' + crypto.randomBytes(8).toString('hex');
+      f.exchanges.push({ form: new URLSearchParams(b), at: at });
+      return [200, { access_token: at, expires_in: 3600, token_type: 'Bearer' }];
+    }
+    const message = JSON.parse(b).message;
+    const bearer = (req.headers.authorization || '').replace('Bearer ', '');
+    f.fcm.push({ token: message.token, url: req.url, bearer: bearer, message: message });
+    // the worker keeps its bearer between runs of this file, so any at- one is good until it is refused
+    if (f.revoke || f.dead.has(bearer) || !bearer.startsWith('at-')) {
+      f.revoke = false;
+      f.dead.add(bearer);
+      return [401, { error: { code: 401, status: 'UNAUTHENTICATED' } }];
+    }
+    const rule = (f.rules[message.token] || {}).fcm;
+    if (!rule) return [200, { name: 'projects/x/messages/1' }];
+    return [rule[0], { error: { code: rule[0], status: rule[2] || 'X', message: rule[3], details: rule[1] ? [{ errorCode: rule[1] }] : [] } }];
+  }));
+  f.close = () => servers.forEach(s => s.close());
+  return f;
+}
+
+const DAY = 86400000;
+const hexTok = () => crypto.randomBytes(32).toString('hex');
+const fcmTok = () => 'fcm-' + crypto.randomBytes(40).toString('base64url');
+const reg = (acc, kind, token, lang, tz) => call('POST', '/api/device', acc, { kind: kind, token: token, lang: lang || 'en', tz: tz || 0 });
+const devs = acc => sql('SELECT token, kind, lang, tz, sandbox, created, seen FROM devices WHERE player = ' + who(acc));
+// pushes go out after the answer, so a test waits for one it expects
+const settle = async fn => {
+  for (let i = 0; i < 50 && !fn(); i++) await sleep(100);
+};
+const tick = async time => {
+  // the time can only be set through this route, not through /__scheduled
+  const go = () => fetch(http + '/cdn-cgi/handler/scheduled?cron=0+*+*+*+*&time=' + time);
+  assert.strictEqual(await (await go().catch(go)).text(), 'ok');
+};
+
+// the tz, in minutes behind UTC, whose clock reads h:30 at this moment
+const tzAt = (now, h) => ((Math.floor(now % DAY / 60000) - h * 60 - 30 + 720) % 1440 + 1440) % 1440 - 720;
+
+async function befriend(a, b) {
+  await call('POST', '/api/friend', a, { id: b.id });
+  await call('POST', '/api/friend', b, { id: a.id });
+}
+
+function jwtOk(jwt, key, alg, kind) {
+  const [h, c, s] = jwt.split('.');
+  const ok = crypto.verify('sha256', Buffer.from(h + '.' + c), kind === 'ec' ? { key: key, dsaEncoding: 'ieee-p1363' } : key, Buffer.from(s, 'base64url'));
+  assert(ok, 'jwt signature');
+  const head = JSON.parse(Buffer.from(h, 'base64url'));
+  assert.strictEqual(head.alg, alg);
+  return { head: head, claims: JSON.parse(Buffer.from(c, 'base64url')) };
+}
+
+async function push() {
+  const vars = Object.fromEntries(fs.readFileSync(__dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+  const apnsPub = crypto.createPublicKey(crypto.createPrivateKey({ key: Buffer.from(vars.APNS_KEY, 'base64'), format: 'der', type: 'pkcs8' }));
+  const sa = JSON.parse(vars.FCM_KEY.slice(1, -1));
+  const fcmPub = crypto.createPublicKey(sa.private_key);
+  const f = fakePush();
+  sql('DELETE FROM devices');
+  const name = (acc, lang) => Names.text(sql('SELECT name_seed FROM players WHERE id = ' + who(acc))[0].name_seed, lang);
+  const to = (list, token) => list.filter(r => r.token === token);
+  const seen = [];
+
+  // registering, refreshing and removing a device
+  const a = await guest();
+  const b = await guest();
+  assert.strictEqual((await call('POST', '/api/device', null, { kind: 'fcm', token: fcmTok(), lang: 'en', tz: 0 })).status, 401);
+  for (const bad of [{ kind: 'web', token: fcmTok() }, { kind: 'apns', token: 'xyz' }, { kind: 'apns', token: fcmTok() }, { kind: 'fcm', token: 'a/b' + 'x'.repeat(30) },
+    { kind: 'fcm', token: fcmTok(), tz: 900 }, { kind: 'fcm', token: fcmTok(), tz: 1.5 }, { kind: 'fcm', token: 5 }]) {
+    assert.strictEqual((await call('POST', '/api/device', a, Object.assign({ tz: 0, lang: 'en' }, bad))).status, 400, JSON.stringify(bad));
+  }
+  assert.strictEqual(devs(a).length, 0);
+  const t1 = hexTok();
+  let r = await reg(a, 'apns', t1.toUpperCase(), 'tr', 180);
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(r.body.push, { on: true, invite: true, daily: true, friend: true, week: true });
+  let d = devs(a);
+  assert.deepStrictEqual([d.length, d[0].token, d[0].kind, d[0].lang, d[0].tz, d[0].sandbox, d[0].created === d[0].seen], [1, t1, 'apns', 'tr', 180, 0, true], 'an APNs token is kept in lower case');
+  await sleep(20);
+  await reg(a, 'apns', t1, 'fr', -300);
+  d = devs(a);
+  assert.deepStrictEqual([d.length, d[0].lang, d[0].tz, d[0].seen > d[0].created], [1, 'en', -300, true], 'a refresh updates the row, an unknown language falls back to English');
+  const t2 = fcmTok();
+  await reg(a, 'fcm', t2, 'tr', 60);
+  assert.strictEqual(devs(a).length, 2);
+  await reg(b, 'fcm', t2, 'en', 0);
+  assert.deepStrictEqual([devs(a).length, devs(b).length], [1, 1], 'a token that signs in as another account moves to it');
+  await call('DELETE', '/api/device', a, { token: t2 });
+  assert.strictEqual(devs(b).length, 1, 'only the owner can remove a token');
+  assert.strictEqual((await call('DELETE', '/api/device', b, { token: t2 })).status, 200);
+  assert.strictEqual(devs(b).length, 0);
+  assert.strictEqual((await call('DELETE', '/api/device', a, { token: t1.toUpperCase() })).status, 200);
+  assert.strictEqual(devs(a).length, 0);
+  const many = await guest();
+  for (let i = 0; i < 12; i++) await reg(many, 'fcm', fcmTok());
+  assert.strictEqual(devs(many).length, 10, 'a player keeps at most 10 devices');
+  console.log('push: devices registered, refreshed, moved, removed and capped');
+
+  // preferences
+  assert.strictEqual((await call('POST', '/api/push', a, {})).status, 400);
+  assert.strictEqual((await call('POST', '/api/push', a, { invite: 'no' })).status, 400);
+  r = await call('POST', '/api/push', a, { invite: false, week: false, other: true });
+  assert.deepStrictEqual(r.body.push, { on: true, invite: false, daily: true, friend: true, week: false });
+  assert.deepStrictEqual((await call('GET', '/api/me', a)).body.push, r.body.push);
+  r = await call('POST', '/api/push', a, { on: false, invite: true });
+  assert.deepStrictEqual(r.body.push, { on: false, invite: true, daily: true, friend: true, week: false });
+  console.log('push: preferences read and updated');
+
+  // an invite pushes only to a friend whose app is closed
+  const g = await pair(3, 3);
+  const [f1, f2, fo, fx, fb] = [await guest(), await guest(), await guest(), await guest(), await guest()];
+  for (const x of [f1, f2, fo, fb]) await befriend(g.accA, x);
+  const k1 = hexTok();
+  const k2 = fcmTok();
+  await reg(f1, 'apns', k1, 'en', 0);
+  await reg(f2, 'fcm', k2, 'tr', 0);
+  await reg(fo, 'apns', hexTok(), 'en', 0);
+  await reg(fx, 'apns', hexTok(), 'en', 0);
+  await reg(fb, 'apns', hexTok(), 'en', 0);
+  const invite = async x => {
+    const ack = g.a.next(m => m.t === 'sent');
+    g.a.send({ t: 'invite', to: x.id });
+    return (await ack).ok;
+  };
+  const host = name(g.accA, 'en');
+  const hostTr = name(g.accA, 'tr');
+  f.clear();
+  assert.strictEqual(await invite(f1), false, 'the answer for a friend with the app closed does not say whether a push went out');
+  await settle(() => to(f.apns, k1).length);
+  const q = to(f.apns, k1);
+  assert.strictEqual(q.length, 1);
+  assert.strictEqual(q[0].url, '/3/device/' + k1);
+  assert.strictEqual(q[0].headers['apns-topic'], 'com.aytutuna.amerikano');
+  assert.strictEqual(q[0].headers['apns-push-type'], 'alert');
+  const jw = jwtOk(q[0].headers.authorization.replace('bearer ', ''), apnsPub, 'ES256', 'ec');
+  assert.deepStrictEqual([jw.head.kid, jw.claims.iss], ['testkid', '8XT2U634Z4']);
+  assert(Date.now() / 1000 - jw.claims.iat < 3100, 'the JWT is at most about 50 minutes old');
+  assert.deepStrictEqual(q[0].body, { aps: { alert: { title: 'Table invite', body: host + ' invited you to a table.' }, sound: 'default' }, t: 'invite', code: g.code });
+  const life = q[0].headers['apns-expiration'] - Date.now() / 1000;
+  assert(life <= 600 && life > 500, 'an invite goes stale after 10 minutes');
+  assert.strictEqual(await invite(f1), false);
+  await sleep(400);
+  assert.strictEqual(to(f.apns, k1).length, 1, 'the table does not ask again within its own gap');
+  assert.strictEqual(await invite(f2), false);
+  await settle(() => to(f.fcm, k2).length);
+  const fm = to(f.fcm, k2);
+  assert.strictEqual(fm.length, 1);
+  assert.strictEqual(fm[0].url, '/v1/projects/amerikano-514707/messages:send');
+  assert.deepStrictEqual(fm[0].message, { token: k2, notification: { title: 'Masa daveti', body: hostTr + ' seni bir masaya davet etti.' }, data: { t: 'invite', code: g.code }, android: { priority: 'HIGH', ttl: '600s' } });
+  assert(/^at-/.test(fm[0].bearer), 'FCM got the bearer the token endpoint issued');
+  seen.push(...f.apns, ...f.fcm);
+
+  await sleep(5200);
+  f.clear();
+  assert.strictEqual(await invite(f1), false);
+  await sleep(400);
+  assert.strictEqual(f.apns.length, 0, 'the same pair gets one push in ten minutes');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM push_log WHERE kind = 'invite' AND sender = " + who(g.accA) + ' AND target = ' + who(f1))[0].n, 1, 'the gap is kept in the database');
+  sql("UPDATE push_log SET at = at - 660000 WHERE kind = 'invite' AND target = " + who(f1));
+  assert.strictEqual(await invite(f1), false);
+  await settle(() => f.apns.length);
+  assert.strictEqual(to(f.apns, k1).length, 1, 'ten minutes later the same pair is pushed again');
+  f.clear();
+
+  const ho = await hub(fo);
+  const got = ho.next(m => m.t === 'invited');
+  await sleep(2100);
+  assert.strictEqual(await invite(fo), true);
+  assert.strictEqual((await got).code, g.code);
+  assert.strictEqual(f.apns.length, 0, 'an app that is open gets the socket message and no push');
+  g.a.ws.close();
+  g.b.ws.close();
+  ho.ws.close();
+
+  const g2 = await pair(3, 3);
+  const [fp, fm2] = [await guest(), await guest()];
+  for (const x of [fp, fm2, fb]) await befriend(g2.accA, x);
+  await reg(fp, 'apns', hexTok(), 'en', 0);
+  await reg(fm2, 'apns', hexTok(), 'en', 0);
+  await call('POST', '/api/push', fp, { invite: false });
+  await call('POST', '/api/push', fm2, { on: false });
+  await call('POST', '/api/block/' + fb.id, g2.accA);
+  f.clear();
+  for (const x of [fp, fm2, fx]) {
+    const ack = g2.a.next(m => m.t === 'sent');
+    g2.a.send({ t: 'invite', to: x.id });
+    assert.strictEqual((await ack).ok, false);
+  }
+  await sleep(4100);
+  const ack = g2.a.next(m => m.t === 'sent');
+  g2.a.send({ t: 'invite', to: fb.id });
+  assert.strictEqual((await ack).ok, false);
+  assert.strictEqual(f.apns.length, 0, 'a switched off kind, the master switch, a stranger and a blocked friend all get nothing');
+  g2.a.ws.close();
+  g2.b.ws.close();
+  console.log('push: invites go to offline friends only, once per pair, in the device language');
+
+  // friend requests and accepts
+  const [x, y, z] = [await guest(), await guest(), await guest()];
+  const ky = fcmTok();
+  const kx = hexTok();
+  await reg(y, 'fcm', ky, 'tr', 0);
+  await reg(x, 'apns', kx, 'en', 0);
+  f.clear();
+  assert.strictEqual((await call('POST', '/api/friend', x, { id: y.id })).status, 200);
+  await settle(() => to(f.fcm, ky).length);
+  assert.deepStrictEqual(to(f.fcm, ky).map(m => [m.message.notification, m.message.data]), [[{ title: 'Arkadaşlık isteği', body: name(x, 'tr') + ' seninle arkadaş olmak istiyor.' }, { t: 'friend' }]]);
+  await call('POST', '/api/friend', x, { id: y.id });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 1, 'asking twice pushes once');
+  await call('POST', '/api/friend', y, { id: x.id });
+  await settle(() => to(f.apns, kx).length);
+  assert.deepStrictEqual(to(f.apns, kx).map(m => m.body), [{ aps: { alert: { title: 'New friend', body: name(y, 'en') + ' accepted your friend request.' }, sound: 'default' }, t: 'friend' }]);
+  await call('DELETE', '/api/friend/' + y.id, x);
+  f.clear();
+  await call('POST', '/api/friend', x, { id: y.id });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 0, 'request, cancel and request again pushes once');
+  sql("UPDATE push_log SET at = at - 3600000 WHERE kind = 'req' AND sender = " + who(x));
+  await call('DELETE', '/api/friend/' + y.id, x);
+  await call('POST', '/api/friend', x, { id: y.id });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 0, 'an hour later is still the same day');
+  sql("UPDATE push_log SET at = at - 90000000 WHERE kind = 'req' AND sender = " + who(x));
+  await call('DELETE', '/api/friend/' + y.id, x);
+  await call('POST', '/api/friend', x, { id: y.id });
+  await settle(() => f.fcm.length);
+  assert.strictEqual(f.fcm.length, 1, 'a day later the pair is pushed again');
+  f.clear();
+  await call('DELETE', '/api/friend/' + y.id, x);
+  await call('POST', '/api/block/' + x.id, y);
+  assert.strictEqual((await call('POST', '/api/friend', x, { id: y.id })).status, 200);
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 0, 'a blocked player cannot make the blocker\'s phone ring');
+  await call('DELETE', '/api/block/' + x.id, y);
+  const hz = await hub(z);
+  await reg(z, 'apns', hexTok(), 'en', 0);
+  await call('POST', '/api/friend', x, { id: z.id });
+  await sleep(400);
+  assert.strictEqual(f.apns.length, 0, 'a player with the app open is not pushed');
+  hz.ws.close();
+  await sleep(200);
+  await call('POST', '/api/push', z, { friend: false });
+  await call('POST', '/api/friend', await guest(), { id: z.id });
+  await sleep(400);
+  assert.strictEqual(f.apns.length, 0, 'the friend switch stops requests when the app is closed');
+  console.log('push: friend requests and accepts, once a day per pair, blocks, open app, switch');
+
+  // a persona has no account, so nothing is ever sent for one, even with a device row forced in
+  const pid = crypto.randomBytes(16).toString('hex');
+  const now0 = Date.now();
+  sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created) VALUES ('" + pid + "', 101, '0,0,0,0', 3, 300, 10, 3, 5000, " + now0 + ", 0, " + now0 + ")");
+  const kp = hexTok();
+  sql("INSERT INTO devices (token, player, kind, lang, tz, session, created, seen) VALUES ('" + kp + "', '" + pid + "', 'apns', 'en', " + tzAt(now0, 18) + ", '', 0, 0)");
+  f.clear();
+  assert.strictEqual((await call('POST', '/api/friend', x, { id: pid })).status, 200);
+  await sleep(400);
+  await tick(now0);
+  assert.strictEqual(to(f.apns, kp).length, 0, 'no request and no daily for a persona');
+
+  // senders: sandbox fallback, dropped tokens, failures that change nothing
+  const nudge = async acc => {
+    await call('POST', '/api/friend', await guest(), { id: acc.id });
+    await sleep(700);
+  };
+  const s = await guest();
+  const ks = hexTok();
+  await reg(s, 'apns', ks, 'en', 0);
+  f.rules[ks] = { apns: [400, 'BadDeviceToken'] };
+  f.clear();
+  await nudge(s);
+  assert.deepStrictEqual([to(f.apns, ks).length, to(f.sandbox, ks).length, devs(s)[0].sandbox], [1, 1, 1], 'production said bad token, sandbox took it and it is remembered');
+  f.clear();
+  await nudge(s);
+  assert.deepStrictEqual([to(f.apns, ks).length, to(f.sandbox, ks).length], [0, 1], 'a remembered sandbox device goes straight there');
+  const bad = await guest();
+  const kb = hexTok();
+  await reg(bad, 'apns', kb, 'en', 0);
+  f.rules[kb] = { apns: [400, 'BadDeviceToken'], sandbox: [400, 'BadDeviceToken'] };
+  f.clear();
+  await nudge(bad);
+  assert.deepStrictEqual([to(f.apns, kb).length, to(f.sandbox, kb).length, devs(bad).length], [1, 1, 0], 'a token neither side knows is dropped');
+  const gone = await guest();
+  const kg = hexTok();
+  await reg(gone, 'apns', kg, 'en', 0);
+  f.rules[kg] = { apns: [410, 'Unregistered'] };
+  f.clear();
+  await nudge(gone);
+  assert.deepStrictEqual([to(f.apns, kg).length, to(f.sandbox, kg).length, devs(gone).length], [1, 0, 0], '410 drops the device');
+  const keep = await guest();
+  const ke = hexTok();
+  await reg(keep, 'apns', ke, 'en', 0);
+  f.rules[ke] = { apns: [500, 'InternalServerError'] };
+  assert.strictEqual((await call('POST', '/api/friend', await guest(), { id: keep.id })).status, 200);
+  await sleep(700);
+  assert.strictEqual(devs(keep).length, 1, 'a server error keeps the device and fails nothing');
+  const badToken = [400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'The registration token is not a valid FCM registration token'];
+  for (const [rule, label] of [[[404, 'UNREGISTERED'], 'UNREGISTERED'], [[400, 'UNREGISTERED'], 'UNREGISTERED on a 400'], [badToken, 'INVALID_ARGUMENT for the token'],
+    [[403, 'SENDER_ID_MISMATCH', 'PERMISSION_DENIED'], 'SENDER_ID_MISMATCH']]) {
+    const w = await guest();
+    const kw = fcmTok();
+    await reg(w, 'fcm', kw, 'en', 0);
+    f.rules[kw] = { fcm: rule };
+    await nudge(w);
+    assert.strictEqual(devs(w).length, 0, 'FCM ' + label + ' drops the device');
+  }
+  for (const rule of [[500], [404], [400],[400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'Invalid JSON payload'], [403], [403, 'PERMISSION_DENIED', 'PERMISSION_DENIED']]) {
+    const fk = await guest();
+    const kk = fcmTok();
+    await reg(fk, 'fcm', kk, 'en', 0);
+    f.rules[kk] = { fcm: rule };
+    await nudge(fk);
+    assert.strictEqual(devs(fk).length, 1, 'an FCM error ' + JSON.stringify(rule) + ' keeps the device');
+  }
+  // only a refused provider token makes APNs sign a new one
+  const jwts = list => new Set(list.filter(m => m.headers).map(m => m.headers.authorization)).size;
+  assert.strictEqual(jwts(seen), 1, 'one APNs JWT serves every push');
+  const via = async rule => {
+    const acc = await guest();
+    const k = hexTok();
+    await reg(acc, 'apns', k, 'en', 0);
+    if (rule) f.rules[k] = { apns: rule };
+    await nudge(acc);
+    return to(f.apns, k)[0].headers.authorization;
+  };
+  const j1 = await via(null);
+  assert.strictEqual(await via([403, 'ExpiredProviderToken']), j1, 'the refused push still carried the cached JWT');
+  const j2 = await via(null);
+  assert.notStrictEqual(j2, j1, 'an expired provider token is signed again');
+  assert.strictEqual(await via([403, 'Forbidden']), j2);
+  assert.strictEqual(await via(null), j2, 'any other 403 keeps the JWT');
+  const after = seen.length;
+  console.log('push: sandbox fallback, 410 and UNREGISTERED drop the device, server errors change nothing');
+
+  // the OAuth exchange: signed with the service account, reused until it expires or is refused
+  const o1 = await guest();
+  const ko1 = fcmTok();
+  await reg(o1, 'fcm', ko1, 'en', 0);
+  f.revoke = true;
+  const before = f.exchanges.length;
+  await nudge(o1);
+  assert.strictEqual(devs(o1).length, 1, 'a refused bearer keeps the device');
+  await nudge(o1);
+  await nudge(o1);
+  assert.strictEqual(f.exchanges.length, before + 1, 'the refused bearer was exchanged again, once, and then reused');
+  const ex = f.exchanges[f.exchanges.length - 1];
+  assert.strictEqual(ex.form.get('grant_type'), 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+  const gj = jwtOk(ex.form.get('assertion'), fcmPub, 'RS256');
+  assert.deepStrictEqual([gj.claims.iss, gj.claims.scope, gj.claims.aud, gj.claims.exp - gj.claims.iat], [sa.client_email, 'https://www.googleapis.com/auth/firebase.messaging', 'http://localhost:8794/token', 3600]);
+  assert.deepStrictEqual(to(f.fcm, ko1).slice(-2).map(m => m.bearer), [ex.at, ex.at]);
+  console.log('push: FCM bearer exchanged with the signed service account JWT and cached');
+
+  // the daily bonus at 18:00 local
+  const now = Date.now();
+  const day = Math.floor(now / DAY) * DAY;
+  const mk = async (acc, list) => {
+    acc.tokens = [];
+    for (const [kind, tz, lang] of list) {
+      const t = kind === 'apns' ? hexTok() : fcmTok();
+      await reg(acc, kind, t, lang, tz);
+      acc.tokens.push(t);
+    }
+  };
+  const evening = tzAt(now, 18);
+  const noon = tzAt(now, 12);
+  sql('DELETE FROM devices');
+  const [d1, d2, d3, n1, n2, n3, n4, d4, n5] = [await guest(), await guest(), await guest(), await guest(), await guest(), await guest(), await guest(), await guest(), await guest()];
+  await mk(d4, [['apns', tzAt(now, 20), 'en']]);
+  await mk(n5, [['apns', tzAt(now, 22), 'en']]);
+  await mk(d1, [['apns', evening, 'tr']]);
+  await mk(d2, [['fcm', evening, 'en']]);
+  await mk(d3, [['apns', evening, 'en'], ['fcm', noon, 'en']]);
+  await mk(n1, [['apns', evening, 'en']]);
+  await mk(n2, [['apns', noon, 'en']]);
+  await mk(n3, [['apns', evening, 'en']]);
+  await mk(n4, [['apns', evening, 'en']]);
+  sql('UPDATE players SET daily_at = ' + (day - DAY + 1000) + ', streak = 3 WHERE id = ' + who(d1));
+  sql('UPDATE players SET daily_at = ' + now + ' WHERE id = ' + who(n1));
+  sql('UPDATE players SET push_daily = 0 WHERE id = ' + who(n3));
+  sql('UPDATE players SET push_on = 0 WHERE id = ' + who(n4));
+  f.clear();
+  await tick(now);
+  const everyone = [d1, d2, d3, n1, n2, n3, n4, d4, n5].flatMap(p => p.tokens);
+  const hit = () => [...f.apns, ...f.fcm].filter(m => everyone.includes(m.token)).map(m => m.token).sort();
+  assert.deepStrictEqual(hit(), [d1.tokens[0], d2.tokens[0], d3.tokens[0], d4.tokens[0]].sort(), 'ready, evening until 22:00, switched on; only the device in its evening');
+  assert.deepStrictEqual(to(f.apns, d1.tokens[0])[0].body, { aps: { alert: { title: 'Günlük ödül', body: '1.500 çiplik günlük ödülün hazır.' }, sound: 'default' }, t: 'daily' });
+  assert.deepStrictEqual(to(f.fcm, d2.tokens[0])[0].message.notification, { title: 'Daily bonus', body: 'Your daily bonus of 750 chips is ready.' });
+  assert.deepStrictEqual(to(f.fcm, d2.tokens[0])[0].message.data, { t: 'daily' });
+  seen.push(...f.apns, ...f.fcm);
+  await tick(now + 60000);
+  assert.strictEqual(hit().length, 4, 'a second run in the same evening pushes nobody');
+  console.log('push: daily bonus once, in the evening local, with the amount, per switch and device');
+
+  // the weekly rank on Monday morning local time
+  let T = Date.UTC(2031, 0, 6);
+  while (new Date(T).getUTCDay() !== 1) T += DAY;
+  const wk = t => Math.floor((t - 4 * DAY) / (7 * DAY));
+  const lw = wk(T) - 1;
+  // the far future week is only ours, but an earlier run of this file may have left players in it
+  sql('UPDATE players SET week = 0, week_won = 0, prev_week = 0, prev_won = 0 WHERE week >= ' + (lw - 1) + ' OR prev_week >= ' + (lw - 1));
+  sql('DELETE FROM devices');
+  const ws = [];
+  for (let i = 0; i < 9; i++) ws.push(await guest());
+  const [w1, w2, w3, w4, w5, w6, w7, w8, w9] = ws;
+  await mk(w1, [['apns', 0, 'en']]);
+  await mk(w2, [['fcm', 0, 'tr']]);
+  await mk(w3, [['apns', 0, 'en']]);
+  await mk(w4, [['apns', 0, 'en']]);
+  await mk(w5, [['apns', 0, 'en']]);
+  await mk(w6, [['apns', -720, 'en']]);
+  await mk(w7, [['apns', 0, 'en']]);
+  await mk(w8, [['apns', -720, 'tr']]);
+  await mk(w9, [['fcm', 0, 'en']]);
+  const set = (acc, week, won, extra) => sql('UPDATE players SET week = ' + week + ', week_won = ' + won + (extra || '') + ' WHERE id = ' + who(acc));
+  set(w1, lw, 500);
+  set(w2, lw, 500);
+  set(w3, lw, 900);
+  set(w4, lw - 1, 800);
+  set(w5, lw, 700, ', push_week = 0');
+  set(w6, lw - 1, 600);
+  set(w7, lw, 0);
+  set(w8, lw, 450);
+  // already won this week: last week is in the prev columns
+  set(w9, lw + 1, 100, ', prev_week = ' + lw + ', prev_won = 400');
+  f.clear();
+  await tick(T + 10.5 * 3600000);
+  const wm = acc => [...f.apns, ...f.fcm].filter(m => acc.tokens.includes(m.token));
+  assert.deepStrictEqual(wm(w1)[0].body, { aps: { alert: { title: 'Weekly leaderboard', body: 'You won 500 chips last week and finished #3.' }, sound: 'default' }, t: 'week' });
+  assert.deepStrictEqual(wm(w2)[0].message.notification, { title: 'Haftalık sıralama', body: 'Geçen hafta 500 çip kazandın ve sıralamada 3. oldun.' });
+  assert.deepStrictEqual(wm(w3)[0].body.aps.alert.body, 'You won 900 chips last week and finished #1.');
+  assert.strictEqual(wm(w9)[0].message.notification.body, 'You won 400 chips last week and finished #6.', 'a player who already won this week still gets last week\'s rank');
+  for (const [acc, why] of [[w4, 'won nothing last week'], [w5, 'switched off'], [w7, 'no chips won']]) assert.strictEqual(wm(acc).length, 0, why);
+  assert.strictEqual(wm(w6).length + wm(w8).length, 0, 'in a zone ahead the clock is not Monday morning, or the UTC week has not turned');
+  seen.push(...f.apns, ...f.fcm);
+  const n = f.apns.length + f.fcm.length;
+  await tick(T + 10.5 * 3600000);
+  await tick(T + 11.5 * 3600000);
+  assert.strictEqual(f.apns.length + f.fcm.length, n, 'sent once');
+  await tick(T + 0.5 * 3600000);
+  assert.strictEqual(wm(w8).length, 1, 'once UTC is in the new week the zone ahead gets its push, in its own hours');
+  assert.strictEqual(wm(w8)[0].body.aps.alert.body, 'Geçen hafta 450 çip kazandın ve sıralamada 5. oldun.');
+  console.log('push: weekly rank on Monday morning local, last week only, once');
+
+  // an account that is deleted takes its devices along
+  const del = await guest();
+  await reg(del, 'apns', hexTok(), 'en', 0);
+  await reg(del, 'fcm', fcmTok(), 'en', 0);
+  assert.strictEqual(devs(del).length, 2);
+  assert.strictEqual((await call('DELETE', '/api/me', del)).status, 200);
+  assert.strictEqual(devs(del).length, 0);
+  const old = await guest();
+  await reg(old, 'fcm', fcmTok(), 'en', 0);
+  sql('UPDATE devices SET seen = 1 WHERE player = ' + who(old));
+  await tick(Date.UTC(2031, 0, 8, 3, 10));
+  assert.strictEqual(devs(old).length, 0, 'a device not seen for 90 days goes at 03:00 UTC');
+  console.log('push: account deletion and old devices remove their rows');
+
+  // a run makes at most 40 subrequests; the players it does not reach stay unmarked for the next hour
+  sql('DELETE FROM devices');
+  const T2 = Date.UTC(2031, 5, 10, 12, 0);
+  const mine = acc => sql('SELECT daily_sent AS s FROM players WHERE id = ' + who(acc))[0].s;
+  const crowd = [];
+  for (let i = 0; i < 30; i++) {
+    crowd.push(await guest());
+    await mk(crowd[i], [['apns', tzAt(T2, 18), 'en']]);
+  }
+  f.clear();
+  await tick(T2);
+  const served = crowd.filter(c => mine(c) === T2).length;
+  assert(served > 5 && served < 30, 'the budget served ' + served + ' of 30');
+  assert.strictEqual(f.apns.length, served, 'a player is marked only when pushed');
+  await tick(T2 + 3600000);
+  assert.strictEqual(crowd.filter(c => mine(c) === T2 || mine(c) === T2 + 3600000).length, 30, 'the next run takes the rest');
+  assert.strictEqual(f.apns.length, 30, 'nobody twice');
+  // a player with ten devices costs up to 31, so the second one does not fit and is handed back
+  sql('DELETE FROM devices');
+  const T3 = Date.UTC(2031, 5, 11, 12, 0);
+  const [big1, big2] = [await guest(), await guest()];
+  for (const b of [big1, big2]) await mk(b, Array.from({ length: 10 }, () => ['apns', tzAt(T3, 18), 'en']));
+  f.clear();
+  await tick(T3);
+  assert.deepStrictEqual([big1, big2].map(b => mine(b) === T3).sort(), [false, true], 'one of two big players fits');
+  assert.strictEqual(f.apns.length, 10);
+  await tick(T3 + 3600000);
+  assert.strictEqual(f.apns.length, 20, 'the one left over is pushed next hour');
+  console.log('push: a run stays inside its subrequest budget and leaves the rest unmarked');
+
+  // one job failing does not stop the next
+  const T4 = Date.UTC(2031, 5, 12, 3, 5);
+  const late = await guest();
+  await mk(late, [['apns', tzAt(T4, 18), 'en']]);
+  sql('DROP TABLE push_log');
+  f.clear();
+  await tick(T4);
+  assert.strictEqual(to(f.apns, late.tokens[0]).length, 1, 'the daily goes out although the cleanup before it failed');
+  sql('CREATE TABLE push_log (kind TEXT NOT NULL, sender TEXT NOT NULL, target TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (kind, sender, target))');
+  console.log('push: the run survives a failing job');
+
+  // no key, no request, no error
+  const mod = await import('../src/push.js');
+  const dv = [{ token: hexTok(), kind: 'apns', lang: 'en', sandbox: 0 }, { token: fcmTok(), kind: 'fcm', lang: 'tr', sandbox: 0 }];
+  f.clear();
+  const at = { PACE: '1', APNS_BASE: 'http://localhost:8792', FCM_BASE: 'http://localhost:8794', FCM_TOKEN_URL: 'http://localhost:8794/token' };
+  for (const env of [{}, { APNS_KEY: vars.APNS_KEY, FCM_KEY: vars.FCM_KEY }, Object.assign({ APNS_KEY_ID: 'testkid', FCM_PROJECT: 'x' }, at)]) {
+    assert.strictEqual(await mod.send(env, dv, 'invite', { seed: 1, code: 'ABCD' }), 0);
+    await mod.cron(Object.assign({ DB: null }, env), Date.UTC(2031, 0, 6, 10, 30));
+  }
+  assert.strictEqual(f.apns.length + f.fcm.length, 0);
+  console.log('push: a sender without its key is skipped quietly');
+
+  // what went out says nothing about bots
+  assert(seen.length > 6);
+  assert(!seen.some(m => /bot|fake|persona/i.test(JSON.stringify(m.body || m.message))), 'no push mentions bots');
+  assert.strictEqual(jwts(seen.slice(after)), 1, 'the new APNs JWT serves every push after it');
+  f.close();
+  console.log('push: nothing for personas, no hint of them in any text');
+}
 (async () => {
   schema();
   await math();
@@ -1799,6 +2359,7 @@ async function cupRun(n) {
   await chat();
   await gifts();
   await invites();
+  await push();
   await personas();
   await pool();
   await openRoom();
