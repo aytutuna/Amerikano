@@ -45,6 +45,10 @@ public class GoogleSignInPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticatio
                     return
                 }
                 let items = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+                if items.first(where: { $0.name == "error" })?.value == "access_denied" {
+                    call.reject("cancelled", "cancelled")
+                    return
+                }
                 guard let code = items.first(where: { $0.name == "code" })?.value,
                       items.first(where: { $0.name == "state" })?.value == state else {
                     call.reject(error?.localizedDescription ?? "no code")
