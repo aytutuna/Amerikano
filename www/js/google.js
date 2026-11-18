@@ -6,6 +6,7 @@ var Google = (function () {
   let sdk = null;
   let state = null;
   let handler = null;
+  let drawn = [];
 
   const platform = () => (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || 'web';
   const real = id => /\.apps\.googleusercontent\.com$/.test(id);
@@ -34,11 +35,20 @@ var Google = (function () {
   // done gets {token, nonce}, or an error with cancelled set.
   G.render = (el, done) => {
     handler = done;
+    drawn.push(el);
     const ready = state && Date.now() - state.at < 300000 ? state.ready : prepare();
-    ready.then(() => {
-      window.google.accounts.id.renderButton(el, { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', width: Math.min(400, Math.max(200, el.clientWidth)), locale: I18n.lang() });
-    }, () => {});
+    ready.then(redraw, () => {});
   };
+
+  // Google copies the nonce into a button when it is drawn, so every button on screen is drawn again
+  // each time prepare() sets a new one
+  function redraw() {
+    drawn = drawn.filter(el => el.isConnected);
+    drawn.forEach(el => {
+      el.textContent = '';
+      window.google.accounts.id.renderButton(el, { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', width: Math.min(400, Math.max(200, el.clientWidth)), locale: I18n.lang() });
+    });
+  }
 
   function prepare() {
     const w = state = { at: Date.now() };
@@ -50,7 +60,7 @@ var Google = (function () {
         callback: c => {
           // the nonce is spent with the token, so the next button press gets a new one
           state = null;
-          prepare().catch(() => {});
+          prepare().then(redraw, () => {});
           if (handler) handler({ token: c.credential, nonce: w.raw });
         }
       });
