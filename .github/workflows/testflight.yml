@@ -72,6 +72,16 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGNING_ALLOWED=NO
+      # An unsigned archive carries no entitlements, and the export only keeps what the archive has,
+      # so push, Sign in with Apple and app links were silently left out. Sign it here with App.entitlements.
+      - name: Add the entitlements
+        run: |
+          app="$RUNNER_TEMP/Amerikano.xcarchive/Products/Applications/App.app"
+          for f in "$app"/Frameworks/*; do
+            [ -e "$f" ] && codesign --force --sign - "$f"
+          done
+          codesign --force --sign - --entitlements ios/App/App/App.entitlements "$app"
+          codesign -d --entitlements - "$app"
       - name: Sign and upload
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -99,6 +109,23 @@ jobs:
           </dict>
           </plist>
           EOF
+          # a local export first, to check what the signed app is entitled to before anything is uploaded
+          sed 's|<string>upload</string>|<string>export</string>|' "$RUNNER_TEMP/ExportOptions.plist" > "$RUNNER_TEMP/Check.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Amerikano.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/Check.plist" \
+            -exportPath "$RUNNER_TEMP/check" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$APPSTORE_KEY_ID.p8" \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
+          unzip -q "$RUNNER_TEMP"/check/*.ipa -d "$RUNNER_TEMP/ipa"
+          ents=$(codesign -d --entitlements - --xml "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null | plutil -convert xml1 -o - -)
+          echo "$ents"
+          for k in aps-environment com.apple.developer.applesignin com.apple.developer.associated-domains; do
+            echo "$ents" | grep -q "<key>$k</key>" || { echo "The signed app is missing $k"; exit 1; }
+          done
+          echo "$ents" | grep -A1 "<key>aps-environment</key>" | grep -q production || { echo "aps-environment is not production"; exit 1; }
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Amerikano.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
