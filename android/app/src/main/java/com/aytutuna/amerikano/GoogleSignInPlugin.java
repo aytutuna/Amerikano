@@ -37,9 +37,13 @@ public class GoogleSignInPlugin extends Plugin {
                     var credential = result.getCredential();
                     if (credential instanceof CustomCredential
                         && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
-                        var out = new JSObject();
-                        out.put("idToken", GoogleIdTokenCredential.createFrom(credential.getData()).getIdToken());
-                        call.resolve(out);
+                        try {
+                            var out = new JSObject();
+                            out.put("idToken", GoogleIdTokenCredential.createFrom(credential.getData()).getIdToken());
+                            call.resolve(out);
+                        } catch (Exception e) {
+                            call.reject("bad credential");
+                        }
                     } else {
                         call.reject("unexpected credential");
                     }
