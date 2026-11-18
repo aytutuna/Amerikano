@@ -2,11 +2,12 @@
 //   node -e "const c=require('crypto');console.log('PACE=0.02\nAPPLE_BASE=http://localhost:8791\nAPPLE_KEY='+c.generateKeyPairSync('ec',{namedCurve:'P-256'}).privateKey.export({type:'pkcs8',format:'der'}).toString('base64'))" > test/dev.vars
 // Plays whole matches through the socket API against a running
 // `wrangler dev --port 8787 --env-file test/dev.vars --test-scheduled`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
-// The Apple tests play Apple's servers on port 8791. The push tests play APNs on 8792 and 8793 and FCM with Google's token
+// The Apple tests play Apple's servers on port 8791, the Google tests Google's keys on 8795. The push tests play APNs on 8792 and 8793 and FCM with Google's token
 // endpoint on 8794, and need throwaway keys in the same file:
 //   APNS_KEY (base64 pkcs8 P-256 like APPLE_KEY), APNS_KEY_ID=testkid, APNS_BASE=http://localhost:8792, APNS_SANDBOX=http://localhost:8793,
 //   FCM_BASE=http://localhost:8794, FCM_TOKEN_URL=http://localhost:8794/token,
 //   FCM_KEY='{"client_email":"push-test@example.iam.gserviceaccount.com","private_key":"<a PEM pkcs8 RSA key, newlines as backslash n>"}'
+//   and, for the Google tests, GOOGLE_BASE=http://localhost:8795 and GOOGLE_CLIENTS=web.apps.googleusercontent.com,ios.apps.googleusercontent.com
 const assert = require('assert');
 const WebSocket = require('ws');
 const Game = require('../../www/js/game.js');
@@ -34,7 +35,7 @@ async function call(method, path, acc, body, origin) {
   if (acc) headers.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
   if (origin) headers.Origin = origin;
   // guests are rate limited per address
-  if (path === '/api/guest' || path === '/api/apple') headers['CF-Connecting-IP'] = '10.0.0.' + (++ips % 250);
+  if (path === '/api/guest' || path === '/api/apple' || path === '/api/google') headers['CF-Connecting-IP'] = '10.0.0.' + (++ips % 250);
   const go = () => fetch(http + path, { method: method, headers: headers, body: body && JSON.stringify(body) });
   // the dev server drops idle connections while sql() runs
   const r = await go().catch(go);
@@ -748,6 +749,91 @@ async function apple() {
   assert.strictEqual((await call('DELETE', '/api/me', other)).status, 200);
   console.log('deleting an account revokes its Apple token with the client it came from');
   for (const a of burst) await call('DELETE', '/api/me', a.body);
+  stub.close();
+}
+
+async function googleSignIn() {
+  const pair = () => crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const good = pair();
+  const kid = 'g' + Date.now();
+  const jwk = Object.assign(good.publicKey.export({ format: 'jwk' }), { kid: kid, alg: 'RS256', use: 'sig' });
+  const stub = httpServer.createServer((q, r) => r.end(JSON.stringify({ keys: q.url === '/oauth2/v3/certs' ? [jwk] : [] })));
+  await new Promise(res => stub.listen(8795, res));
+  const sha = raw => crypto.createHash('sha256').update(raw).digest('hex');
+  const WEB = 'web.apps.googleusercontent.com';
+  const IOS = 'ios.apps.googleusercontent.com';
+  const mint = (o, key) => {
+    o = Object.assign({ iss: 'https://accounts.google.com', aud: WEB, exp: Math.floor(Date.now() / 1000) + 600 }, o);
+    const head = b64u(JSON.stringify({ alg: 'RS256', kid: kid })) + '.' + b64u(JSON.stringify(o));
+    return head + '.' + crypto.sign('RSA-SHA256', Buffer.from(head), (key || good).privateKey).toString('base64url');
+  };
+  const cred = async (o, key) => {
+    o = Object.assign({ sub: '1' + crypto.randomBytes(8).toString('hex') }, o);
+    const n = (await call('POST', '/api/google/nonce')).body.nonce;
+    return { token: mint(Object.assign({ nonce: sha(n) }, o), key), nonce: n, sub: o.sub };
+  };
+  const post = (path, acc, c) => call('POST', path, acc, { token: c.token, nonce: c.nonce });
+  const row = id => sql("SELECT apple, google FROM players WHERE id = '" + id + "'")[0];
+
+  const t = await cred({});
+  let r = await post('/api/google', null, t);
+  assert.strictEqual(r.status, 200);
+  const acc = r.body;
+  const me = (await call('GET', '/api/me', acc)).body;
+  assert.strictEqual(me.chips, 5000);
+  assert.strictEqual(me.google, true);
+  assert.strictEqual(me.apple, false);
+  assert.deepStrictEqual(row(acc.id), { apple: null, google: t.sub });
+  assert.strictEqual((await post('/api/google', null, t)).status, 401);
+  const again = await post('/api/google', null, await cred({ sub: t.sub, iss: 'accounts.google.com' }));
+  assert.strictEqual(again.body.id, acc.id);
+  assert.notStrictEqual(again.body.secret, acc.secret);
+  assert.strictEqual((await call('GET', '/api/me', acc)).status, 200);
+  const ios = await post('/api/google', null, await cred({ aud: IOS }));
+  assert.strictEqual(ios.status, 200);
+  assert.strictEqual((await call('POST', '/api/apple/nonce')).status, 200);
+  console.log('google sign-in makes an account, the same subject gets it back, the apple nonce route still works');
+
+  const g = await guest();
+  await call('POST', '/api/daily', g);
+  const chips = (await call('GET', '/api/me', g)).body.chips;
+  assert.strictEqual((await call('GET', '/api/me', g)).body.google, false);
+  const mine = await cred({});
+  r = await post('/api/google/link', g, mine);
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.google, true);
+  assert.strictEqual(r.body.chips, chips);
+  assert.strictEqual((await post('/api/google/link', g, mine)).status, 401);
+  r = await post('/api/google/link', g, await cred({ sub: mine.sub }));
+  assert.strictEqual(r.status, 200);
+  r = await post('/api/google/link', g, await cred({}));
+  assert.strictEqual(r.status, 409);
+  assert.deepStrictEqual(r.body, { k: 'linked' });
+  const other = await guest();
+  r = await post('/api/google/link', other, await cred({ sub: t.sub }));
+  assert.strictEqual(r.status, 409);
+  assert.deepStrictEqual(r.body, { k: 'taken' });
+  assert.strictEqual((await call('GET', '/api/me', other)).body.google, false);
+  assert.strictEqual((await post('/api/google/link', null, await cred({}))).status, 401);
+  console.log('a guest keeps its chips when linking google, a subject owned by another account is refused');
+
+  const now = Math.floor(Date.now() / 1000);
+  const bad = [
+    await cred({ aud: 'other.apps.googleusercontent.com' }), await cred({ iss: 'https://evil.example' }), await cred({ exp: now - 10 }),
+    await cred({ nonce: sha('n2') }), await cred({}, pair()), { token: 'x.y.z', nonce: 'n1' }, { token: t.token }, {}
+  ];
+  for (const b of bad) assert.strictEqual((await call('POST', '/api/google', null, b)).status, 401, JSON.stringify(b).slice(0, 60));
+  const stale = await cred({});
+  sql("UPDATE nonces SET exp = 1 WHERE raw = '" + stale.nonce + "'");
+  assert.strictEqual((await post('/api/google', null, stale)).status, 401);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE google = '" + stale.sub + "'")[0].n, 0);
+  console.log('bad audience, issuer, expiry, nonce and signature are refused, a nonce works once');
+
+  assert.strictEqual((await call('DELETE', '/api/me', acc)).status, 200);
+  assert.strictEqual((await call('GET', '/api/me', again.body)).status, 401);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE google = '" + t.sub + "'")[0].n, 0);
+  for (const a of [ios.body, g, other]) assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
+  console.log('deleting a google account needs no token');
   stub.close();
 }
 
@@ -2346,6 +2432,7 @@ async function push() {
   await math();
   await accounts();
   await apple();
+  await googleSignIn();
   await races();
   await solo();
   await lobby();
