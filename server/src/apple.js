@@ -9,7 +9,7 @@ let fetched = 0;
 
 export const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 export const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const part = s => JSON.parse(new TextDecoder().decode(unb64(s)));
+export const part = s => JSON.parse(new TextDecoder().decode(unb64(s)));
 
 // PACE only exists on a dev server, so a stray APPLE_BASE can never point production at other keys
 const root = env => (env.PACE && env.APPLE_BASE) || ISS;
