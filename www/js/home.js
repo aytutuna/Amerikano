@@ -140,7 +140,8 @@ var UI = (function () {
     });
   }
 
-  function toggle(key, label, note, extra) {
+  function toggle(key, label, note, extra, store) {
+    store = store || Settings;
     const row = node('label', 'row');
     const id = 'tg-' + key;
     const tx = node('span', 'tx');
@@ -154,19 +155,23 @@ var UI = (function () {
     }
     if (extra) tx.appendChild(extra);
     row.appendChild(tx);
-    const st = node('span', 'onoff', t(Settings.get(key) ? 'on' : 'off'));
+    const st = node('span', 'onoff', t(store.get(key) ? 'on' : 'off'));
     st.setAttribute('aria-hidden', 'true');
     row.appendChild(st);
     const inp = node('input', 'swt');
     inp.type = 'checkbox';
     inp.setAttribute('role', 'switch');
-    inp.checked = !!Settings.get(key);
+    inp.checked = !!store.get(key);
     inp.dataset.f = key;
     inp.setAttribute('aria-labelledby', id);
     if (note) inp.setAttribute('aria-describedby', id + '-n');
     inp.addEventListener('change', () => {
       st.textContent = t(inp.checked ? 'on' : 'off');
-      Settings.set(key, inp.checked);
+      const r = store.set(key, inp.checked);
+      if (r && r.catch) r.catch(() => {
+        inp.checked = !inp.checked;
+        st.textContent = t(inp.checked ? 'on' : 'off');
+      });
     });
     row.appendChild(inp);
     row.appendChild(node('span', 'track'));
@@ -190,6 +195,19 @@ var UI = (function () {
     const form = node('div', 'form');
     let h = null;
 
+    function notes() {
+      const fs = node('fieldset', 'fld');
+      fs.appendChild(node('legend', '', t('set.notes')));
+      if (Push.perm() === 'denied') fs.appendChild(node('p', 'note', t('set.push.denied')));
+      const store = { get: Push.get, set: (k, v) => Push.set(k, v).then(() => { if (k === 'on') fill(); }) };
+      for (const k of ['on', 'invite', 'daily', 'friend', 'week']) {
+        const row = toggle(k, t('set.push.' + k), null, null, store);
+        if (k !== 'on' && !Push.get('on')) row.querySelector('input').disabled = true;
+        fs.appendChild(row);
+      }
+      return fs;
+    }
+
     function fill() {
       const was = document.activeElement && form.contains(document.activeElement) ? document.activeElement.dataset.f : null;
       form.textContent = '';
@@ -197,7 +215,7 @@ var UI = (function () {
         { v: 'auto', label: t('set.auto') },
         { v: 'en', label: t('set.en') },
         { v: 'tr', label: t('set.tr') }
-      ], Settings.get('lang'), v => { Settings.set('lang', v); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
+      ], Settings.get('lang'), v => { Settings.set('lang', v); Push.sync(); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
       const how = button(t('start.how'), 'plain', howTo);
       how.dataset.f = 'how';
       form.appendChild(how);
@@ -210,6 +228,7 @@ var UI = (function () {
       form.appendChild(choice('speed', t('set.speed'), ['slow', 'normal', 'fast'].map(v => ({ v: v, label: t('set.' + v) })), Settings.get('speed'), v => Settings.set('speed', v), 'seg'));
       form.appendChild(choice('back', t('set.back'), ['red', 'blue', 'green', 'graphite'].map(v => ({ v: v, label: t('set.' + v), pic: () => backSwatch(v) })), Settings.get('back'), v => Settings.set('back', v), 'seg pics'));
       form.appendChild(choice('felt', t('set.felt'), ['green', 'blue', 'wine', 'walnut'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => Settings.set('felt', v), 'seg pics'));
+      if (Push.can() && Account.me()) form.appendChild(notes());
       const acct = Account.has() && Account.me() && !App.active() ? Account.me() : null;
       if (acct) {
         const ex = node('div', 'exit');
@@ -226,6 +245,7 @@ var UI = (function () {
     const done = () => [{ label: t('done'), kind: 'primary' }];
     fill();
     h = Sheet.open({ kind: 'bottom', tall: true, title: t('set.title'), body: form, actions: done() });
+    if (Push.can()) Push.check().then(fill);
   }
 
   const cid = (s, r) => ({ c: 0, d: 13, h: 26, s: 39 })[s] + r - 1;
@@ -814,6 +834,7 @@ var UI = (function () {
     }
     Account.ensure().then(() => Account.refresh()).then(() => {
       Net.up();
+      Push.start();
       redraw();
     }, down);
   }
@@ -1230,16 +1251,25 @@ var UI = (function () {
     return w;
   }
 
+  function pick(k) {
+    at.tab = k;
+    if (k === 'friends') Social.refresh().then(redraw, () => {});
+    if (k === 'top') Social.top().then(redraw, () => {});
+    draw();
+  }
+
+  // a tapped notification opens a tab; a match in progress is left alone
+  function tab(k) {
+    if (App.active()) return;
+    Sheet.closeAll();
+    pick(k);
+  }
+
   function tabs(bar) {
     const list = node('div', 'tabs');
     list.setAttribute('role', 'tablist');
     for (const [k, label] of [['rooms', t('hall.rooms')], ['cups', t('cup.tab')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
-      const b = raw('tab', () => {
-        at.tab = k;
-        if (k === 'friends') Social.refresh().then(redraw, () => {});
-        if (k === 'top') Social.top().then(redraw, () => {});
-        draw();
-      });
+      const b = raw('tab', () => pick(k));
       b.textContent = label;
       b.dataset.k = 'tab' + k;
       b.setAttribute('role', 'tab');
@@ -1271,6 +1301,7 @@ var UI = (function () {
       if (fresh) {
         at.gate = '';
         Net.up();
+        Push.start();
       }
       return r;
     });
@@ -1377,7 +1408,7 @@ var UI = (function () {
   }, 8000);
 
   return {
-    show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link,
+    show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link, tab: tab,
     accept: accept, up: up, hub: hub, rooms: rooms, cup: cupForm, cupSeated: cupSeated, cupEnd: cupEnd, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry
   };
 })();

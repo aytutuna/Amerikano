@@ -26,14 +26,17 @@ var Account = (function () {
     const h = {};
     if (body) h['Content-Type'] = 'application/json';
     if (acc && path !== '/api/guest' && path !== '/api/apple') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
+    const sent = acc;
     const r = await fetch(base() + path, { method: method, headers: h, body: body && JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    if (r.status === 401 && acc && d.error === 'auth') forget();
+    if (r.status === 401 && acc && acc === sent && d.error === 'auth') forget(true);
     if (!r.ok) throw Object.assign(new Error(d.error || d.k || 'api'), { status: r.status });
     return d;
   }
 
-  function forget() {
+  function forget(dead) {
+    // the request needs the login, so it starts before the account goes; a dead login has no devices left to drop
+    if (acc && !dead && typeof Push !== 'undefined') Push.leave();
     acc = me = null;
     keep(KEY, null);
     keep(ME, null);
@@ -88,6 +91,7 @@ var Account = (function () {
   A.look = async avatar => set(await call('POST', '/api/avatar', { avatar: avatar }));
   A.daily = async () => set(await call('POST', '/api/daily'));
   A.bailout = async () => set(await call('POST', '/api/bailout'));
+  A.push = async (k, v) => set(await call('POST', '/api/push', { [k]: v }));
 
   // an Apple account the server holds no token for has to send a fresh credential
   A.remove = async cred => {

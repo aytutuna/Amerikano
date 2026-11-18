@@ -819,6 +819,7 @@ var App = (function () {
       const app = window.Capacitor.Plugins.App;
       app.addListener('backButton', A.back);
       app.addListener('appUrlOpen', e => UI.link(e.url));
+      Push.init();
       launch();
     } else {
       UI.show();
@@ -849,6 +850,7 @@ var App = (function () {
       probe.remove();
       UI.show();
       UI.link();
+      Push.ready();
       const app = window.Capacitor.Plugins.App;
       // the native side keeps the launch link, so a later restart returns it again
       if (app.getLaunchUrl) app.getLaunchUrl().then(l => {

@@ -209,7 +209,16 @@ var I18n = (function () {
       green: 'Green',
       graphite: 'Graphite',
       wine: 'Wine',
-      walnut: 'Walnut'
+      walnut: 'Walnut',
+      notes: 'Notifications',
+      push: {
+        on: 'Allow notifications',
+        invite: 'Table invites',
+        daily: 'Daily bonus',
+        friend: 'Friend requests',
+        week: 'Weekly leaderboard',
+        denied: 'Notifications are turned off for Amerikano in your device settings. Turn them on there to get any of these.'
+      }
     },
 
     pause: {
@@ -753,7 +762,16 @@ var I18n = (function () {
       green: 'Yeşil',
       graphite: 'Grafit',
       wine: 'Şarap',
-      walnut: 'Ceviz'
+      walnut: 'Ceviz',
+      notes: 'Bildirimler',
+      push: {
+        on: 'Bildirimlere izin ver',
+        invite: 'Masa davetleri',
+        daily: 'Günlük ödül',
+        friend: 'Arkadaşlık istekleri',
+        week: 'Haftalık sıralama',
+        denied: 'Bildirimler cihazının ayarlarında Amerikano için kapalı. Bunlardan birini almak için oradan açman gerekir.'
+      }
     },
 
     pause: {
