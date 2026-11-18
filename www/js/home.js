@@ -699,6 +699,7 @@ var UI = (function () {
             go.disabled = false;
             if (e.cancelled) return;
             if (e.message === 'reauth') {
+              if (!Apple.can()) return notice(t('pf.reauthApple'));
               again = true;
               Apple.warm();
               return notice(t('pf.reauth'));

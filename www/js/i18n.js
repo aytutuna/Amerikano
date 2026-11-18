@@ -447,7 +447,8 @@ var I18n = (function () {
       switch: 'Switch account',
       other: 'This account is already linked to another Apple ID.',
       otherGoogle: 'This account is already linked to another Google account.',
-      reauth: 'Confirm with Apple to finish deleting. Press the button again.'
+      reauth: 'Confirm with Apple to finish deleting. Press the button again.',
+      reauthApple: 'This account needs Apple to confirm the deletion. Delete it from the iPhone app, or at amerikano.pages.dev after signing in with Apple.'
     },
 
     chat: {
@@ -1005,7 +1006,8 @@ var I18n = (function () {
       switch: 'Hesaba geç',
       other: 'Bu hesap başka bir Apple kimliğine bağlı.',
       otherGoogle: 'Bu hesap başka bir Google hesabına bağlı.',
-      reauth: 'Silmeyi bitirmek için Apple ile onayla. Düğmeye tekrar bas.'
+      reauth: 'Silmeyi bitirmek için Apple ile onayla. Düğmeye tekrar bas.',
+      reauthApple: 'Bu hesabın silinmesi için Apple onayı gerekiyor. iPhone uygulamasından sil ya da Apple ile giriş yapıp amerikano.pages.dev adresinden sil.'
     },
 
     chat: {
