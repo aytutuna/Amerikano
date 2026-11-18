@@ -405,6 +405,7 @@ var I18n = (function () {
       lead: 'Sign in to keep your chips on all your devices.',
       leadGuest: 'Play right away with a guest account.',
       apple: 'Sign in with Apple',
+      google: 'Sign in with Google',
       guest: 'Continue as guest',
       note: 'A guest account stays on this device.',
       fail: 'That did not work. Try again.'
@@ -439,10 +440,13 @@ var I18n = (function () {
       keep: 'Keep my account',
       appleNote: 'Keep your chips and play on other devices.',
       linked: 'Signed in with Apple',
+      linkedGoogle: 'Signed in with Google',
       taken: 'That Apple ID already has an account',
+      takenGoogle: 'That Google account already has an account',
       takenAsk: 'Switch to it? This guest account and its chips will be lost.',
       switch: 'Switch account',
       other: 'This account is already linked to another Apple ID.',
+      otherGoogle: 'This account is already linked to another Google account.',
       reauth: 'Confirm with Apple to finish deleting. Press the button again.'
     },
 
@@ -959,6 +963,7 @@ var I18n = (function () {
       lead: 'Çiplerini tüm cihazlarında korumak için giriş yap.',
       leadGuest: 'Misafir hesabıyla hemen oyna.',
       apple: 'Apple ile giriş yap',
+      google: 'Google ile oturum açın',
       guest: 'Misafir olarak devam et',
       note: 'Misafir hesabı bu cihazda kalır.',
       fail: 'Olmadı. Tekrar dene.'
@@ -993,10 +998,13 @@ var I18n = (function () {
       keep: 'Hesabımı koru',
       appleNote: 'Çiplerini koru, başka cihazlarda oyna.',
       linked: 'Apple ile giriş yapıldı',
+      linkedGoogle: 'Google ile giriş yapıldı',
       taken: 'Bu Apple kimliğinin zaten bir hesabı var',
+      takenGoogle: 'Bu Google hesabının zaten bir hesabı var',
       takenAsk: 'O hesaba geçilsin mi? Bu misafir hesabı ve çipleri kaybolur.',
       switch: 'Hesaba geç',
       other: 'Bu hesap başka bir Apple kimliğine bağlı.',
+      otherGoogle: 'Bu hesap başka bir Google hesabına bağlı.',
       reauth: 'Silmeyi bitirmek için Apple ile onayla. Düğmeye tekrar bas.'
     },
 

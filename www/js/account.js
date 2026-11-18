@@ -25,7 +25,7 @@ var Account = (function () {
   async function call(method, path, body) {
     const h = {};
     if (body) h['Content-Type'] = 'application/json';
-    if (acc && path !== '/api/guest' && path !== '/api/apple') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
+    if (acc && path !== '/api/guest' && path !== '/api/apple' && path !== '/api/google') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
     const sent = acc;
     const r = await fetch(base() + path, { method: method, headers: h, body: body && JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
@@ -75,9 +75,10 @@ var Account = (function () {
     return me || A.refresh();
   };
 
-  // c is {token, nonce, code} from Apple; the account linked to that Apple ID replaces the stored one
-  A.signIn = async c => {
-    const g = await call('POST', '/api/apple', c);
+  // c is {token, nonce, code} from Apple, or {token, nonce} from Google when via is 'google'; the account linked
+  // to that ID replaces the stored one
+  A.signIn = async (c, via) => {
+    const g = await call('POST', '/api/' + (via || 'apple'), c);
     acc = g;
     me = null;
     keep(KEY, g);
@@ -85,7 +86,7 @@ var Account = (function () {
     return A.refresh();
   };
 
-  A.link = async c => set(await call('POST', '/api/apple/link', c));
+  A.link = async (c, via) => set(await call('POST', '/api/' + (via || 'apple') + '/link', c));
 
   A.reroll = async () => set(await call('POST', '/api/name'));
   A.look = async avatar => set(await call('POST', '/api/avatar', { avatar: avatar }));

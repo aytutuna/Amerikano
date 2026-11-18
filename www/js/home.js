@@ -232,7 +232,7 @@ var UI = (function () {
       const acct = Account.has() && Account.me() && !App.active() ? Account.me() : null;
       if (acct) {
         const ex = node('div', 'exit');
-        if (acct.apple) ex.appendChild(button(t('set.out'), 'quiet', () => { h.close(); signOut(); }));
+        if (acct.apple || acct.google) ex.appendChild(button(t('set.out'), 'quiet', () => { h.close(); signOut(); }));
         ex.appendChild(button(t('pf.delete'), 'quiet', () => { h.close(); profile(true); }));
         form.appendChild(ex);
       }
@@ -402,31 +402,63 @@ var UI = (function () {
     return b;
   }
 
-  function linkApple(b, fill) {
-    b.disabled = true;
-    Apple.signIn().then(c => Account.link(c)).then(fill, e => {
-      b.disabled = false;
+  // white, with Google's multicolour G, as Google's branding asks. In a browser Google draws the button itself
+  // and hands the credential to use when it is pressed; elsewhere use gets the promise of the native dialog.
+  function googleButton(use) {
+    if (!Google.native()) {
+      const d = node('div', 'gbtn');
+      Google.render(d, c => use(Promise.resolve(c)));
+      return d;
+    }
+    const b = node('button', 'btn google');
+    b.type = 'button';
+    b.appendChild(Cards.icon('i-google', 'ic'));
+    b.appendChild(node('span', '', t('signin.google')));
+    b.addEventListener('click', () => use(Google.signIn()));
+    return b;
+  }
+
+  // Google's web button cannot be disabled, so a busy one is covered by a class
+  function hold(b, on) {
+    b.disabled = on;
+    b.classList.toggle('wait', on);
+  }
+
+  function linkWith(via, cred, b, fill) {
+    hold(b, true);
+    cred.then(c => Account.link(c, via)).then(fill, e => {
+      hold(b, false);
       if (e.cancelled) return;
-      if (e.message === 'taken') return takenAsk();
-      notice(t(e.message === 'linked' ? 'pf.other' : e instanceof TypeError ? 'net.err.lost' : 'signin.fail'));
+      if (e.message === 'taken') return takenAsk(via, fill);
+      notice(t(e.message === 'linked' ? (via === 'google' ? 'pf.otherGoogle' : 'pf.other') : e instanceof TypeError ? 'net.err.lost' : 'signin.fail'));
     });
   }
 
-  // that Apple ID already has an account: offer it in place of this guest
-  function takenAsk() {
+  // that ID already has an account: offer it in place of this guest
+  function takenAsk(via, fill) {
+    const web = via === 'google' && !Google.native();
+    const ask = node('p', '', t('pf.takenAsk'));
+    let body = ask;
+    // Google's web button is the only way to a credential there, so it sits in the sheet
+    if (web) {
+      body = node('div');
+      body.appendChild(ask);
+      body.appendChild(googleButton(cred => { Sheet.closeAll(); switchTo(via, cred); }));
+    }
     Sheet.open({
-      kind: 'center', title: t('pf.taken'), body: node('p', '', t('pf.takenAsk')),
-      actions: [
-        { label: t('pf.switch'), kind: 'plain', fn: switchTo },
+      kind: 'center', title: t(via === 'google' ? 'pf.takenGoogle' : 'pf.taken'), body: body,
+      actions: web ? [{ label: t('cancel'), kind: 'primary' }] : [
+        { label: t('pf.switch'), kind: 'plain', fn: () => switchTo(via, via === 'google' ? Google.signIn() : Apple.signIn()) },
         { label: t('cancel'), kind: 'primary' }
-      ]
+      ],
+      onClose: web ? fill : undefined
     });
   }
 
-  // Apple's credential was spent on the link, so it is asked for again
-  function switchTo() {
+  // the credential was spent on the link, so a new one is asked for
+  function switchTo(via, cred) {
     Sheet.closeAll();
-    Apple.signIn().then(c => Account.signIn(c)).then(() => {
+    cred.then(c => Account.signIn(c, via)).then(() => {
       Net.cancel();
       Social.reset();
       retry();
@@ -449,6 +481,12 @@ var UI = (function () {
     at.gate = 'busy';
     draw();
     Apple.signIn().then(c => Account.signIn(c)).then(enter, fail);
+  }
+
+  function signGoogle(cred) {
+    at.gate = 'busy';
+    draw();
+    cred.then(c => Account.signIn(c, 'google')).then(enter, fail);
   }
 
   function signGuest() {
@@ -494,12 +532,18 @@ var UI = (function () {
       const p = node('p', 'note', t('nonet.downNote'));
       p.setAttribute('role', 'alert');
       pn.appendChild(p);
-    } else pn.appendChild(node('p', 'gate-s', t(Apple.can() ? 'signin.lead' : 'signin.leadGuest')));
+    } else pn.appendChild(node('p', 'gate-s', t(Apple.can() || Google.can() ? 'signin.lead' : 'signin.leadGuest')));
     if (Apple.can()) {
       const a = appleButton(signApple);
       a.dataset.k = 'apple';
       a.disabled = busy;
       pn.appendChild(a);
+    }
+    if (Google.can()) {
+      const gb = googleButton(signGoogle);
+      gb.dataset.k = 'google';
+      hold(gb, busy);
+      pn.appendChild(gb);
     }
     const g = button(t('signin.guest'), 'primary', signGuest);
     g.dataset.k = 'guest';
@@ -609,19 +653,30 @@ var UI = (function () {
         right.appendChild(fs);
       });
 
-      if (me.apple || Apple.can()) {
-        const ap = node('div', 'pf-apple' + (me.apple ? ' on' : ''));
-        if (me.apple) {
-          ap.appendChild(Cards.icon('i-apple', 'ic'));
-          ap.appendChild(node('b', '', t('pf.linked')));
-        } else {
-          const b = appleButton(() => linkApple(b, fill));
-          b.dataset.f = 'apple';
-          ap.appendChild(b);
-          ap.appendChild(node('p', 'note', t('pf.appleNote')));
-        }
-        left.appendChild(ap);
+      const ap = node('div', 'pf-link');
+      const linked = (icon, key) => {
+        const row = node('div', 'pf-on');
+        row.appendChild(Cards.icon(icon, 'ic'));
+        row.appendChild(node('b', '', t(key)));
+        ap.appendChild(row);
+      };
+      let offer = false;
+      if (me.apple) linked('i-apple', 'pf.linked');
+      else if (Apple.can()) {
+        const b = appleButton(() => linkWith('apple', Apple.signIn(), b, fill));
+        b.dataset.f = 'apple';
+        ap.appendChild(b);
+        offer = true;
       }
+      if (me.google) linked('i-google', 'pf.linkedGoogle');
+      else if (Google.can()) {
+        const b = googleButton(cred => linkWith('google', cred, b, fill));
+        b.dataset.f = 'google';
+        ap.appendChild(b);
+        offer = true;
+      }
+      if (offer) ap.appendChild(node('p', 'note', t('pf.appleNote')));
+      if (ap.firstChild) left.appendChild(ap);
 
       const del = node('div', 'danger');
       if (!sure) {
