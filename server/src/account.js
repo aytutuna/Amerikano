@@ -1,6 +1,7 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
 import { identity, refresh, revoke } from './apple.js';
+import * as google from './google.js';
 
 const DAY = 86400000;
 const START = 5000;
@@ -115,6 +116,7 @@ function profile(p) {
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
+    google: !!p.google,
     push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
   };
 }
@@ -140,14 +142,14 @@ async function sessionStmts(db, id, secret) {
   ];
 }
 
-// a is {sub, aud, token} for an account made by signing in with Apple
-async function guest(db, a) {
+// a is {sub, aud, token} for an account made by signing in with Apple, or {sub} with viaGoogle set for Google
+async function guest(db, a, viaGoogle) {
   const id = random(16);
   const secret = random(32);
   const now = Date.now();
   await db.batch([
-    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), START, now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
+    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client, google) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), START, now, a && !viaGoogle ? a.sub : null, a && !viaGoogle ? a.token : null, a && !viaGoogle && a.token ? a.aud : null, viaGoogle ? a.sub : null),
     ...await sessionStmts(db, id, secret),
     db.prepare('INSERT INTO chip_log (player, delta, reason, at) VALUES (?, ?, ?, ?)').bind(id, START, 'start', now)
   ]);
@@ -157,10 +159,10 @@ async function guest(db, a) {
 // every new account starts with chips, so keep one address from minting them in bulk
 const limited = async (env, request) => env.GUESTS && !(await env.GUESTS.limit({ key: request.headers.get('CF-Connecting-IP') || '' })).success;
 
-// A token counts once: its nonce was issued by /api/apple/nonce and is used up here.
-async function appleToken(env, b) {
+// A token counts once: its nonce was issued by /api/apple/nonce (or /api/google/nonce) and is used up here.
+async function spendToken(env, b, check) {
   if (typeof b.token !== 'string' || typeof b.nonce !== 'string') return null;
-  const a = await identity(env, b.token, b.nonce);
+  const a = await (check || identity)(env, b.token, b.nonce);
   if (!a) return null;
   const r = await env.DB.prepare('DELETE FROM nonces WHERE raw = ? AND exp > ?').bind(b.nonce, Date.now()).run();
   return r.meta.changes === 1 ? a : null;
@@ -168,41 +170,59 @@ async function appleToken(env, b) {
 
 async function signIn(env, request) {
   const b = await body(request);
-  const a = await appleToken(env, b);
+  const a = await spendToken(env, b);
   if (!a) return fail('apple', 401);
   // an authorization code works once, so it is exchanged here and not again on the retry
   a.token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
   return enter(env, request, a);
 }
 
-async function enter(env, request, a) {
+async function signInGoogle(env, request) {
+  const a = await spendToken(env, await body(request), google.identity);
+  if (!a) return fail('google', 401);
+  return enter(env, request, a, true);
+}
+
+async function enter(env, request, a, viaGoogle) {
   const db = env.DB;
-  const old = await db.prepare('SELECT id FROM players WHERE apple = ?').bind(a.sub).first();
+  const old = await db.prepare(viaGoogle ? 'SELECT id FROM players WHERE google = ?' : 'SELECT id FROM players WHERE apple = ?').bind(a.sub).first();
   if (old) {
     const secret = random(32);
     await db.batch([
-      db.prepare('UPDATE players SET apple_refresh = COALESCE(?1, apple_refresh), apple_client = CASE WHEN ?1 IS NULL THEN apple_client ELSE ?2 END WHERE id = ?3').bind(a.token, a.aud, old.id),
+      ...viaGoogle ? [] : [db.prepare('UPDATE players SET apple_refresh = COALESCE(?1, apple_refresh), apple_client = CASE WHEN ?1 IS NULL THEN apple_client ELSE ?2 END WHERE id = ?3').bind(a.token, a.aud, old.id)],
       ...await sessionStmts(db, old.id, secret)
     ]);
     return json({ id: old.id, secret: secret });
   }
   if (await limited(env, request)) return fail('slow', 429);
   try {
-    return await guest(db, a);
+    return await guest(db, a, viaGoogle);
   } catch (e) {
     if (!/UNIQUE/.test(e.message)) throw e;
     // a parallel sign-in made the account first
-    return enter(env, request, a);
+    return enter(env, request, a, viaGoogle);
   }
 }
 
 async function link(env, request, p) {
   const b = await body(request);
-  const a = await appleToken(env, b);
+  const a = await spendToken(env, b);
   if (!a) return fail('apple', 401);
   const token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
   try {
     const r = await env.DB.prepare('UPDATE players SET apple = ?1, apple_refresh = COALESCE(?2, apple_refresh), apple_client = CASE WHEN ?2 IS NULL THEN apple_client ELSE ?4 END WHERE id = ?3 AND (apple IS NULL OR apple = ?1)').bind(a.sub, token, p.id, a.aud).run();
+    if (r.meta.changes !== 1) return json({ k: 'linked' }, 409);
+  } catch (e) {
+    if (/UNIQUE/.test(e.message)) return json({ k: 'taken' }, 409);
+    throw e;
+  }
+}
+
+async function linkGoogle(env, request, p) {
+  const a = await spendToken(env, await body(request), google.identity);
+  if (!a) return fail('google', 401);
+  try {
+    const r = await env.DB.prepare('UPDATE players SET google = ?1 WHERE id = ?2 AND (google IS NULL OR google = ?1)').bind(a.sub, p.id).run();
     if (r.meta.changes !== 1) return json({ k: 'linked' }, 409);
   } catch (e) {
     if (/UNIQUE/.test(e.message)) return json({ k: 'taken' }, 409);
@@ -274,7 +294,8 @@ export async function api(request, env) {
     return guest(db);
   }
   if (path.startsWith('/api/apple') && !env.APPLE_KEY) return fail('apple', 503);
-  if (path === '/api/apple/nonce' && method === 'POST') {
+  if (path.startsWith('/api/google') && !google.configured(env)) return fail('google', 503);
+  if ((path === '/api/apple/nonce' || path === '/api/google/nonce') && method === 'POST') {
     if (env.NONCES && !env.PACE && !(await env.NONCES.limit({ key: request.headers.get('CF-Connecting-IP') || '' })).success) return fail('slow', 429);
     const raw = random(16);
     const now = Date.now();
@@ -285,6 +306,7 @@ export async function api(request, env) {
     return json({ nonce: raw });
   }
   if (path === '/api/apple' && method === 'POST') return signIn(env, request);
+  if (path === '/api/google' && method === 'POST') return signInGoogle(env, request);
   const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
   if (!p) return fail('auth', 401);
   if (path === '/api/me' && method === 'DELETE') {
@@ -293,7 +315,7 @@ export async function api(request, env) {
     if (p.apple && !token && env.APPLE_KEY) {
       // no token was kept, so Apple has to be asked again before the account goes
       const b = await body(request);
-      const a = await appleToken(env, b);
+      const a = await spendToken(env, b);
       if (!a || a.sub !== p.apple) return fail('reauth', 409);
       token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
       if (!token) return fail('apple', 502);
@@ -327,6 +349,7 @@ export async function api(request, env) {
   else if (path === '/api/device') err = await device(db, p, request);
   else if (path === '/api/push') err = await prefs(db, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
+  else if (path === '/api/google/link') err = await linkGoogle(env, request, p);
   else return fail('nope', 404);
   if (err) return err;
   const row = await db.prepare('SELECT * FROM players WHERE id = ?').bind(p.id).first();
