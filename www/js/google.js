@@ -7,6 +7,7 @@ var Google = (function () {
   let state = null;
   let handler = null;
   let drawn = [];
+  let timer = null;
 
   const platform = () => (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || 'web';
   const real = id => /\.apps\.googleusercontent\.com$/.test(id);
@@ -64,6 +65,12 @@ var Google = (function () {
           if (handler) handler({ token: c.credential, nonce: w.raw });
         }
       });
+      // the server drops a nonce after 10 minutes, so a button left on screen gets a fresh one before that
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        drawn = drawn.filter(el => el.isConnected);
+        if (state === w && drawn.length) prepare().then(redraw, () => {});
+      }, 480000);
     }, e => { if (state === w) state = null; throw e; });
   }
 
