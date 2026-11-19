@@ -384,7 +384,7 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 @keyframes turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
-.rooms { flex: 1 1 calc(214 * var(--u)); max-height: calc(330 * var(--u)); min-height: 0; grid-template-rows: minmax(0, 1fr); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: calc(10 * var(--u)); }
+.rooms { flex: 1 1 calc(214 * var(--u)); min-height: 0; grid-template-rows: minmax(0, 1fr); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: calc(10 * var(--u)); }
 .room { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(14 * var(--u)); padding: calc(10 * var(--u)) calc(2 * var(--u)) calc(12 * var(--u)); border: 0; border-radius: calc(14 * var(--u)); background: linear-gradient(#5a3a20, #3b2412); color: var(--cream); box-shadow: 0 calc(4 * var(--u)) 0 var(--wood-dk), inset 0 calc(1 * var(--u)) 0 rgba(255, 255, 255, .15); }
 .room:active:not(:disabled) { transform: translateY(calc(2 * var(--u))); box-shadow: 0 calc(2 * var(--u)) 0 var(--wood-dk), inset 0 calc(1 * var(--u)) 0 rgba(255, 255, 255, .15); }
 .room .plaque { max-width: 94%; }
@@ -413,7 +413,7 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 .days li.now { background: var(--gold); color: #3a2205; box-shadow: 0 0 0 calc(3 * var(--u)) rgba(240, 180, 41, .35); }
 .daily .btn { width: 100%; min-height: calc(36 * var(--u)); }
 .daily .note { text-align: center; font-size: calc(12 * var(--r)); }
-.frc { flex: 0 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.frc { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .frc .dl-head h3 { font-size: calc(15 * var(--r)); }
 .frc .fl { flex: 1 1 auto; min-height: 0; margin: calc(8 * var(--u)) calc(-2 * var(--u)) calc(-2 * var(--u)); padding: calc(2 * var(--u)); display: flex; flex-direction: column; flex-wrap: wrap; overflow: hidden; }
 .frc .frw { flex: none; width: 100%; }
