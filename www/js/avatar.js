@@ -40,21 +40,22 @@ var Avatar = (function () {
 
   // a round frame around the head. Below one tile the sprite is scaled smoothly, above it only by whole steps so the pixels stay even
   function pic(parts, box) {
-    const want = box * 1.2;
+    // big hair and hats reach the edges of the tile, so the whole tile goes inside the circle
+    const want = box;
     let px = want;
     if (want >= TILE * .85) {
       const step = TILE * Math.max(1, Math.round(want / TILE));
       // a whole step far from the frame would crop the head or leave it small, so those sizes scale smoothly
-      if (step / box >= 1.05 && step / box <= 1.35) px = step;
+      if (step / box >= .92 && step / box <= 1.08) px = step;
     }
     const f = document.createElement('span');
     f.className = 'avf';
     f.style.width = f.style.height = box + 'px';
     const a = el(parts, px);
-    // the head sits right of and below the middle of the tile
+    // the head with its hair sits a little right of and below the middle of the tile
     const k = px / TILE;
-    a.style.left = Math.round(box / 2 - 36 * k) + 'px';
-    a.style.top = Math.round(box / 2 - 40 * k) + 'px';
+    a.style.left = Math.round(box / 2 - 35 * k) + 'px';
+    a.style.top = Math.round(box / 2 - 38 * k) + 'px';
     f.appendChild(a);
     return f;
   }
