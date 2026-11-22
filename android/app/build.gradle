@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+def signingFile = project.hasProperty('amerikanoSigning') ? file(project.property('amerikanoSigning')) : null
+def signing = new Properties()
+if (signingFile != null) signingFile.withInputStream { signing.load(it) }
+
 android {
     namespace = "com.aytutuna.amerikano"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +20,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (signingFile != null) {
+            release {
+                storeFile file(signing.storeFile)
+                storePassword signing.storePassword
+                keyAlias signing.keyAlias
+                keyPassword signing.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingFile != null) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
