@@ -230,12 +230,18 @@ var UI = (function () {
       form.appendChild(choice('felt', t('set.felt'), ['green', 'blue', 'wine', 'walnut'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => Settings.set('felt', v), 'seg pics'));
       if (Push.can() && Account.me()) form.appendChild(notes());
       const acct = Account.has() && Account.me() && !App.active() ? Account.me() : null;
+      const ex = node('div', 'exit');
       if (acct) {
-        const ex = node('div', 'exit');
         if (acct.apple) ex.appendChild(button(t('set.out'), 'quiet', () => { h.close(); signOut(); }));
         ex.appendChild(button(t('pf.delete'), 'quiet', () => { h.close(); profile(true); }));
-        form.appendChild(ex);
       }
+      // absolute, so the apps open it in the browser instead of inside the game
+      const priv = node('a', 'btn quiet', t('set.privacy'));
+      priv.href = 'https://amerikano.pages.dev/privacy.html';
+      priv.target = '_blank';
+      priv.rel = 'noopener';
+      ex.appendChild(priv);
+      form.appendChild(ex);
       if (was) {
         const e = form.querySelector('[data-f="' + was + '"]');
         if (e) e.focus({ preventScroll: true });

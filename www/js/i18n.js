@@ -190,6 +190,7 @@ var I18n = (function () {
     set: {
       title: 'Settings',
       out: 'Sign out',
+      privacy: 'Privacy policy',
       lang: 'Language',
       auto: 'Follow device',
       en: 'English',
@@ -743,6 +744,7 @@ var I18n = (function () {
     set: {
       title: 'Ayarlar',
       out: 'Çıkış yap',
+      privacy: 'Gizlilik politikası',
       lang: 'Dil',
       auto: 'Telefonun dili',
       en: 'English',

@@ -82,6 +82,7 @@ html[lang=tr] #rot [lang=en], html:not([lang=tr]) #rot [lang=tr] { display: none
 .paper, .sheet { position: relative; background: var(--cream); color: var(--ink); border-radius: calc(14 * var(--u)); box-shadow: 0 calc(4 * var(--u)) 0 var(--edge), 0 calc(8 * var(--u)) calc(16 * var(--u)) rgba(0, 0, 0, .35); }
 .paper::after, .sheet::after { content: ''; position: absolute; inset: calc(5 * var(--u)); border: 1.5px dashed rgba(122, 74, 18, .35); border-radius: calc(10 * var(--u)); pointer-events: none; }
 .btn { min-height: calc(38 * var(--u)); padding: 0 calc(18 * var(--u)); border: 0; border-radius: calc(12 * var(--u)); background: linear-gradient(var(--cream-hi), var(--cream-lo)); color: var(--text); box-shadow: 0 calc(4 * var(--u)) 0 var(--edge), 0 calc(7 * var(--u)) calc(12 * var(--u)) rgba(0, 0, 0, .35); font-weight: 700; font-size: calc(15 * var(--r)); line-height: 1.1; transition: transform .08s; }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .btn.primary { background: linear-gradient(var(--gold-hi), var(--gold)); color: #3a2205; box-shadow: 0 calc(4 * var(--u)) 0 var(--gold-edge), 0 calc(7 * var(--u)) calc(12 * var(--u)) rgba(0, 0, 0, .35); }
 .btn.quiet { background: linear-gradient(#7a4b22, #5a3517); color: var(--cream); box-shadow: 0 calc(4 * var(--u)) 0 var(--wood-dk), 0 calc(7 * var(--u)) calc(12 * var(--u)) rgba(0, 0, 0, .35); }
 .btn:active:not(:disabled) { transform: translateY(calc(2 * var(--u))); box-shadow: 0 calc(2 * var(--u)) 0 var(--edge); }
