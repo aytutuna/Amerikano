@@ -13,8 +13,9 @@ import hi from './text/hi.js';
 import id from './text/id.js';
 import ja from './text/ja.js';
 import ko from './text/ko.js';
+import zhHans from './text/zh-Hans.js';
 
-const more = { es, pt, fr, it, nl, de, pl, ru, uk, ar, hi, id, ja, ko };
+const more = { es, pt, fr, it, nl, de, pl, ru, uk, ar, hi, id, ja, ko, 'zh-Hans': zhHans };
 
 export const LANGS = ['en', 'tr', ...Object.keys(more)];
 export default more;
