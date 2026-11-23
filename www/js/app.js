@@ -32,7 +32,8 @@ var Settings = (function () {
 })();
 
 var Say = (function () {
-  const low = s => s.toLocaleLowerCase(I18n.lang());
+  // German nouns keep their capitals mid-sentence; only the first letter drops
+  const low = s => I18n.lang() === 'de' ? s : s.charAt(0).toLocaleLowerCase(I18n.loc()) + s.slice(1);
 
   function pname(st, p) {
     return st.players[p].bot ? st.players[p].name : t('you');
