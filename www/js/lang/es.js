@@ -214,6 +214,8 @@
       regionNote: 'La partida rápida, las mesas públicas y los torneos te juntan con jugadores de tu región. Los amigos y las mesas privadas funcionan en cualquier parte.',
       typed: 'Chat escrito',
       typedNote: 'Muestra lo que escriben los demás en las mesas y los mensajes privados de tus amigos. Las frases y los emotes siempre funcionan.',
+      voice: 'Voz',
+      voiceNote: 'Escucha a los demás jugadores en las mesas y en las llamadas, y habla con tu micrófono. Si lo desactivas, la voz se apaga por completo.',
       sound: 'Sonido',
       haptics: 'Vibración',
       fourc: 'Palos de cuatro colores',
@@ -497,7 +499,37 @@
       no: 'No se pudo enviar este mensaje.'
     },
 
+    voice: {
+      mic: { on: 'Micrófono activado. Toca para apagarlo.', off: 'Micrófono apagado. Toca para encenderlo.' },
+      spk: { on: 'Voz activada. Toca para silenciar a todos.', off: 'Voz silenciada. Toca para escuchar.' },
+      denied: 'El micrófono no está permitido. Puedes permitirlo en los ajustes de tu dispositivo.',
+      fail: 'No se pudo conectar la voz.',
+      mute: 'Silenciar voz',
+      unmute: 'Activar voz',
+      call: 'Llamar',
+      in: v => v.name + ' te está llamando.',
+      calling: v => 'Llamando a ' + v.name + '.',
+      talking: v => 'En llamada con ' + v.name + '.',
+      accept: 'Contestar',
+      decline: 'Rechazar',
+      hang: 'Colgar',
+      muteMe: 'Silenciar',
+      end: {
+        missed: 'No contestó.', missedIn: 'Llamada perdida.', declined: 'Llamada rechazada.', busy: 'Está ocupado ahora.', away: 'No está en línea.',
+        no: 'No se pudo hacer la llamada.', slow: 'Espera un momento antes de volver a llamar.', dropped: 'Se cortó la llamada.'
+      },
+      line: { missed: 'Llamada perdida', missedMine: 'No contestó', declined: 'Llamada rechazada' }
+    },
+
     rep: { do: 'Reportar', done: 'Reportado' },
+
+    warn: {
+      title: 'Antes de enviar',
+      text: 'Compartir tus datos de contacto es decisión tuya, pero nunca los compartas con personas que no conoces. Las fichas de Amerikano no se pueden comprar ni vender. Reporta a quien te ofrezca intercambiarlas.',
+      send: 'Enviar de todos modos',
+      edit: 'Editar',
+      note: 'Ten cuidado con los enlaces y datos de contacto de otros jugadores. Las fichas nunca se venden.'
+    },
 
     gift: {
       title: 'Enviar un regalo',
