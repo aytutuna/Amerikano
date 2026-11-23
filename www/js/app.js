@@ -5,15 +5,17 @@ var Settings = (function () {
   let s = Object.assign({}, def);
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
   s.felt = OLD_FELT[s.felt] || s.felt;
+  let shown;
 
   // a language that is not loaded yet makes this return a promise
   function apply() {
+    const w = s.lang !== shown ? I18n.set(shown = s.lang) : undefined;
     Sfx.set(s.sound);
     Haptic.set(s.haptics);
     document.body.classList.toggle('fourc', !!s.fourc);
     document.body.dataset.back = s.back;
     document.body.dataset.felt = s.felt;
-    return I18n.set(s.lang);
+    return w;
   }
 
   function set(k, v, quiet) {
@@ -816,7 +818,16 @@ var App = (function () {
     schedule();
   };
   document.addEventListener('visibilitychange', schedule);
-  document.addEventListener('DOMContentLoaded', () => Promise.resolve(Settings.apply()).then(() => {
+  document.addEventListener('DOMContentLoaded', () => {
+    const w = Settings.apply();
+    // a slow language file must not leave the screen blank: start in English and redraw when it lands
+    let late = false;
+    const wait = new Promise(res => setTimeout(() => { late = true; res(); }, 3000));
+    if (w) w.then(() => { if (late) A.refresh(); });
+    Promise.race([Promise.resolve(w), wait]).then(start);
+  });
+
+  function start() {
     Cards.preload();
     if (native()) {
       const app = window.Capacitor.Plugins.App;
@@ -828,7 +839,8 @@ var App = (function () {
       UI.show();
       UI.link();
     }
-  }));
+  }
+
 
   // The native splash stays up until the faces are loaded and the system bars have
   // reported their size, so the home screen is built once at its final size.

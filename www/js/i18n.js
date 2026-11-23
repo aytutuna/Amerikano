@@ -1158,7 +1158,8 @@ var I18n = (function () {
 
   const S = { en: en, tr: tr };
 
-  const CODES = ['en', 'tr', 'es', 'pt', 'fr', 'de', 'it', 'nl', 'pl', 'ru', 'uk', 'ar', 'hi', 'id', 'ja', 'ko', 'zh-Hans', 'zh-Hant'];
+  // the languages that have a file; add a code here when its lang/ and names/ files land
+  const CODES = ['en', 'tr', 'es'];
   const NAMES = {
     en: 'English', tr: 'Türkçe', es: 'Español', pt: 'Português (Brasil)', fr: 'Français', de: 'Deutsch', it: 'Italiano', nl: 'Nederlands', pl: 'Polski',
     ru: 'Русский', uk: 'Українська', ar: 'العربية', hi: 'हिन्दी', id: 'Bahasa Indonesia', ja: '日本語', ko: '한국어', 'zh-Hans': '简体中文', 'zh-Hant': '繁體中文'
@@ -1196,13 +1197,13 @@ var I18n = (function () {
   function code(l) {
     const p = l.toLowerCase().split(/[-_]/);
     if (p[0] === 'zh') return p.includes('hans') ? 'zh-Hans' : p.some(x => ['hant', 'tw', 'hk', 'mo'].includes(x)) ? 'zh-Hant' : 'zh-Hans';
-    return CODES.find(c => c === (p[0] === 'in' ? 'id' : p[0]));
+    return p[0] === 'in' ? 'id' : p[0];
   }
 
   function resolve(p) {
     if (CODES.includes(p)) return p;
     const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en'];
-    return langs.map(code).find(Boolean) || 'en';
+    return langs.map(code).find(c => CODES.includes(c)) || 'en';
   }
 
   function script(src) {
@@ -1217,7 +1218,8 @@ var I18n = (function () {
   const loading = {};
 
   function load(c) {
-    if (!loading[c]) loading[c] = Promise.all(['lang/', 'names/'].map(d => script('js/' + d + c + '.js'))).then(() => { delete loading[c]; });
+    // kept after a failure too, so a missing file is not asked for again
+    if (!loading[c]) loading[c] = Promise.all(['lang/', 'names/'].map(d => script('js/' + d + c + '.js')));
     return loading[c];
   }
 
