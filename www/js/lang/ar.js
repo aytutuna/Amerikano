@@ -82,8 +82,8 @@
     meldAdd: v => 'إضافة الأوراق المحددة إلى ' + v.label + v.more,
     cardIn: v => v.card + ' في ' + v.label,
 
-    sortSuit: 'ترتيب حسب الشكل',
-    sortRank: 'ترتيب حسب القيمة',
+    sortSuit: 'حسب الشكل',
+    sortRank: 'حسب القيمة',
     moveLeft: 'نقل لليسار',
     moveRight: 'نقل لليمين',
     open: 'فتح',
