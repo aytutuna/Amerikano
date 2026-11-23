@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amerikano skor kağıdı</title>
+<style>
+@font-face { font-family: 'Alegreya Sans'; font-weight: 500; src: url(fonts/alegreya-sans-latin-500-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+2000-206F; }
+@font-face { font-family: 'Alegreya Sans'; font-weight: 500; src: url(fonts/alegreya-sans-latin-ext-500-normal.woff2) format('woff2'); unicode-range: U+0100-02BA; }
+@font-face { font-family: 'Alegreya Sans'; font-weight: 700; src: url(fonts/alegreya-sans-latin-700-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+2000-206F; }
+@font-face { font-family: 'Alegreya Sans'; font-weight: 700; src: url(fonts/alegreya-sans-latin-ext-700-normal.woff2) format('woff2'); unicode-range: U+0100-02BA; }
+@font-face { font-family: 'Yeseva One'; src: url(fonts/yeseva-one-latin-400-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+2000-206F; }
+@font-face { font-family: 'Yeseva One'; src: url(fonts/yeseva-one-latin-ext-400-normal.woff2) format('woff2'); unicode-range: U+0100-02BA; }
+:root { color-scheme: light; --bg: #f3e6c8; --fg: #3a2412; --mute: #7a4a12; --rule: #d9c89c; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 500 17px/1.4 'Alegreya Sans', system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
+a { color: #2c5fa8; }
+.bar { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
+button { font: inherit; font-weight: 700; color: var(--fg); background: #fff8e6; border: 2px solid var(--fg); border-radius: 6px; padding: 4px 16px; cursor: pointer; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 32px; margin-bottom: 8px; }
+h1, h2 { font-family: 'Yeseva One', Georgia, serif; font-weight: 400; line-height: 1.2; }
+h1 { font-size: 1.9em; margin: 0 auto 0 0; }
+.field { display: flex; gap: 6px; align-items: flex-end; }
+.field span { width: 11em; border-bottom: 1.5px solid var(--fg); }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; table-layout: fixed; }
+th, td { border: 1.5px solid var(--fg); padding: 0 6px; height: 9mm; text-align: left; }
+thead th { height: 12mm; vertical-align: bottom; padding-bottom: 1px; background: #fff8e6; font-size: 11px; font-weight: 500; color: var(--mute); text-align: center; }
+th.n, td.n { width: 3.6em; }
+th.g, td.g { width: 16em; }
+th.s, td.s { width: 4.2em; }
+td.g { font-weight: 700; }
+td.x { background: #d9c89c; text-align: center; }
+tfoot th { background: #fff8e6; }
+h2 { font-size: 1.1em; margin: 14px 0 4px; }
+.key { columns: 2; column-gap: 28px; font-size: 14px; line-height: 1.3; }
+.key p { margin: 0 0 3px; break-inside: avoid; }
+.foot { margin: 10px 0 0; font-size: 13px; color: var(--mute); }
+@media (max-width: 600px) { h1 { font-size: 1.5em; } .key { columns: 1; } }
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  :root { --mute: #333; }
+  body { background: #fff; font-size: 13px; }
+  main { max-width: none; padding: 0; }
+  .bar { display: none; }
+  .wrap { overflow: visible; }
+  table { min-width: 0; }
+  th, td { height: 8mm; border-color: #000; }
+  thead th { height: 10mm; background: none; }
+  tfoot th { background: none; }
+  td.x { background: #ddd; }
+  h1 { font-size: 24px; }
+  h2 { margin: 8px 0 2px; font-size: 14px; }
+  .key { font-size: 10.5px; line-height: 1.25; }
+  .key p { margin-bottom: 1px; }
+  .foot { margin-top: 5px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+<main>
+<div class="bar"><button onclick="window.print()">Yazdır</button><a href="/kurallar">Kurallar</a></div>
+
+<div class="head">
+<h1>Amerikano Skor Kağıdı</h1>
+<div class="field">Tarih <span>&nbsp;</span></div>
+<div class="field">Yer <span>&nbsp;</span></div>
+</div>
+
+<div class="wrap">
+<table>
+<thead>
+<tr><th class="n">Oyun</th><th class="g">Görev</th><th class="s">Seçen</th><th>Oyuncu 1</th><th>Oyuncu 2</th><th>Oyuncu 3</th><th>Oyuncu 4</th><th>Oyuncu 5</th></tr>
+</thead>
+<tbody>
+<tr><td class="n"></td><td class="g">1 Üçlü seri</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">2 Üçlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">3 Üçlü seri + üçlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">4 İki üçlü seri</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">5 İki üçlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">6 Dörtlü seri</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">7 Dörtlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">8 Dörtlü seri + dörtlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">9 İki dörtlü seri</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">10 İki dörtlü küt</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">11 Beşli seri</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">12 Çift (dört çift)</td><td class="s"></td><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><td class="n"></td><td class="g">13 Elden (son oyun)</td><td class="s x">—</td><td></td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+<tfoot>
+<tr><th colspan="3">Toplam</th><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><th colspan="3">Sıra</th><td></td><td></td><td></td><td></td><td></td></tr>
+<tr><th colspan="3">Ceza kağıdı (her biri 1 çip)</th>
+<td></td><td></td><td></td><td></td><td></td></tr>
+</tfoot>
+</table>
+</div>
+
+<h2>Puanlama</h2>
+<div class="key">
+<p><b>Elde kalan kağıtlar:</b> 2-10 üzerindeki sayı, J Q K 10, As 11, Joker 25.</p>
+<p><b>Eli bitiren:</b> 0.</p>
+<p><b>Görevi seçen biterse:</b> -50. <b>Görevi seçen eli açamazsa:</b> +50. (Son oyunda yok.)</p>
+<p><b>İşler kağıt atan:</b> +25 (masadaki bir pere işlenebilecek kağıt atmak).</p>
+<p><b>Jokerle biten olursa:</b> diğer herkesin o oyundaki puanı ×2.</p>
+<p><b>Ceza kağıdı:</b> kağıdı alan kasaya 1 çip koyar, bir oyunda en fazla 4.</p>
+<p><b>Kasa:</b> herkes 10 çip koyar. Eli bitiren kasadan 5 çip alır. Sonunda kasa üçe bölünür: 2 pay en düşük toplam, 1 pay son oyunda (Elden) biten.</p>
+<p><b>En düşük toplam kazanır.</b></p>
+</div>
+
+<p class="foot">Amerikano standart kuralları · amerikano.pages.dev/kurallar</p>
+</main>
+</body>
+</html>
