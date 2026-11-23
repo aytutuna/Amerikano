@@ -29,8 +29,8 @@ const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n',
 
 let ips = 0;
 
-async function call(method, path, acc, body, origin) {
-  const headers = { 'Content-Type': 'application/json' };
+async function call(method, path, acc, body, origin, extra) {
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, extra);
   if (acc) headers.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
   if (origin) headers.Origin = origin;
   // guests are rate limited per address
@@ -1422,6 +1422,114 @@ async function fast() {
 
 const within = (p, ms, what) => Promise.race([p, new Promise((r, j) => setTimeout(() => j(new Error('timeout: ' + what)), ms))]);
 
+// an account whose first call came from this country, as the dev server is told by header
+async function from(country, continent) {
+  const acc = await guest();
+  const r = await call('GET', '/api/me', acc, null, null, { 'X-Country': country, 'X-Continent': continent });
+  return Object.assign(acc, { region: r.body.region });
+}
+
+// quick play, the public lists and tournaments are split by region; friends, invites and joining a table are not
+async function regions() {
+  const { REGIONS, LEADS, regionOf, hint } = await import('../src/region.js');
+  const map = [['TR', 'AS', 'tr'], ['DE', 'EU', 'eu'], ['RU', 'EU', 'eu'], ['CY', 'AS', 'eu'], ['GE', 'AS', 'eu'], ['AM', 'AS', 'eu'], ['US', 'NA', 'am'], ['MX', 'NA', 'am'],
+    ['BR', 'SA', 'am'], ['EG', 'AF', 'mea'], ['ZA', 'AF', 'mea'], ['SA', 'AS', 'mea'], ['AE', 'AS', 'mea'], ['IR', 'AS', 'mea'], ['IL', 'AS', 'mea'], ['YE', 'AS', 'mea'],
+    ['IN', 'AS', 'ap'], ['JP', 'AS', 'ap'], ['KZ', 'AS', 'ap'], ['AU', 'OC', 'ap'], ['NZ', 'OC', 'ap'], ['T1', 'T1', 'eu'], [undefined, undefined, 'eu']];
+  for (const [c, k, r] of map) assert.strictEqual(regionOf(c, k), r, c + ' ' + k);
+  assert.deepStrictEqual(hint('GABC'), { locationHint: 'eeur' });
+  assert.deepStrictEqual(REGIONS.map(r => hint(LEADS[r][0] + 'AAA').locationHint), ['enam', 'weur', 'eeur', 'me', 'apac']);
+  assert.strictEqual(hint('SAAA'), undefined, 'a private code has no hint');
+
+  // the first call sets it from the country and later ones leave it; the player can change it
+  const tr = await from('TR', 'AS');
+  assert.strictEqual(tr.region, 'tr');
+  assert.strictEqual((await call('GET', '/api/me', tr, null, null, { 'X-Country': 'JP', 'X-Continent': 'AS' })).body.region, 'tr');
+  assert.strictEqual((await call('POST', '/api/region', tr, { region: 'xx' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/region', tr)).status, 400);
+  assert.strictEqual((await call('POST', '/api/region', tr, { region: 'ap' })).body.region, 'ap');
+  assert.strictEqual((await call('GET', '/api/me', tr)).body.region, 'ap');
+  assert.strictEqual((await call('POST', '/api/region', { id: tr.id, secret: '0'.repeat(64) }, { region: 'am' })).status, 401);
+  assert.strictEqual((await from('US', 'NA')).region, 'am');
+  assert.strictEqual((await call('GET', '/api/me', await guest())).body.region, 'eu', 'no country means Europe');
+  console.log('regions: set from the country on the first call, changed by the player');
+
+  // quick play never crosses regions and a public list shows its own region only
+  const [a, c, b, w] = [await from('DE', 'EU'), await from('FR', 'EU'), await from('TR', 'AS'), await from('TR', 'AS')];
+  const [ha, hc, hb, hw] = [await hub(a), await hub(c), await hub(b), await hub(w)];
+  const lists = [new Set(), new Set()];
+  for (const [h, set] of [[hc, lists[0]], [hw, lists[1]]]) {
+    h.handlers.push(m => m.t === 'tables' && m.tables.forEach(x => set.add(x.code)));
+    h.send({ t: 'watch', stake: 100 });
+  }
+  const sa = ha.next(m => m.t === 'seated');
+  ha.send({ t: 'quick', stake: 100 });
+  const A = await sa;
+  const sb = hb.next(m => m.t === 'seated');
+  hb.send({ t: 'quick', stake: 100 });
+  const B = await sb;
+  assert.notStrictEqual(A.code, B.code, 'a Turkish player does not sit at a European table');
+  assert(LEADS.eu.includes(A.code[0]) && LEADS.tr.includes(B.code[0]), 'a table code carries its region');
+  const sc = hc.next(m => m.t === 'seated');
+  hc.send({ t: 'quick', stake: 100 });
+  assert.strictEqual((await sc).code, A.code, 'the same region still matches');
+  await sleep(300);
+  assert(lists[0].has(A.code) && !lists[0].has(B.code), 'a European watcher sees European tables only');
+  assert(lists[1].has(B.code) && !lists[1].has(A.code), 'a Turkish watcher sees Turkish tables only');
+  console.log('regions: quick play and public lists stay inside the region');
+
+  // the list and the next quick play follow a change of region
+  const [x, y] = [await from('DE', 'EU'), await from('TR', 'AS')];
+  const [hx, hy] = [await hub(x), await hub(y)];
+  const sx = hx.next(m => m.t === 'seated');
+  hx.send({ t: 'quick', stake: 500 });
+  const X = await sx;
+  const empty = hy.next(m => m.t === 'tables');
+  hy.send({ t: 'watch', stake: 500 });
+  assert.strictEqual((await empty).tables.length, 0, 'the other region has no table');
+  const shown = hy.next(m => m.t === 'tables' && m.tables.some(t => t.code === X.code));
+  await call('POST', '/api/region', y, { region: 'eu' });
+  await shown;
+  const sy = hy.next(m => m.t === 'seated');
+  hy.send({ t: 'quick', stake: 500 });
+  assert.strictEqual((await sy).code, X.code, 'quick play follows the new region');
+  console.log('regions: changing region moves the open lobby');
+
+  // friends meet across regions: an invite, then a seat at the friend's table
+  const [f1, f2] = [await from('GB', 'EU'), await from('JP', 'AS')];
+  await befriend(f1, f2);
+  const [h1, h2] = [await hub(f1), await hub(f2)];
+  const s1 = h1.next(m => m.t === 'seated');
+  h1.send({ t: 'quick', stake: 100 });
+  const F = await s1;
+  const r1 = seated(F);
+  await r1.next(m => m.t === 'room');
+  const inv = h2.next(m => m.t === 'invited');
+  r1.send({ t: 'invite', to: f2.id });
+  assert.strictEqual((await inv).code, F.code);
+  const s2 = h2.next(m => m.t === 'seated');
+  h2.send({ t: 'sit', code: F.code });
+  assert.strictEqual((await s2).code, F.code, 'a friend from another region sits at the table');
+  console.log('regions: friends invite and join across regions');
+
+  // a tournament form is per region: a player of another region starts alone, one of the same region joins
+  const [t1, t2, t3] = [await from('DE', 'EU'), await from('TR', 'AS'), await from('NL', 'EU')];
+  const [g1, g2, g3] = [await hub(t1), await hub(t2), await hub(t3)];
+  const one = g1.next(m => m.t === 'cup' && m.buy === 1000);
+  g1.send({ t: 'cup', buy: 1000 });
+  assert.strictEqual((await one).n, 1);
+  const two = g2.next(m => m.t === 'cup' && m.buy === 1000);
+  g2.send({ t: 'cup', buy: 1000 });
+  assert.strictEqual((await two).n, 1, 'a European form does not take a Turkish player');
+  const three = g3.next(m => m.t === 'cup' && m.buy === 1000);
+  g3.send({ t: 'cup', buy: 1000 });
+  assert((await three).n >= 2, 'a player of the same region joins the form');
+  for (const g of [g1, g2, g3]) g.send({ t: 'cup', buy: 0 });
+  await sleep(300);
+  console.log('regions: tournament forms stay inside the region');
+  for (const h of [ha, hb, hc, hw, hx, hy, h1, h2, g1, g2, g3]) h.ws.close();
+  r1.ws.close();
+}
+
 // two humans quick-play the same table at this stake; the personas fill the rest
 async function seatTwo(stake) {
   const accA = await guest();
@@ -2368,6 +2476,7 @@ async function push() {
   await fixes();
   await held();
   await fast();
+  await regions();
   await rematchBoth();
   await rematchOne();
   await rematchAway();
