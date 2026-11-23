@@ -13,7 +13,9 @@ export const LEADS = { am: 'ABC', eu: 'DEF', tr: 'GHJ', mea: 'KMN', ap: 'PQR' };
 export const PRIVATE = 'STUVWXYZ';
 const HINTS = { am: 'enam', eu: 'weur', tr: 'eeur', mea: 'me', ap: 'apac' };
 
+export const codeRegion = code => REGIONS.find(x => LEADS[x].includes(code[0]));
+
 export function hint(code) {
-  const r = REGIONS.find(x => LEADS[x].includes(code[0]));
+  const r = codeRegion(code);
   return r && { locationHint: HINTS[r] };
 }

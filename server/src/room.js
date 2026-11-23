@@ -5,7 +5,7 @@ import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
 import { won, rel } from './social.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
-import { hint, LEADS, PRIVATE, DEFAULT } from './region.js';
+import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
@@ -916,7 +916,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, region: r.region, stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
+      pub: r.pub, open: !!r.open, region: r.region || codeRegion(r.code), stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };

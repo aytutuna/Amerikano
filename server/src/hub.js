@@ -189,8 +189,8 @@ export class Hub extends DurableObject {
       if (w.readyState !== 1 || a.pid !== pid) continue;
       w.serializeAttachment(Object.assign({}, a, { region: r }));
       w.send(JSON.stringify(this.counts(r)));
+      if (a.stake) w.send(JSON.stringify({ t: 'tables', stake: a.stake, fast: !!a.fast, tables: this.list(a.stake, !!a.fast, r) }));
     }
-    this.tell();
   }
 
   // Where each of these players is; the ones who are offline are left out.

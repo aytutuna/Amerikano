@@ -267,6 +267,7 @@ function guess(env, request) {
 async function region(env, p, request) {
   const b = await body(request);
   if (!REGIONS.includes(b.region)) return fail('region');
+  if (b.region === p.region) return;
   await env.DB.prepare('UPDATE players SET region = ? WHERE id = ?').bind(b.region, p.id).run();
   await env.HUB.get(env.HUB.idFromName('h')).move(p.id, b.region).catch(() => {});
 }
