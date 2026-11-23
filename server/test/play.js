@@ -864,6 +864,22 @@ async function chat() {
   g.b.ws.close();
 }
 
+async function words() {
+  const { mask, clean } = await import('../src/filter.js');
+  for (const [from, to] of [['You are a Fuck', 'You are a ****'], ['what the sh1t', 'what the ****'], ['FUUUUCK you', '******* you'], ['ŞİKTİR git', '****** git'],
+    ['a$$hole', '*******'], ['Scheiße', '*******'], ['ПИЗДЕЦ тут', '****** тут'], ['хуй тебе', '*** тебе'], ['كسمك', '****'], ['씨발 뭐야', '** 뭐야'], ['他妈的真烦', '***真烦'],
+    ['visit www.evil.com now', 'visit ************ now'], ['mail bob@mail.com ok', 'mail ************ ok'], ['call 416-555-1234 now', 'call ************ now']]) {
+    assert.strictEqual(mask(from), to, from);
+  }
+  for (const ok of ['I got a pass at the class', 'Scunthorpe assess classic', 'send pic', 'Amina says hi', 'as is', 'sikayet var', 'I have 500 chips and 2500', 'やくそく', 'go to the park.']) {
+    assert.strictEqual(mask(ok), ok, ok);
+  }
+  assert.strictEqual(clean('  a\x00b\x07 \n\t c  ', 120), 'ab c');
+  assert.strictEqual(clean('x'.repeat(200), 120).length, 120);
+  assert.strictEqual(clean(5, 120), '');
+  console.log('filter: case, accents, look-alikes, repeats, links, emails and numbers masked; plain words left alone');
+}
+
 async function gifts() {
   const g = await pair(3, 3);
   await begin(g);
@@ -2464,6 +2480,7 @@ async function push() {
   await lone();
   await forfeit();
   await friendRules();
+  await words();
   await chat();
   await gifts();
   await invites();
