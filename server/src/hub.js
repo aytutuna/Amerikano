@@ -114,11 +114,11 @@ export class Hub extends DurableObject {
         w.close(4000, 'replaced');
       }
       ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
-      ws.send(JSON.stringify({ t: 'hub', stakes: STAKES, entry: ENTRY }));
-      ws.send(JSON.stringify(this.counts(reg(p))));
+      this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY });
+      this.put(ws, this.counts(reg(p)));
       const f = this.forming(p.id);
-      if (f) ws.send(JSON.stringify(this.state(f)));
-      else if (!this.inCup(p.id)) ws.send(JSON.stringify({ t: 'cup', buy: 0 }));
+      if (f) this.put(ws, this.state(f));
+      else if (!this.inCup(p.id)) this.put(ws, { t: 'cup', buy: 0 });
       for (const c of Object.values(this.cups.run)) this.notify(c, p.id);
       return this.tell();
     }
@@ -169,9 +169,14 @@ export class Hub extends DurableObject {
     return true;
   }
 
+  // a socket can close while the hub waits on the database, and sending on it throws
+  put(ws, o) {
+    if (ws.readyState === 1) ws.send(JSON.stringify(o));
+  }
+
   refuse(ws, k) {
-    ws.send(JSON.stringify({ t: 'error', k: k }));
-    ws.close(1000, k);
+    this.put(ws, { t: 'error', k: k });
+    if (ws.readyState === 1) ws.close(1000, k);
   }
 
   // The awaits below let other messages in, so seating is done one request at a time.
@@ -317,7 +322,7 @@ export class Hub extends DurableObject {
     if (!p) return this.refuse(ws, 'auth');
     const k = p.chips < ENTRY * stake ? 'poor' : this.holds(pid, code) ? 'busy' : null;
     if (!k) return p;
-    ws.send(JSON.stringify({ t: 'error', k: k }));
+    this.put(ws, { t: 'error', k: k });
     return null;
   }
 
@@ -331,15 +336,15 @@ export class Hub extends DurableObject {
     }
     this.table(code, got.table);
     if (!got.token) return false;
-    ws.send(JSON.stringify({ t: 'seated', code: code, seat: got.seat, token: got.token }));
+    this.put(ws, { t: 'seated', code: code, seat: got.seat, token: got.token });
     return true;
   }
 
   async sit(ws, pid, code) {
     const t = this.tables[code];
-    if (!t || !pool(t)) return ws.send(JSON.stringify({ t: 'error', k: 'nocode' }));
-    if (t.started) return ws.send(JSON.stringify({ t: 'error', k: 'full' }));
-    if (await this.seated(ws, pid, t.stake, code) === false) ws.send(JSON.stringify({ t: 'error', k: 'full' }));
+    if (!t || !pool(t)) return this.put(ws, { t: 'error', k: 'nocode' });
+    if (t.started) return this.put(ws, { t: 'error', k: 'full' });
+    if (await this.seated(ws, pid, t.stake, code) === false) this.put(ws, { t: 'error', k: 'full' });
   }
 
   // the open table of the room with the most people, real ones first, else a new one
@@ -362,7 +367,7 @@ export class Hub extends DurableObject {
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
     }
-    ws.send(JSON.stringify({ t: 'error', k: 'full' }));
+    this.put(ws, { t: 'error', k: 'full' });
   }
 
   inCup(pid) {
@@ -401,11 +406,11 @@ export class Hub extends DurableObject {
     const p = await player(this.env.DB, pid);
     if (!p) return this.refuse(ws, 'auth');
     const k = p.chips < buy ? 'poor' : this.holds(pid) ? 'busy' : null;
-    if (k) return ws.send(JSON.stringify({ t: 'error', k: k }));
+    if (k) return this.put(ws, { t: 'error', k: k });
     const r = reg(p);
     const g = this.cups.form[slot(r, buy)] || (this.cups.form[slot(r, buy)] = { id: crypto.randomUUID(), buy: buy, region: r, hs: [], ps: [], due: now + WAIT * this.k, next: now + between(JOIN, 2 * JOIN) * this.k });
     // a form that is full is waiting to start
-    if (g.hs.length + g.ps.length >= CUP) return ws.send(JSON.stringify({ t: 'error', k: 'starting' }));
+    if (g.hs.length + g.ps.length >= CUP) return this.put(ws, { t: 'error', k: 'starting' });
     if (!g.hs.length) {
       if (!g.ps.length) g.due = now + WAIT * this.k;
       g.drop = 0;

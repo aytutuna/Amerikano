@@ -19,6 +19,15 @@ const crypto = require('crypto');
 const httpServer = require('http');
 let payout;
 
+// a run that stops without reaching the end must not look like a pass
+let reached = false;
+process.on('exit', code => {
+  if (code === 0 && !reached) {
+    console.error('the run stopped before the end');
+    process.exitCode = 1;
+  }
+});
+
 const base = process.env.URL || 'ws://localhost:8787';
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
@@ -2933,6 +2942,7 @@ async function push() {
   await cupRun(2);
   await cupRun(6);
   console.log('ok');
+  reached = true;
   process.exit(0);
 })().catch(e => {
   console.error(e);

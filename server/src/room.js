@@ -288,7 +288,7 @@ export class Room extends DurableObject {
     if (!r.over) r.dead = 0;
     for (const w of this.socks()) if (w.deserializeAttachment().seat === i) w.close(4000, 'replaced');
     ws.serializeAttachment(Object.assign({}, a, { seat: i, sent: 0 }));
-    ws.send(JSON.stringify({ t: 'joined', code: r.code, seat: i, token: s.token }));
+    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'joined', code: r.code, seat: i, token: s.token }));
     this.save();
     this.send();
     this.arm();
