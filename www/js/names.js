@@ -20,12 +20,24 @@ var Names = (function () {
     ['Bee', 'Arı'], ['Dragonfly', 'Yusufçuk'], ['Tulip', 'Lale'], ['Poppy', 'Gelincik'], ['Cedar', 'Sedir']
   ];
 
-  // a seed is adjective index * 100 + noun index, so it reads the same in either language
+  // a language supplies one word per index: adj[i] and noun[i] in any shape, and join(adj, noun) to put them in order
+  const D = {
+    en: { adj: ADJ.map(x => x[0]), noun: NOUN.map(x => x[0]), join: (a, n) => a + ' ' + n },
+    tr: { adj: ADJ.map(x => x[1]), noun: NOUN.map(x => x[1]), join: (a, n) => a + ' ' + n }
+  };
+
+  // a seed is adjective index * 100 + noun index, so it reads the same in every language
   function text(seed, lang) {
-    const k = lang === 'tr' ? 1 : 0;
-    const a = ADJ[Math.floor(seed / 100)];
-    const n = NOUN[seed % 100];
-    return a && n ? a[k] + ' ' + n[k] : '?';
+    const d = D[lang] || D.en;
+    const a = d.adj[Math.floor(seed / 100)];
+    const n = d.noun[seed % 100];
+    return a && n ? d.join(a, n) : '?';
+  }
+
+  // 'rojo/roja' for a word with one form per gender, 'azul' for one that never changes
+  function form(w, g) {
+    const f = w.split('/');
+    return f[g] || f[0];
   }
 
   function pick() {
@@ -45,7 +57,7 @@ var Names = (function () {
     return h >>> 0;
   }
 
-  return { text: text, pick: pick, at: at, hash: hash };
+  return { text: text, pick: pick, at: at, hash: hash, form: form, add: (l, d) => { D[l] = d; }, D: D };
 })();
 
 if (typeof module !== 'undefined') module.exports = Names;
