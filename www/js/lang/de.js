@@ -5,6 +5,7 @@
   const SUITS = { c: 'Kreuz', d: 'Karo', h: 'Herz', s: 'Pik' };
   const cards = n => pl(n, { one: '# Karte', other: '# Karten' });
   const chips = n => pl(n, { one: '# Chip', other: '# Chips' });
+  const low = s => s.charAt(0).toLowerCase() + s.slice(1);
   const digits = s => Number(String(s).replace(/\D/g, ''));
   const ord = n => pl(n, { other: '#.' }, true);
   I18n.add('de', {
@@ -124,7 +125,7 @@
       pick: 'Wähle zuerst eine Karte aus.',
       whole: 'Es würden zu viele Karten übrig bleiben.',
       turn: 'Du bist nicht dran.',
-      offline: 'Verbinde neu. Versuche es gleich noch einmal.',
+      offline: 'Verbinde dich neu. Versuche es gleich noch einmal.',
       broke: 'Du hast nicht genug Chips für dieses Geschenk.',
       blocked: 'Du kannst diesem Spieler kein Geschenk schicken.',
       mute: 'Du kannst im Moment keine Nachrichten schreiben.',
@@ -155,7 +156,7 @@
       keep: v => v.you ? 'Du hast einen Joker abgehoben und behältst ihn.' : v.name + ' hat einen Joker abgehoben und behält ihn.',
       top: v => 'Erste Karte auf dem Ablagestapel: ' + v.card + '.',
       last: v => 'Letztes Spiel: Du darfst nur mit der ganzen Hand aussteigen. ' + (v.you ? 'Du beginnst.' : v.name + ' beginnt.'),
-      task: v => (v.you ? 'Du hast die Aufgabe gewählt: ' : v.name + ' hat die Aufgabe gewählt: ') + v.task + '.',
+      task: v => (v.you ? 'Du hast die Aufgabe gewählt: ' : v.name + ' hat die Aufgabe gewählt: ') + low(v.task) + '.',
       draw: v => v.you ? (v.card ? 'Du hast ' + v.card + ' gezogen.' : 'Du hast vom Nachziehstapel gezogen.') : v.name + ' hat vom Nachziehstapel gezogen.',
       take: v => (v.you ? 'Du hast ' : v.name + ' hat ') + v.card + ' vom Ablagestapel genommen.',
       claim: v => (v.you ? 'Du hast ' : v.name + ' hat ') + v.card + ' und eine Strafkarte genommen' + (v.pen ? ': ' + v.pen : '') + '. 1 Chip in den Topf.',
@@ -212,6 +213,8 @@
       regionNote: 'Schnellspiel, öffentliche Tische und Turniere bringen dich mit Spielern aus deiner Region zusammen. Freunde und private Tische funktionieren überall.',
       typed: 'Getippter Chat',
       typedNote: 'Zeigt, was andere an den Tischen schreiben, und die privaten Nachrichten deiner Freunde. Sätze und Emotes funktionieren immer.',
+      voice: 'Sprachchat',
+      voiceNote: 'Du hörst andere Spieler an Tischen und in Anrufen und sprichst über dein Mikrofon. Ist er aus, ist der Sprachchat komplett abgeschaltet.',
       sound: 'Ton',
       haptics: 'Vibration',
       fourc: 'Vier Farben',
@@ -275,7 +278,7 @@
       title: v => 'Ende von Spiel ' + v.n,
       next: 'Nächstes Spiel',
       result: 'Ergebnis ansehen',
-      task: v => 'Aufgabe: ' + v.task + '.',
+      task: v => 'Aufgabe: ' + low(v.task) + '.',
       player: 'Spieler',
       hand: 'Karten',
       adj: 'Aufgabe',
@@ -337,7 +340,7 @@
       shareText: 'Spiel mit mir Amerikano.',
       copied: 'Link kopiert.',
       leave: 'Verlassen',
-      retry: 'Verbindung verloren. Verbinde neu.',
+      retry: 'Verbindung verloren. Verbinde dich neu.',
       waitNext: 'Warte auf die anderen.',
       err: {
         nocode: 'Einen Raum mit diesem Code gibt es nicht.',
@@ -495,7 +498,37 @@
       no: 'Diese Nachricht konnte nicht gesendet werden.'
     },
 
+    voice: {
+      mic: { on: 'Mikrofon an. Tippe zum Ausschalten.', off: 'Mikrofon aus. Tippe zum Einschalten.' },
+      spk: { on: 'Sprachchat an. Tippe, um alle stummzuschalten.', off: 'Sprachchat stumm. Tippe zum Zuhören.' },
+      denied: 'Das Mikrofon ist nicht erlaubt. Du kannst es in den Geräteeinstellungen erlauben.',
+      fail: 'Die Sprachverbindung hat nicht geklappt.',
+      mute: 'Stummschalten',
+      unmute: 'Lautschalten',
+      call: 'Anrufen',
+      in: v => v.name + ' ruft an.',
+      calling: v => 'Rufe ' + v.name + ' an.',
+      talking: v => 'Im Gespräch mit ' + v.name + '.',
+      accept: 'Annehmen',
+      decline: 'Ablehnen',
+      hang: 'Auflegen',
+      muteMe: 'Stumm',
+      end: {
+        missed: 'Keine Antwort.', missedIn: 'Verpasster Anruf.', declined: 'Anruf abgelehnt.', busy: 'Gerade besetzt.', away: 'Nicht online.',
+        no: 'Dieser Anruf war nicht möglich.', slow: 'Warte kurz, bevor du erneut anrufst.', dropped: 'Der Anruf wurde unterbrochen.'
+      },
+      line: { missed: 'Verpasster Anruf', missedMine: 'Keine Antwort', declined: 'Anruf abgelehnt' }
+    },
+
     rep: { do: 'Melden', done: 'Gemeldet' },
+
+    warn: {
+      title: 'Vor dem Senden',
+      text: 'Ob du Kontaktdaten teilst, entscheidest du selbst, aber gib sie nie an Leute weiter, die du nicht kennst. Amerikano-Chips lassen sich nie kaufen oder verkaufen. Melde jeden, der anbietet, sie zu tauschen.',
+      send: 'Trotzdem senden',
+      edit: 'Bearbeiten',
+      note: 'Sei vorsichtig mit Links und Kontaktdaten von anderen Spielern. Chips werden nie verkauft.'
+    },
 
     gift: {
       title: 'Geschenk senden',
