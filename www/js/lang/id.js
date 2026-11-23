@@ -126,7 +126,7 @@
       offline: 'Menyambung ulang. Coba lagi sebentar.',
       broke: 'Chip-mu tidak cukup untuk hadiah itu.',
       blocked: 'Kamu tidak bisa mengirim hadiah ke pemain ini.',
-      mute: 'Kamu belum bisa menulis pesan untuk sementara.',
+      mute: 'Kamu sedang tidak bisa menulis pesan.',
       typedoff: 'Obrolan ketik sedang mati. Kamu bisa menyalakannya di Pengaturan.',
       other: 'Tidak berhasil.'
     },
@@ -491,7 +491,7 @@
       older: 'Pesan sebelumnya',
       new: v => v.name + ' mengirim pesan untukmu.',
       slow: 'Pelan-pelan ya.',
-      mute: 'Kamu belum bisa menulis pesan untuk sementara.',
+      mute: 'Kamu sedang tidak bisa menulis pesan.',
       off: 'Obrolan ketik sedang mati. Kamu bisa menyalakannya di Pengaturan.',
       no: 'Pesan ini tidak bisa dikirim.'
     },
