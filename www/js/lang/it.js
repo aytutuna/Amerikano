@@ -214,6 +214,8 @@
       regionNote: 'Partita veloce, tavoli pubblici e tornei ti abbinano a giocatori della tua regione. Amici e tavoli privati funzionano ovunque.',
       typed: 'Chat scritta',
       typedNote: 'Mostra ciò che gli altri scrivono ai tavoli e i messaggi privati dei tuoi amici. Frasi ed emote funzionano sempre.',
+      voice: 'Voce',
+      voiceNote: 'Ascolta gli altri giocatori ai tavoli e nelle chiamate e parla con il microfono. Se è disattivata, la voce è spenta del tutto.',
       sound: 'Suoni',
       haptics: 'Vibrazione',
       fourc: 'Semi a quattro colori',
@@ -497,7 +499,37 @@
       no: 'Impossibile inviare questo messaggio.'
     },
 
+    voice: {
+      mic: { on: 'Microfono attivo. Tocca per spegnerlo.', off: 'Microfono spento. Tocca per accenderlo.' },
+      spk: { on: 'Voce attiva. Tocca per silenziare tutti.', off: 'Voce silenziata. Tocca per ascoltare.' },
+      denied: 'Il microfono non è consentito. Puoi consentirlo nelle impostazioni del dispositivo.',
+      fail: 'Impossibile collegare la voce.',
+      mute: 'Silenzia la voce',
+      unmute: 'Riattiva la voce',
+      call: 'Chiama',
+      in: v => v.name + ' ti sta chiamando.',
+      calling: v => 'Stai chiamando ' + v.name + '.',
+      talking: v => 'In chiamata con ' + v.name + '.',
+      accept: 'Rispondi',
+      decline: 'Rifiuta',
+      hang: 'Riaggancia',
+      muteMe: 'Muto',
+      end: {
+        missed: 'Nessuna risposta.', missedIn: 'Chiamata persa.', declined: 'Chiamata rifiutata.', busy: 'È occupato.', away: 'Non è online.',
+        no: 'Impossibile fare questa chiamata.', slow: 'Aspetta un attimo prima di richiamare.', dropped: 'La chiamata è caduta.'
+      },
+      line: { missed: 'Chiamata persa', missedMine: 'Nessuna risposta', declined: 'Chiamata rifiutata' }
+    },
+
     rep: { do: 'Segnala', done: 'Segnalato' },
+
+    warn: {
+      title: 'Prima di inviare',
+      text: 'Condividere i tuoi contatti è una tua scelta, ma non darli mai a persone che non conosci. Le fiches di Amerikano non si possono comprare né vendere. Segnala chi si offre di scambiarle.',
+      send: 'Invia comunque',
+      edit: 'Modifica',
+      note: 'Fai attenzione a link e contatti inviati da altri giocatori. Le fiches non si vendono mai.'
+    },
 
     gift: {
       title: 'Invia un regalo',
