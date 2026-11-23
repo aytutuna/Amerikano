@@ -2,8 +2,9 @@
 import es from './text/es.js';
 import pt from './text/pt.js';
 import fr from './text/fr.js';
+import it from './text/it.js';
 
-const more = { es, pt, fr };
+const more = { es, pt, fr, it };
 
 export const LANGS = ['en', 'tr', ...Object.keys(more)];
 export default more;
