@@ -200,7 +200,7 @@ var UI = (function () {
       fs.appendChild(node('legend', '', t('set.notes')));
       if (Push.perm() === 'denied') fs.appendChild(node('p', 'note', t('set.push.denied')));
       const store = { get: Push.get, set: (k, v) => Push.set(k, v).then(() => { if (k === 'on') fill(); }) };
-      for (const k of ['on', 'invite', 'daily', 'friend', 'week']) {
+      for (const k of ['on', 'invite', 'daily', 'friend', 'week', 'dm']) {
         const row = toggle(k, t('set.push.' + k), null, null, store);
         if (k !== 'on' && !Push.get('on')) row.querySelector('input').disabled = true;
         fs.appendChild(row);
@@ -1282,6 +1282,7 @@ var UI = (function () {
     for (const [k, label] of [['rooms', t('hall.rooms')], ['cups', t('cup.tab')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
       const b = raw('tab', () => pick(k));
       b.textContent = label;
+      if (k === 'friends' && Social.unread()) b.appendChild(node('i', 'badge', String(Social.unread())));
       b.dataset.k = 'tab' + k;
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', at.tab === k);

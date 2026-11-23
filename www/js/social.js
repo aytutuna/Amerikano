@@ -8,6 +8,7 @@ var Social = (function () {
   let fade = 0;
   let lines = [];
   let tlog = null;
+  let talking = null;
   const asked = new Map();
 
   const fmt = n => n.toLocaleString(I18n.lang());
@@ -41,6 +42,8 @@ var Social = (function () {
   };
 
   S.list = () => book.friends;
+
+  S.unread = () => book.friends.reduce((n, f) => n + (f.unread || 0), 0);
 
   S.blocked = pid => !!pid && book.blocked.some(x => x.id === pid);
 
@@ -113,11 +116,17 @@ var Social = (function () {
       button(t('pc.accept'), 'primary', call('POST', '/api/friend', { id: p.id })),
       button(t('pc.decline'), 'plain', call('DELETE', '/api/friend/' + p.id))
     ], o.again));
-    if (book.friends.length) section(box, t('fr.tab'), book.friends.slice().sort((x, y) => !!y.at - !!x.at), p => person(p, reach(p, o), o.again));
+    if (book.friends.length) section(box, t('fr.tab'), book.friends.slice().sort((x, y) => !!y.at - !!x.at), p => person(p, (typing() ? [mailBtn(p, o.again)] : []).concat(reach(p, o)), o.again));
     else if (!book.incoming.length) box.appendChild(node('p', 'note', t('fr.none')));
     section(box, t('fr.waiting'), book.outgoing, p => person(p, null, o.again));
     section(box, t('fr.blocked'), book.blocked, p => person(p, [button(t('pc.unblock'), 'plain', call('DELETE', '/api/block/' + p.id))], o.again));
   };
+
+  function mailBtn(p, again) {
+    const b = button(t('dm.open'), 'plain', () => S.talk(p, again));
+    if (p.unread) b.appendChild(node('i', 'badge', String(p.unread)));
+    return b;
+  }
 
   // from the room lobby: friends who are online can be asked to this table
   S.invite = () => {
@@ -343,9 +352,8 @@ var Social = (function () {
     tlog.scrollTop = tlog.scrollHeight;
   }
 
-  function typeBox() {
-    const fs = node('fieldset', 'fld');
-    fs.appendChild(node('legend', '', t('chat.type')));
+  // a text box with a Send button; go gets what was typed
+  function entry(go) {
     const row = node('div', 'typing');
     const box = node('input', 'txt');
     box.type = 'text';
@@ -354,22 +362,28 @@ var Social = (function () {
     box.enterKeyHint = 'send';
     box.placeholder = t('chat.hint');
     box.setAttribute('aria-label', t('chat.type'));
-    const go = () => {
+    const fire = () => {
       const x = box.value.trim();
       if (!x) return;
-      Net.send({ t: 'text', x: x });
       box.value = '';
+      go(x);
     };
     box.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      go();
+      fire();
     });
     // the soft keyboard covers the lower part of the sheet
     box.addEventListener('focus', () => setTimeout(() => box.scrollIntoView({ block: 'nearest' }), 300));
     row.appendChild(box);
-    row.appendChild(button(t('chat.send'), 'primary', go));
-    fs.appendChild(row);
+    row.appendChild(button(t('chat.send'), 'primary', fire));
+    return row;
+  }
+
+  function typeBox() {
+    const fs = node('fieldset', 'fld');
+    fs.appendChild(node('legend', '', t('chat.type')));
+    fs.appendChild(entry(x => Net.send({ t: 'text', x: x })));
     tlog = node('div', 'tlog');
     tlog.tabIndex = 0;
     tlog.setAttribute('role', 'region');
@@ -429,6 +443,81 @@ var Social = (function () {
     else b.textContent = what;
     pin(m.p, b, 3000);
     if (m.p) Live.say(t('chat.said', { name: p.name, what: what }));
+  };
+
+  // a conversation with one friend, newest message first under the text box so the keyboard does not cover it
+  S.talk = (p, again) => {
+    const body = node('div', 'dm');
+    const note = node('p', 'note');
+    const list = node('div', 'tlog dlog');
+    let msgs = [];
+    let more = false;
+
+    function draw() {
+      list.textContent = '';
+      if (!msgs.length) list.appendChild(node('p', 'note', t('dm.none')));
+      for (const m of msgs) {
+        const l = node('p', 'tl' + (m.mine ? ' mine' : ''));
+        l.appendChild(node('b', '', m.mine ? t('dm.you') : who(p.seed)));
+        l.appendChild(document.createTextNode(' ' + m.text));
+        list.appendChild(l);
+      }
+      if (more) list.appendChild(button(t('dm.older'), 'quiet', () => {
+        Account.call('GET', '/api/dm/' + p.id + '?before=' + msgs[msgs.length - 1].id).then(d => {
+          msgs = msgs.concat(d.messages);
+          more = d.more;
+          draw();
+        }, () => {});
+      }));
+    }
+
+    function load() {
+      return Account.call('GET', '/api/dm/' + p.id).then(d => {
+        msgs = d.messages;
+        more = d.more;
+        p.unread = 0;
+        draw();
+      }, () => {});
+    }
+
+    body.appendChild(entry(x => {
+      note.textContent = '';
+      Account.call('POST', '/api/dm', { to: p.id, text: x }).then(d => {
+        msgs.unshift(d.message);
+        draw();
+      }, e => { note.textContent = t(e.status === 429 ? 'dm.slow' : 'dm.no'); });
+    }));
+    body.appendChild(note);
+    body.appendChild(list);
+    talking = { id: p.id, load: load };
+    Sheet.open({ kind: 'bottom', tall: true, title: who(p.seed), body: body, onClose: () => { talking = null; if (again) again(); }, actions: [{ label: t('close'), kind: 'quiet' }] });
+    draw();
+    load();
+  };
+
+  // a message came in through the hub: shown at once when its conversation is open, else counted and announced
+  S.message = m => {
+    if (!typing()) return;
+    if (talking && talking.id === m.from) return talking.load();
+    const f = book.friends.find(x => x.id === m.from);
+    if (f) f.unread = (f.unread || 0) + 1;
+    else S.refresh().catch(() => {});
+    const text = t('dm.new', { name: who(m.seed) });
+    Live.say(text);
+    const box = document.getElementById('toast');
+    if (App.online() || box.firstChild || !f) return;
+    const el = node('div', 'toast');
+    el.setAttribute('role', 'status');
+    el.appendChild(Avatar.sized(face(f), 36));
+    el.appendChild(node('p', '', text));
+    const off = () => { box.textContent = ''; };
+    el.appendChild(button(t('dm.open'), 'primary', () => {
+      off();
+      S.talk(f);
+    }));
+    el.appendChild(button(t('fr.later'), 'quiet', off));
+    box.appendChild(el);
+    fade = setTimeout(off, 8000);
   };
 
   S.fresh = () => { lines = []; };

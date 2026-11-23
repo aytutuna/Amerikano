@@ -2,12 +2,14 @@ import { Room, freeCode, stub } from './room.js';
 import { Hub } from './hub.js';
 import { api } from './account.js';
 import { social } from './social.js';
+import { chat } from './chat.js';
 import { cron } from './push.js';
 
 export { Room, Hub };
 
 const ORIGIN = /^(https:\/\/([a-z0-9-]+\.)?amerikano\.pages\.dev|https?:\/\/localhost(:\d+)?|capacitor:\/\/localhost|http:\/\/127\.0\.0\.1(:\d+)?)$/;
 const SOCIAL = /^\/api\/(friends?|block|player|top)(\/|$)/;
+const CHAT = /^\/api\/dm(\/|$)/;
 
 async function account(request, env, ctx, origin) {
   const cors = {
@@ -17,7 +19,8 @@ async function account(request, env, ctx, origin) {
     'Vary': 'Origin'
   };
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-  const res = await (SOCIAL.test(new URL(request.url).pathname) ? social : api)(request, env, ctx);
+  const path = new URL(request.url).pathname;
+  const res = await (SOCIAL.test(path) ? social : CHAT.test(path) ? chat : api)(request, env, ctx);
   for (const k in cors) res.headers.set(k, cors[k]);
   return res;
 }

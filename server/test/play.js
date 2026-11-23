@@ -2089,6 +2089,96 @@ function jwtOk(jwt, key, alg, kind) {
   return { head: head, claims: JSON.parse(Buffer.from(c, 'base64url')) };
 }
 
+async function dms() {
+  const [a, b, c] = [await guest(), await guest(), await guest()];
+  const dm = (from, to, text) => call('POST', '/api/dm', from, { to: to.id, text: text });
+  const thread = (me, other, q) => call('GET', '/api/dm/' + other.id + (q || ''), me);
+  assert.strictEqual((await call('POST', '/api/dm', null, { to: b.id, text: 'hi' })).status, 401);
+  await befriend(a, b);
+  assert.strictEqual((await call('POST', '/api/dm', a, { to: 'x', text: 'hi' })).status, 400);
+  assert.strictEqual((await dm(a, b, '  \n ')).status, 400);
+  assert.strictEqual((await dm(a, c, 'hi')).status, 403, 'a stranger cannot be messaged');
+  assert.strictEqual((await dm(a, a, 'hi')).status, 403);
+  assert.strictEqual((await dm(c, a, 'hi')).status, 403);
+  assert.strictEqual((await thread(c, a)).status, 403, 'nor read');
+  assert.strictEqual((await thread(a, c)).status, 403);
+  assert.strictEqual((await call('GET', '/api/dm/' + b.id)).status, 401);
+
+  const hb = await hub(b);
+  const live = hb.next(m => m.t === 'dm');
+  let r = await dm(a, b, '  hello\x00 there  ');
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual([r.body.message.mine, r.body.message.text], [true, 'hello there']);
+  const e = await live;
+  assert.deepStrictEqual([e.from, e.m.text, e.m.id], [a.id, 'hello there', r.body.message.id], 'the open app gets it through the hub');
+  assert.strictEqual(e.seed, sql('SELECT name_seed FROM players WHERE id = ' + who(a))[0].name_seed);
+  hb.ws.close();
+  assert.strictEqual((await dm(a, b, 'you sh1t, www.example.com')).status, 200);
+  await dm(b, a, 'back at you');
+  assert.deepStrictEqual((await call('GET', '/api/dm', b)).body, { unread: { [a.id]: 2 } });
+  assert.deepStrictEqual((await call('GET', '/api/dm', a)).body, { unread: { [b.id]: 1 } });
+  const fl = (await call('GET', '/api/friends', b)).body.friends;
+  assert.deepStrictEqual(fl.map(x => [x.id, x.unread]), [[a.id, 2]], 'the friends list carries the unread count');
+  r = await thread(b, a);
+  assert.deepStrictEqual(r.body.messages.map(m => [m.mine, m.text]), [[true, 'back at you'], [false, 'you ****, ' + '*'.repeat(15)], [false, 'hello there']], 'newest first');
+  assert.strictEqual(r.body.more, false);
+  assert.deepStrictEqual((await call('GET', '/api/dm', b)).body, { unread: {} }, 'reading marks the conversation read');
+  assert.deepStrictEqual((await call('GET', '/api/dm', a)).body, { unread: { [b.id]: 1 } }, 'the other side still has theirs');
+  console.log('dm: friends only, cleaned and filtered, live through the hub, unread counts, read on open');
+
+  // 5 in a burst, then one every 3 seconds
+  const spam = [];
+  for (let i = 0; i < 8; i++) spam.push((await dm(a, b, 'n' + i)).status);
+  assert(spam.every(s => s === 200 || s === 429) && spam[7] === 429 && spam.filter(s => s === 200).length <= 2, 'flooding is cut off: ' + spam);
+
+  // pages of 50, newest first, the older ones asked for by id
+  sql("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 120) INSERT INTO messages (sender, recipient, text, at) SELECT " + who(b) + ", " + who(a) + ", 'old ' || i, 1000 + i FROM n");
+  r = await thread(a, b);
+  assert.strictEqual(r.body.messages.length, 50);
+  assert.strictEqual(r.body.more, true);
+  const last = r.body.messages[r.body.messages.length - 1].id;
+  const next = await thread(a, b, '?before=' + last);
+  assert.strictEqual(next.body.messages.length, 50);
+  assert(next.body.messages.every(m => m.id < last));
+  const rest = await thread(a, b, '?before=' + next.body.messages[49].id);
+  assert(rest.body.messages.length > 0 && rest.body.messages.length <= 50);
+  console.log('dm: flooding cut off, history in pages');
+
+  // an ended friendship and a block both close the conversation
+  await call('DELETE', '/api/friend/' + b.id, a);
+  assert.strictEqual((await dm(b, a, 'still there?')).status, 403);
+  assert.strictEqual((await thread(a, b)).status, 403);
+  await befriend(a, b);
+  await sleep(3100);
+  assert.strictEqual((await dm(a, b, 'back')).status, 200);
+  await call('POST', '/api/block/' + b.id, a);
+  await sleep(3100);
+  assert.strictEqual((await dm(a, b, 'x')).status, 403, 'the blocker cannot send either');
+  assert.strictEqual((await dm(b, a, 'x')).status, 403, 'the blocked player gets the same answer as a stranger');
+  await call('DELETE', '/api/block/' + b.id, a);
+  console.log('dm: refused after unfriending and across a block');
+
+  // account deletion takes the messages with it
+  const n = id => sql('SELECT count(*) AS n FROM messages WHERE sender = ' + who(id) + ' OR recipient = ' + who(id))[0].n;
+  assert(n(a) > 0);
+  assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
+  assert.strictEqual(n(a), 0, 'a deleted account leaves no messages, sent or received');
+  console.log('dm: account deletion removes messages');
+}
+
+async function purge() {
+  const T = Date.UTC(2031, 5, 20, 3, 5);
+  const [a, b] = [await guest(), await guest()];
+  const add = (at, text) => sql("INSERT INTO messages (sender, recipient, text, at) VALUES (" + who(a) + ", " + who(b) + ", '" + text + "', " + at + ")");
+  add(T - 31 * DAY, 'old');
+  add(T - 29 * DAY, 'recent');
+  await tick(T + 3600000);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM messages WHERE sender = ' + who(a) + " AND text = 'old'")[0].n, 1, 'the cleanup only runs at 03:00 UTC');
+  await tick(T);
+  assert.deepStrictEqual(sql('SELECT text FROM messages WHERE sender = ' + who(a)).map(m => m.text), ['recent'], 'messages older than 30 days are deleted');
+  console.log('dm: the cron deletes messages after 30 days');
+}
+
 async function push() {
   const vars = Object.fromEntries(fs.readFileSync(__dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const apnsPub = crypto.createPublicKey(crypto.createPrivateKey({ key: Buffer.from(vars.APNS_KEY, 'base64'), format: 'der', type: 'pkcs8' }));
@@ -2112,7 +2202,7 @@ async function push() {
   const t1 = hexTok();
   let r = await reg(a, 'apns', t1.toUpperCase(), 'tr', 180);
   assert.strictEqual(r.status, 200);
-  assert.deepStrictEqual(r.body.push, { on: true, invite: true, daily: true, friend: true, week: true });
+  assert.deepStrictEqual(r.body.push, { on: true, invite: true, daily: true, friend: true, week: true, dm: true });
   let d = devs(a);
   assert.deepStrictEqual([d.length, d[0].token, d[0].kind, d[0].lang, d[0].tz, d[0].sandbox, d[0].created === d[0].seen], [1, t1, 'apns', 'tr', 180, 0, true], 'an APNs token is kept in lower case');
   await sleep(20);
@@ -2139,10 +2229,10 @@ async function push() {
   assert.strictEqual((await call('POST', '/api/push', a, {})).status, 400);
   assert.strictEqual((await call('POST', '/api/push', a, { invite: 'no' })).status, 400);
   r = await call('POST', '/api/push', a, { invite: false, week: false, other: true });
-  assert.deepStrictEqual(r.body.push, { on: true, invite: false, daily: true, friend: true, week: false });
+  assert.deepStrictEqual(r.body.push, { on: true, invite: false, daily: true, friend: true, week: false, dm: true });
   assert.deepStrictEqual((await call('GET', '/api/me', a)).body.push, r.body.push);
   r = await call('POST', '/api/push', a, { on: false, invite: true });
-  assert.deepStrictEqual(r.body.push, { on: false, invite: true, daily: true, friend: true, week: false });
+  assert.deepStrictEqual(r.body.push, { on: false, invite: true, daily: true, friend: true, week: false, dm: true });
   console.log('push: preferences read and updated');
 
   // an invite pushes only to a friend whose app is closed
@@ -2284,6 +2374,31 @@ async function push() {
   await sleep(400);
   assert.strictEqual(f.apns.length, 0, 'the friend switch stops requests when the app is closed');
   console.log('push: friend requests and accepts, once a day per pair, blocks, open app, switch');
+
+  // a message pushes to a friend whose app is closed, once per ten minutes
+  const [m1, m2] = [await guest(), await guest()];
+  await befriend(m1, m2);
+  const km = fcmTok();
+  await reg(m2, 'fcm', km, 'tr', 0);
+  f.clear();
+  assert.strictEqual((await call('POST', '/api/dm', m1, { to: m2.id, text: 'selam' })).status, 200);
+  await settle(() => to(f.fcm, km).length);
+  assert.deepStrictEqual(to(f.fcm, km).map(m => [m.message.notification, m.message.data]), [[{ title: 'Yeni mesaj', body: name(m1, 'tr') + ' sana bir mesaj gönderdi.' }, { t: 'dm' }]], 'the push never carries the text');
+  await call('POST', '/api/dm', m1, { to: m2.id, text: 'again' });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 1, 'one push per pair in ten minutes');
+  sql("DELETE FROM push_log WHERE kind = 'dm'");
+  await call('POST', '/api/push', m2, { dm: false });
+  await call('POST', '/api/dm', m1, { to: m2.id, text: 'third' });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 1, 'the messages switch stops it');
+  await call('POST', '/api/push', m2, { dm: true });
+  const hm = await hub(m2);
+  await call('POST', '/api/dm', m1, { to: m2.id, text: 'fourth' });
+  await sleep(400);
+  assert.strictEqual(f.fcm.length, 1, 'an open app is not pushed');
+  hm.ws.close();
+  console.log('push: messages for a closed app only, no text, once per pair, switch');
 
   // a persona has no account, so nothing is ever sent for one, even with a device row forced in
   const pid = crypto.randomBytes(16).toString('hex');
@@ -2575,6 +2690,8 @@ async function push() {
   await gifts();
   await invites();
   await push();
+  await dms();
+  await purge();
   await personas();
   await pool();
   await openRoom();

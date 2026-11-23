@@ -10,6 +10,8 @@ const LIFE = 3 * 3600000;
 const MAX = 4000;
 const BURST = 10;
 const EVERY = 500;
+const DM_BURST = 5;
+const DM_EVERY = 3000;
 
 const HELLO = 10000;
 const CUP = 8;
@@ -41,6 +43,7 @@ export class Hub extends DurableObject {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.bucket = new WeakMap();
+    this.chatty = new Map();
     this.rooms = {};
     this.k = Number(env.PACE) || 1;
     this.hello = Math.ceil(HELLO * this.k);
@@ -216,6 +219,25 @@ export class Hub extends DurableObject {
   // A push for a player whose app has no socket here.
   async ring(from, to, k, v) {
     if (!this.online(to)) await ring(this.env, from, to, k, v);
+  }
+
+  // Private messages: a short burst per sender, then one every three seconds. Kept in memory, so a restart only forgives.
+  talk(pid) {
+    const now = Date.now();
+    if (this.chatty.size > 1000) for (const [k, v] of this.chatty) if (now - v.at > 60000) this.chatty.delete(k);
+    const b = this.chatty.get(pid) || { n: DM_BURST, at: now };
+    b.n = Math.min(DM_BURST, b.n + (now - b.at) / DM_EVERY);
+    b.at = now;
+    this.chatty.set(pid, b);
+    if (b.n < 1) return false;
+    b.n--;
+    return true;
+  }
+
+  // A message for a friend: every open socket of theirs gets it, and a closed app gets a push.
+  dm(from, seed, to, m) {
+    if (this.online(to)) this.to(to, { t: 'dm', from: from, seed: seed, m: m });
+    else return this.ring(from, to, 'dm', { seed: seed });
   }
 
   // A table sends this for one of its players. Only a friend gets it, by socket wherever they are, and one whose app is closed gets a push

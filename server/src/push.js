@@ -26,7 +26,8 @@ const KIND = {
   req: { col: 'push_friend', ttl: 86400, gap: DAY, tap: () => ({ t: 'friend' }) },
   accept: { col: 'push_friend', ttl: 86400, gap: DAY, tap: () => ({ t: 'friend' }) },
   daily: { col: 'push_daily', ttl: 10800, tap: () => ({ t: 'daily' }) },
-  week: { col: 'push_week', ttl: 86400, tap: () => ({ t: 'week' }) }
+  week: { col: 'push_week', ttl: 86400, tap: () => ({ t: 'week' }) },
+  dm: { col: 'push_dm', ttl: 86400, gap: 600000, tap: () => ({ t: 'dm' }) }
 };
 
 const TEXT = {
@@ -34,6 +35,7 @@ const TEXT = {
     invite: v => ['Table invite', Names.text(v.seed, 'en') + ' invited you to a table.'],
     req: v => ['Friend request', Names.text(v.seed, 'en') + ' wants to be your friend.'],
     accept: v => ['New friend', Names.text(v.seed, 'en') + ' accepted your friend request.'],
+    dm: v => ['New message', Names.text(v.seed, 'en') + ' sent you a message.'],
     daily: v => ['Daily bonus', 'Your daily bonus of ' + v.n.toLocaleString('en') + ' chips is ready.'],
     week: v => ['Weekly leaderboard', 'You won ' + v.won.toLocaleString('en') + ' chips last week and finished #' + v.rank + '.']
   },
@@ -41,6 +43,7 @@ const TEXT = {
     invite: v => ['Masa daveti', Names.text(v.seed, 'tr') + ' seni bir masaya davet etti.'],
     req: v => ['Arkadaşlık isteği', Names.text(v.seed, 'tr') + ' seninle arkadaş olmak istiyor.'],
     accept: v => ['Yeni arkadaş', Names.text(v.seed, 'tr') + ' arkadaşlık isteğini kabul etti.'],
+    dm: v => ['Yeni mesaj', Names.text(v.seed, 'tr') + ' sana bir mesaj gönderdi.'],
     daily: v => ['Günlük ödül', v.n.toLocaleString('tr') + ' çiplik günlük ödülün hazır.'],
     week: v => ['Haftalık sıralama', 'Geçen hafta ' + v.won.toLocaleString('tr') + ' çip kazandın ve sıralamada ' + v.rank + '. oldun.']
   }
@@ -242,7 +245,8 @@ async function cleanup(env, now) {
   spend(env);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM devices WHERE seen < ?').bind(now - 90 * DAY),
-    env.DB.prepare('DELETE FROM push_log WHERE at < ?').bind(now - DAY)
+    env.DB.prepare('DELETE FROM push_log WHERE at < ?').bind(now - DAY),
+    env.DB.prepare('DELETE FROM messages WHERE at < ?').bind(now - 30 * DAY)
   ]);
 }
 

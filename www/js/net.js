@@ -201,6 +201,7 @@ var Net = (function () {
         open('/ws/' + m.code, { t: 'join', token: m.token });
         break;
       case 'invited': Social.invited(m); break;
+      case 'dm': Social.message(m); break;
       case 'error': hubFail(m); break;
     }
   }

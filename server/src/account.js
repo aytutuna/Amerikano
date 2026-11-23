@@ -18,7 +18,7 @@ export const payout = (stake, chips) => stake + chips * stake / 10;
 const ROLLS = 20;
 const SESSIONS = 10;
 const DEVICES = 10;
-const PUSH = ['on', 'invite', 'daily', 'friend', 'week'];
+const PUSH = ['on', 'invite', 'daily', 'friend', 'week', 'dm'];
 const TOKEN = /^([0-9a-f]{32})\.([0-9a-f]{64})$/;
 
 const today = () => Math.floor(Date.now() / DAY);
@@ -326,6 +326,7 @@ export async function api(request, env) {
       db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
+      db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     return json({ ok: true });

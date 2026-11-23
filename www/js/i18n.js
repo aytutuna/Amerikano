@@ -221,6 +221,7 @@ var I18n = (function () {
         daily: 'Daily bonus',
         friend: 'Friend requests',
         week: 'Weekly leaderboard',
+        dm: 'Messages',
         denied: 'Notifications are turned off for Amerikano in your device settings. Turn them on there to get any of these.'
       }
     },
@@ -466,6 +467,16 @@ var I18n = (function () {
       },
       emo: { smile: 'Smile', laugh: 'Laugh', wink: 'Wink', love: 'Love', gasp: 'Surprised', sad: 'Sad', angry: 'Angry', cheer: 'Hooray' },
       said: v => v.name + ': ' + v.what
+    },
+
+    dm: {
+      open: 'Message',
+      none: 'No messages yet.',
+      you: 'You',
+      older: 'Older messages',
+      new: v => v.name + ' sent you a message.',
+      slow: 'Slow down a little.',
+      no: 'This message could not be sent.'
     },
 
     gift: {
@@ -783,6 +794,7 @@ var I18n = (function () {
         daily: 'Günlük ödül',
         friend: 'Arkadaşlık istekleri',
         week: 'Haftalık sıralama',
+        dm: 'Mesajlar',
         denied: 'Bildirimler cihazının ayarlarında Amerikano için kapalı. Bunlardan birini almak için oradan açman gerekir.'
       }
     },
@@ -1029,6 +1041,16 @@ var I18n = (function () {
       },
       emo: { smile: 'Gülümseme', laugh: 'Kahkaha', wink: 'Göz kırpma', love: 'Aşk', gasp: 'Şaşkın', sad: 'Üzgün', angry: 'Kızgın', cheer: 'Yaşasın' },
       said: v => v.name + ': ' + v.what
+    },
+
+    dm: {
+      open: 'Mesaj',
+      none: 'Henüz mesaj yok.',
+      you: 'Sen',
+      older: 'Eski mesajlar',
+      new: v => v.name + ' sana bir mesaj gönderdi.',
+      slow: 'Biraz yavaş.',
+      no: 'Bu mesaj gönderilemedi.'
     },
 
     gift: {

@@ -1,7 +1,7 @@
 var Push = (function () {
   const ASKED = 'amerikano.pushAsked';
   const LAST = 'amerikano.pushTap';
-  const TABS = { friend: 'friends', daily: 'rooms', week: 'top' };
+  const TABS = { friend: 'friends', dm: 'friends', daily: 'rooms', week: 'top' };
   let token = '';
   let perm = '';
   let wired = false;

@@ -31,6 +31,12 @@ export async function apart(db, id) {
   return new Set(results.map(r => r.a === id ? r.b : r.a));
 }
 
+// how many messages each sender has waiting for this player
+export async function unread(db, id) {
+  const { results } = await db.prepare('SELECT sender, count(*) AS n FROM messages WHERE recipient = ? AND seen = 0 GROUP BY sender').bind(id).all();
+  return Object.fromEntries(results.map(r => [r.sender, r.n]));
+}
+
 const count = async (db, sql, id) => (await db.prepare(sql).bind(id).first()).n;
 
 const mark = r => ({ id: r.id, seed: r.name_seed, avatar: r.avatar.split(',').map(Number), level: r.level });
@@ -86,6 +92,8 @@ async function friends(env, p) {
     else if (r.state === 'req') out[mine ? 'outgoing' : 'incoming'].push(mark(r));
     else if (mine) out.blocked.push(mark(r));
   }
+  const waiting = await unread(env.DB, p.id);
+  for (const f of out.friends) f.unread = waiting[f.id] || 0;
   const at = out.friends.length ? await env.HUB.get(env.HUB.idFromName('h')).where(out.friends.map(x => x.id)).catch(() => ({})) : {};
   for (const f of out.friends) {
     f.at = at[f.id] || null;

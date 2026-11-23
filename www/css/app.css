@@ -611,6 +611,10 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 .tlog { height: calc(84 * var(--u)); margin-top: calc(8 * var(--u)); padding: calc(4 * var(--u)) calc(8 * var(--u)); overflow-y: auto; overscroll-behavior: contain; border-radius: calc(10 * var(--u)); background: rgba(255, 250, 240, .6); box-shadow: inset 0 calc(2 * var(--u)) calc(4 * var(--u)) rgba(122, 74, 18, .25); }
 .tl { margin: 0 0 calc(3 * var(--u)); font-size: calc(13 * var(--r)); line-height: 1.25; overflow-wrap: anywhere; }
 .tlog .note { margin: 0; }
+.tl.mine b { color: var(--brown); }
+.dlog { height: calc(200 * var(--u)); }
+.dm .note { margin: calc(6 * var(--u)) 0 0; }
+.badge { display: inline-block; min-width: calc(16 * var(--u)); margin-left: calc(6 * var(--u)); padding: 0 calc(5 * var(--u)); border-radius: calc(9 * var(--u)); background: #d6453d; color: #fff; font-size: calc(11 * var(--r)); font-style: normal; font-weight: 700; line-height: calc(18 * var(--u)); text-align: center; }
 .bub.tx { max-width: calc(180 * var(--u)); font-weight: 500; text-align: left; overflow-wrap: anywhere; }
 
 .pap { position: relative; }
