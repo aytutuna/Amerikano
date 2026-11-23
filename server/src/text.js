@@ -5,8 +5,9 @@ import fr from './text/fr.js';
 import it from './text/it.js';
 import nl from './text/nl.js';
 import de from './text/de.js';
+import pl from './text/pl.js';
 
-const more = { es, pt, fr, it, nl, de };
+const more = { es, pt, fr, it, nl, de, pl };
 
 export const LANGS = ['en', 'tr', ...Object.keys(more)];
 export default more;
