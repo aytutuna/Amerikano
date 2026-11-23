@@ -8,8 +8,9 @@ import de from './text/de.js';
 import pl from './text/pl.js';
 import ru from './text/ru.js';
 import uk from './text/uk.js';
+import ar from './text/ar.js';
 
-const more = { es, pt, fr, it, nl, de, pl, ru, uk };
+const more = { es, pt, fr, it, nl, de, pl, ru, uk, ar };
 
 export const LANGS = ['en', 'tr', ...Object.keys(more)];
 export default more;
