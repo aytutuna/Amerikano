@@ -214,6 +214,8 @@
       regionNote: 'A partida rápida, as mesas públicas e os torneios colocam você com jogadores da sua região. Amigos e mesas privadas funcionam de qualquer lugar.',
       typed: 'Chat digitado',
       typedNote: 'Mostra o que os outros digitam nas mesas e as mensagens privadas dos seus amigos. As frases e os emotes sempre funcionam.',
+      voice: 'Voz',
+      voiceNote: 'Ouça os outros jogadores nas mesas e nas chamadas e fale com o seu microfone. Desativada, a voz fica totalmente desligada.',
       sound: 'Som',
       haptics: 'Vibração',
       fourc: 'Naipes de quatro cores',
@@ -497,7 +499,37 @@
       no: 'Não foi possível enviar esta mensagem.'
     },
 
+    voice: {
+      mic: { on: 'Microfone ligado. Toque para desligar.', off: 'Microfone desligado. Toque para ligar.' },
+      spk: { on: 'Voz ligada. Toque para silenciar todo mundo.', off: 'Voz silenciada. Toque para ouvir.' },
+      denied: 'O microfone não está permitido. Você pode permitir nos ajustes do seu aparelho.',
+      fail: 'Não foi possível conectar a voz.',
+      mute: 'Silenciar voz',
+      unmute: 'Ativar voz',
+      call: 'Ligar',
+      in: v => v.name + ' está ligando.',
+      calling: v => 'Ligando para ' + v.name + '.',
+      talking: v => 'Em chamada com ' + v.name + '.',
+      accept: 'Atender',
+      decline: 'Recusar',
+      hang: 'Desligar',
+      muteMe: 'Silenciar',
+      end: {
+        missed: 'Sem resposta.', missedIn: 'Chamada perdida.', declined: 'Chamada recusada.', busy: 'Está ocupado agora.', away: 'Não está online.',
+        no: 'Não foi possível fazer a chamada.', slow: 'Espere um pouco antes de ligar de novo.', dropped: 'A chamada caiu.'
+      },
+      line: { missed: 'Chamada perdida', missedMine: 'Sem resposta', declined: 'Chamada recusada' }
+    },
+
     rep: { do: 'Denunciar', done: 'Denunciado' },
+
+    warn: {
+      title: 'Antes de enviar',
+      text: 'Compartilhar seus dados de contato é decisão sua, mas nunca compartilhe com quem você não conhece. As fichas do Amerikano não podem ser compradas nem vendidas. Denuncie quem se oferecer para trocá-las.',
+      send: 'Enviar mesmo assim',
+      edit: 'Editar',
+      note: 'Cuidado com links e dados de contato de outros jogadores. Fichas nunca são vendidas.'
+    },
 
     gift: {
       title: 'Enviar um presente',
