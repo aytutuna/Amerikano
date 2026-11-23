@@ -2179,6 +2179,131 @@ async function purge() {
   console.log('dm: the cron deletes messages after 30 days');
 }
 
+async function typedOff() {
+  const g = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
+  await befriend(g.accA, g.accB);
+  assert.strictEqual((await call('POST', '/api/typed', g.accB, { typed: 'no' })).status, 400);
+  assert.strictEqual((await call('GET', '/api/me', g.accB)).body.typed, true, 'on by default');
+  const r = await call('POST', '/api/typed', g.accB, { typed: false });
+  assert.strictEqual(r.body.typed, false);
+  assert.strictEqual((await call('GET', '/api/me', g.accB)).body.typed, false);
+
+  const dm = (from, to) => call('POST', '/api/dm', from, { to: to.id, text: 'hi' });
+  assert.strictEqual((await dm(g.accA, g.accB)).status, 403, 'nobody can message a player who has typed chat off');
+  const no = await dm(g.accB, g.accA);
+  assert.deepStrictEqual([no.status, no.body.error], [403, 'typedoff'], 'and they cannot send');
+
+  const heard = [];
+  g.b.handlers.push(m => { if (m.t === 'typed') heard.push(m); });
+  const own = g.a.next(m => m.t === 'typed' && m.p === 0);
+  g.a.send({ t: 'text', x: 'anyone there' });
+  await own;
+  const err = g.b.next(m => m.t === 'error');
+  g.b.send({ t: 'text', x: 'me too' });
+  assert.strictEqual((await err).k, 'typedoff');
+  const said = g.b.next(m => m.t === 'said' && m.p === seatA);
+  g.a.send({ t: 'say', k: 'hello' });
+  await said;
+  g.b.send({ t: 'say', k: 'hello' });
+  assert.strictEqual((await g.a.next(m => m.t === 'said' && m.p === seatB)).k, 'hello', 'phrases and emotes still work');
+  await sleep(300);
+  assert.deepStrictEqual(heard, [], 'a player with typed chat off hears none');
+  await call('POST', '/api/typed', g.accB, { typed: true });
+  const back = g.b.next(m => m.t === 'typed' && m.p === seatA);
+  await sleep(2100);
+  g.a.send({ t: 'text', x: 'welcome back' });
+  assert.strictEqual((await back).x, 'welcome back');
+  assert.strictEqual((await dm(g.accA, g.accB)).status, 200);
+  console.log('typed chat off: no messages either way, none heard at the table, phrases still work');
+  g.a.ws.close();
+  g.b.ws.close();
+}
+
+async function reports() {
+  const g = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  await befriend(g.accA, g.accB);
+  const [r1, r2, r3] = [await guest(), await guest(), await guest()];
+  const rep = (from, to, o) => call('POST', '/api/report', from, Object.assign({ pid: to.id, text: 'rude words', ctx: g.code }, o));
+  const rows = who => sql('SELECT reporter, reported, text, ctx FROM reports WHERE reported = ' + who);
+  const muted = acc => sql('SELECT mute_until FROM players WHERE id = ' + who(acc))[0].mute_until > Date.now();
+  assert.strictEqual((await call('POST', '/api/report', null, { pid: g.accB.id, ctx: 'dm' })).status, 401);
+  assert.strictEqual((await rep(r1, r1)).status, 400, 'not oneself');
+  assert.strictEqual((await rep(r1, g.accB, { pid: 'x' })).status, 400);
+  assert.strictEqual((await rep(r1, g.accB, { ctx: 'nowhere' })).status, 400);
+  assert.strictEqual((await rep(r1, { id: '0'.repeat(32) })).status, 404);
+  assert.strictEqual((await rep(r1, g.accB, { ctx: 'dm' })).status, 404, 'a private message has to exist');
+  assert.strictEqual((await rep(r1, g.accB)).status, 200);
+  assert.deepStrictEqual(rows(who(g.accB)), [{ reporter: r1.id, reported: g.accB.id, text: 'rude words', ctx: g.code }]);
+  assert.strictEqual((await rep(r1, g.accB, { ctx: 'profile', text: undefined })).status, 200);
+  assert.strictEqual((await rep(r1, g.accB)).status, 200);
+  assert.strictEqual((await rep(r2, g.accB, { text: 'x'.repeat(500) })).status, 200);
+  assert.strictEqual(rows(who(g.accB)).find(r => r.reporter === r2.id).text.length, 300, 'the text is cut');
+  assert.strictEqual(muted(g.accB), false, 'one reporter many times, and two reporters, are not enough');
+  // a report from outside the week does not count
+  sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('" + 'f'.repeat(32) + "', " + who(g.accB) + ", 'old', 'dm', " + (Date.now() - 8 * DAY) + ')');
+  assert.strictEqual(muted(g.accB), false);
+  const typing = g.b.next(m => m.t === 'typed' && m.p === 0);
+  g.b.send({ t: 'text', x: 'still fine' });
+  await typing;
+  assert.strictEqual((await rep(r3, g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), true, 'three reporters within a week mute for a day');
+  const left = sql('SELECT mute_until FROM players WHERE id = ' + who(g.accB))[0].mute_until - Date.now();
+  assert(left > 23 * 3600000 && left <= DAY, 'for 24 hours');
+
+  await sleep(2100);
+  const heard = [];
+  g.a.handlers.push(m => { if (m.t === 'typed' && m.p === seatB) heard.push(m); });
+  const err = g.b.next(m => m.t === 'error');
+  g.b.send({ t: 'text', x: 'let me in' });
+  assert.strictEqual((await err).k, 'mute');
+  const said = g.a.next(m => m.t === 'said' && m.p === seatB);
+  g.b.send({ t: 'say', k: 'sorry' });
+  assert.strictEqual((await said).k, 'sorry', 'phrases and emotes still work');
+  const dm = await call('POST', '/api/dm', g.accB, { to: g.accA.id, text: 'hello' });
+  assert.deepStrictEqual([dm.status, dm.body], [403, { error: 'mute' }], 'the sender is told only that they cannot type');
+  assert.strictEqual((await call('POST', '/api/dm', g.accA, { to: g.accB.id, text: 'hello' })).status, 200, 'they can still be written to');
+  await sleep(300);
+  assert.deepStrictEqual(heard, []);
+  sql('UPDATE players SET mute_until = ' + (Date.now() - 1000) + ' WHERE id = ' + who(g.accB));
+  const back = g.a.next(m => m.t === 'typed' && m.p === seatB);
+  g.b.send({ t: 'text', x: 'thanks' });
+  assert.strictEqual((await back).x, 'thanks', 'typing works again once the day is over');
+  console.log('reports: stored with their context, three reporters in a week mute typed chat for a day, phrases and emotes still work');
+
+  // a private message is read back from the conversation
+  const sent = await call('POST', '/api/dm', g.accB, { to: g.accA.id, text: 'nasty one' });
+  const mid = sent.body.message.id;
+  assert.strictEqual((await rep(g.accA, g.accB, { ctx: 'dm', mid: mid, text: 'made up' })).status, 200);
+  assert.strictEqual(rows(who(g.accB)).filter(r => r.ctx === 'dm' && r.reporter === g.accA.id)[0].text, 'nasty one', 'the stored text is the real one');
+  assert.strictEqual((await rep(r1, g.accB, { ctx: 'dm', mid: mid })).status, 404, 'only the recipient can report it');
+  assert.strictEqual((await rep(g.accB, g.accA, { ctx: 'dm', mid: mid })).status, 404);
+  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO reports (reporter, reported, text, ctx, at) SELECT ' + who(r1) + ", 'a', 'x', 'dm', " + Date.now() + ' FROM n');
+  assert.strictEqual((await rep(r1, g.accA)).status, 429, 'at most 20 reports a day');
+  console.log('reports: private messages read back from the conversation, 20 a day');
+
+  // 180 days, and a deleted reporter takes their reports along
+  const n = id => sql('SELECT count(*) AS n FROM reports WHERE reporter = ' + who(id))[0].n;
+  const about = () => sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(g.accB))[0].n;
+  const before = about();
+  assert(n(r2) > 0);
+  assert.strictEqual((await call('DELETE', '/api/me', r2)).status, 200);
+  assert.strictEqual(n(r2), 0, 'a deleted account leaves no reports it made');
+  assert.strictEqual(about(), before - 1, 'reports about someone else stay');
+  const T = Date.UTC(2031, 6, 20, 3, 5);
+  sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('p', 'q', 'ancient', 'dm', " + (T - 181 * DAY) + "), ('p', 'q', 'kept', 'dm', " + (T - 179 * DAY) + ')');
+  await tick(T);
+  assert.deepStrictEqual(sql("SELECT text FROM reports WHERE reporter = 'p'").map(r => r.text), ['kept'], 'reports are purged after 180 days');
+  console.log('reports: purged after 180 days, removed with the reporter');
+  g.a.ws.close();
+  g.b.ws.close();
+}
+
 async function push() {
   const vars = Object.fromEntries(fs.readFileSync(__dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const apnsPub = crypto.createPublicKey(crypto.createPrivateKey({ key: Buffer.from(vars.APNS_KEY, 'base64'), format: 'der', type: 'pkcs8' }));
@@ -2692,6 +2817,8 @@ async function push() {
   await push();
   await dms();
   await purge();
+  await typedOff();
+  await reports();
   await personas();
   await pool();
   await openRoom();

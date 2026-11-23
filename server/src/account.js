@@ -116,6 +116,7 @@ function profile(p) {
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
+    typed: !!p.typed,
     region: p.region || DEFAULT,
     push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
   };
@@ -257,6 +258,12 @@ async function prefs(db, p, request) {
   await db.prepare('UPDATE players SET ' + keys.map(k => 'push_' + k + ' = ?').join(', ') + ' WHERE id = ?').bind(...keys.map(k => +b[k]), p.id).run();
 }
 
+async function typedSwitch(db, p, request) {
+  const b = await body(request);
+  if (typeof b.typed !== 'boolean') return fail('typed');
+  await db.prepare('UPDATE players SET typed = ? WHERE id = ?').bind(+b.typed, p.id).run();
+}
+
 // from the country Cloudflare saw; the dev server (PACE set) has no real one, so the tests pin it by header
 function guess(env, request) {
   const h = request.headers;
@@ -327,6 +334,7 @@ export async function api(request, env) {
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
+      db.prepare('DELETE FROM reports WHERE reporter = ?').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     return json({ ok: true });
@@ -349,6 +357,7 @@ export async function api(request, env) {
   else if (path === '/api/device') err = await device(db, p, request);
   else if (path === '/api/push') err = await prefs(db, p, request);
   else if (path === '/api/region') err = await region(env, p, request);
+  else if (path === '/api/typed') err = await typedSwitch(db, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);
   if (err) return err;

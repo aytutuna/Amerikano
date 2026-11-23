@@ -179,7 +179,7 @@ export class Room extends DurableObject {
     if (m.t === 'rematch') return this.rematch(ws, a.seat);
     if (m.t === 'act') return this.act(ws, a.seat, m);
     if (m.t === 'say') return this.say(a.seat, m);
-    if (m.t === 'text') return this.text(a.seat, m);
+    if (m.t === 'text') return this.text(ws, a.seat, m);
     if (m.t === 'gift') return this.gift(ws, a.seat, m);
     if (m.t === 'invite') return this.invite(ws, a.seat, m);
   }
@@ -509,14 +509,20 @@ export class Room extends DurableObject {
     if (!this.r.seats[i].fake) this.chirp(this.other(i), REPLY[m.k] || ['smile', 'wink', 'cheer'], 0.25);
   }
 
-  // Typed chat reaches the people at this table, except those who blocked the sender or were blocked by them. The last few lines
-  // are kept in memory for a player who reconnects.
-  async text(i, m) {
+  // Typed chat reaches the people at this table, except those who blocked the sender or were blocked by them or switched typed
+  // chat off. The last few lines are kept in memory for a player who reconnects.
+  async text(ws, i, m) {
     const s = this.r.seats[i];
     const x = typed(m.x, TYPED);
     if (!this.st || !x || !s.pid || s.bot || !this.allow('t' + i)) return;
-    const away = await apart(this.env.DB, s.pid);
+    const ids = this.r.seats.filter(q => q && q.pid && !q.bot).map(q => q.pid);
+    const [away, rows] = await Promise.all([apart(this.env.DB, s.pid),
+      this.env.DB.prepare('SELECT id, typed, mute_until FROM players WHERE id IN (' + ids.map(() => '?').join() + ')').bind(...ids).all()]);
     if (!this.r) return;
+    const me = rows.results.find(q => q.id === s.pid);
+    if (!me || !me.typed) return this.fail(ws, 'typedoff');
+    if (me.mute_until > Date.now()) return this.fail(ws, 'mute');
+    for (const q of rows.results) if (!q.typed) away.add(q.id);
     this.lines.push({ i: i, pid: s.pid, x: x });
     if (this.lines.length > LINES) this.lines.shift();
     const n = this.r.n;
@@ -528,8 +534,9 @@ export class Room extends DurableObject {
 
   async replay(ws, i) {
     if (!this.lines.length) return;
-    const away = await apart(this.env.DB, this.r.seats[i].pid);
-    if (!this.r || ws.readyState !== 1) return;
+    const pid = this.r.seats[i].pid;
+    const [away, me] = await Promise.all([apart(this.env.DB, pid), player(this.env.DB, pid)]);
+    if (!this.r || ws.readyState !== 1 || !me || !me.typed) return;
     const n = this.r.n;
     for (const l of this.lines) if (!away.has(l.pid)) ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: l.x, old: true }));
   }

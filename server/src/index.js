@@ -9,7 +9,7 @@ export { Room, Hub };
 
 const ORIGIN = /^(https:\/\/([a-z0-9-]+\.)?amerikano\.pages\.dev|https?:\/\/localhost(:\d+)?|capacitor:\/\/localhost|http:\/\/127\.0\.0\.1(:\d+)?)$/;
 const SOCIAL = /^\/api\/(friends?|block|player|top)(\/|$)/;
-const CHAT = /^\/api\/dm(\/|$)/;
+const CHAT = /^\/api\/(dm|report)(\/|$)/;
 
 async function account(request, env, ctx, origin) {
   const cors = {

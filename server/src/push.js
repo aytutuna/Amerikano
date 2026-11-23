@@ -246,7 +246,8 @@ async function cleanup(env, now) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM devices WHERE seen < ?').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM push_log WHERE at < ?').bind(now - DAY),
-    env.DB.prepare('DELETE FROM messages WHERE at < ?').bind(now - 30 * DAY)
+    env.DB.prepare('DELETE FROM messages WHERE at < ?').bind(now - 30 * DAY),
+    env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(now - 180 * DAY)
   ]);
 }
 
