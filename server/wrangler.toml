@@ -8,6 +8,7 @@ APPLE_TEAM = "8XT2U634Z4"
 APPLE_KEY_ID = "D6PRTQ85P3"
 APNS_KEY_ID = "WA2367HVZ2"
 FCM_PROJECT = "amerikano-514707"
+REALTIME_APP_ID = ""
 
 [triggers]
 crons = ["0 * * * *"]

@@ -212,7 +212,7 @@ var UI = (function () {
       const was = document.activeElement && form.contains(document.activeElement) ? document.activeElement.dataset.f : null;
       form.textContent = '';
       const lg = choice('lang', t('set.lang'), [{ v: 'auto', label: t('set.auto') }].concat(I18n.codes.map(c => ({ v: c, label: I18n.names[c] }))), Settings.get('lang'), v => {
-        Promise.resolve(Settings.set('lang', v)).then(() => { Push.sync(); fill(); if (h) h.set(t('set.title'), done()); });
+        Promise.resolve(Settings.set('lang', v)).then(() => { Push.sync(); if (Account.has()) Account.refresh().catch(() => {}); fill(); if (h) h.set(t('set.title'), done()); });
       }, 'seg langs');
       // each name in its own script, so Han characters get the right glyphs
       lg.querySelectorAll('.face b').forEach((b, i) => { if (i) b.lang = I18n.codes[i - 1]; });
@@ -228,6 +228,7 @@ var UI = (function () {
       form.appendChild(toggle('sound', t('set.sound')));
       form.appendChild(toggle('haptics', t('set.haptics')));
       if (Account.me()) form.appendChild(toggle('typed', t('set.typed'), t('set.typedNote'), null, { get: () => Account.me().typed !== false, set: (k, v) => Account.typed(v) }));
+      if (Account.me() && Voice.can()) form.appendChild(toggle('voice', t('set.voice'), t('set.voiceNote'), null, { get: () => Account.me().voice !== false, set: (k, v) => Account.voice(v).then(Voice.refresh) }));
       const sw = node('span', 'suits');
       sw.setAttribute('aria-hidden', 'true');
       for (const s of ['s', 'h', 'd', 'c']) sw.appendChild(Cards.icon('su-' + s, 'su sx-' + s));

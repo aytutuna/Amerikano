@@ -112,6 +112,7 @@ var Net = (function () {
       case 'joined':
         tries = 0;
         Social.fresh();
+        Voice.again();
         save({ code: m.code, token: m.token, hist: ses && ses.code === m.code ? ses.hist : [] });
         break;
       case 'room':
@@ -128,7 +129,9 @@ var Net = (function () {
       case 'sent': Social.sent(m); break;
       case 'said': if (App.online()) Social.said(m); break;
       case 'typed': if (App.online()) Social.typed(m); break;
+      case 'confirm': if (App.online()) Social.confirm(); break;
       case 'gifted': if (App.online()) Social.gifted(m); break;
+      case 'voice': Voice.peer(m.pid, m.on); break;
       case 'error': fail(m); break;
     }
   }
@@ -189,6 +192,7 @@ var Net = (function () {
         hubTries = 0;
         UI.conn('up');
         UI.hub(m);
+        Voice.hub(m.voice);
         break;
       case 'rooms': UI.rooms(m.n, m.f); break;
       case 'cup': UI.cup(m); break;
@@ -202,6 +206,9 @@ var Net = (function () {
         break;
       case 'invited': Social.invited(m); break;
       case 'dm': Social.message(m); break;
+      case 'ring': Voice.ring(m); break;
+      case 'call': Voice.signal(m); break;
+      case 'voice': Voice.peer(m.pid, m.on, m.id); break;
       case 'error': hubFail(m); break;
     }
   }
@@ -292,6 +299,7 @@ var Net = (function () {
     if (hubSock && hubSock.readyState === 1) hubSock.send(JSON.stringify({ t: 'at', at: w }));
   };
 
+  N.say = hubSay;
   N.sit = code => hubSay({ t: 'sit', code: code });
   N.play = (stake, fast) => hubSay({ t: 'quick', stake: stake, fast: fast });
   N.cup = buy => hubSay({ t: 'cup', buy: buy });
