@@ -934,7 +934,7 @@ var UI = (function () {
       b.appendChild(miniTable(here));
       const meta = node('span', 'rmeta');
       meta.appendChild(node('b', '', t('hall.min', { n: fmt(at.entry * s) })));
-      meta.appendChild(node('i', '', t('hall.playing', { n: fmt(here) })));
+      meta.appendChild(node('i', '', t('hall.playing', { n: fmt(here), c: here })));
       b.appendChild(meta);
       if (!ok) {
         const lock = node('span', 'lock');
