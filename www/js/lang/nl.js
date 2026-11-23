@@ -7,6 +7,7 @@
   const SUITS = { c: 'klaveren', d: 'ruiten', h: 'harten', s: 'schoppen' };
   const cards = n => pl(n, { one: '# kaart', other: '# kaarten' });
   const chips = n => pl(n, { one: '# fiche', other: '# fiches' });
+  const digits = s => Number(String(s).replace(/\D/g, ''));
   const ord = n => pl(n, { other: '#e' }, true);
 
   I18n.add('nl', {
@@ -214,6 +215,8 @@
       regionNote: 'Snel spelen, openbare tafels en toernooien koppelen je aan spelers uit je regio. Vrienden en privétafels werken overal.',
       typed: 'Getypte chat',
       typedNote: 'Toont wat anderen aan tafel typen en de privéberichten van je vrienden. Zinnen en emotes werken altijd.',
+      voice: 'Spraak',
+      voiceNote: 'Je hoort andere spelers aan tafel en in gesprekken en praat via je microfoon. Uit schakelt spraak helemaal uit.',
       sound: 'Geluid',
       haptics: 'Trillen',
       fourc: 'Vier kleuren per soort',
@@ -307,7 +310,7 @@
       rmLine: v => v.want + ' van ' + v.n + ' willen revanche. Nog ' + v.s + ' s.',
       rmFind: 'Spelers zoeken voor de revanche.',
       lobby: 'Terug naar de lobby',
-      change: v => v.n > 0 ? 'Je hebt ' + v.abs + ' fiches gewonnen.' : v.n < 0 ? 'Je hebt ' + v.abs + ' fiches verloren.' : 'Je inzet is terug.',
+      change: v => v.n > 0 ? 'Je hebt ' + chips(digits(v.abs)) + ' gewonnen.' : v.n < 0 ? 'Je hebt ' + chips(digits(v.abs)) + ' verloren.' : 'Je inzet is terug.',
       xp: v => '+' + v.n + ' XP',
       level: v => 'Level ' + v.n + '!',
       bonus: v => '+' + v.n + ' fiches',
@@ -497,7 +500,37 @@
       no: 'Dit bericht kon niet worden verzonden.'
     },
 
+    voice: {
+      mic: { on: 'Microfoon aan. Tik om uit te zetten.', off: 'Microfoon uit. Tik om aan te zetten.' },
+      spk: { on: 'Spraak aan. Tik om iedereen te dempen.', off: 'Spraak gedempt. Tik om te luisteren.' },
+      denied: 'De microfoon is niet toegestaan. Je kunt dit toestaan in de instellingen van je apparaat.',
+      fail: 'Spraak kon niet verbinden.',
+      mute: 'Dempen',
+      unmute: 'Dempen opheffen',
+      call: 'Bellen',
+      in: v => v.name + ' belt.',
+      calling: v => 'Bellen met ' + v.name + '.',
+      talking: v => 'In gesprek met ' + v.name + '.',
+      accept: 'Opnemen',
+      decline: 'Weigeren',
+      hang: 'Ophangen',
+      muteMe: 'Dempen',
+      end: {
+        missed: 'Geen antwoord.', missedIn: 'Gemiste oproep.', declined: 'Oproep geweigerd.', busy: 'Nu even bezet.', away: 'Niet online.',
+        no: 'Deze oproep kon niet worden gedaan.', slow: 'Wacht even voordat je opnieuw belt.', dropped: 'Het gesprek is verbroken.'
+      },
+      line: { missed: 'Gemiste oproep', missedMine: 'Geen antwoord', declined: 'Oproep geweigerd' }
+    },
+
     rep: { do: 'Melden', done: 'Gemeld' },
+
+    warn: {
+      title: 'Voor je verstuurt',
+      text: 'Of je contactgegevens deelt, bepaal je zelf, maar deel ze nooit met mensen die je niet kent. Amerikano-fiches kun je nooit kopen of verkopen. Meld iedereen die aanbiedt ze te ruilen.',
+      send: 'Toch versturen',
+      edit: 'Aanpassen',
+      note: 'Wees voorzichtig met links en contactgegevens van andere spelers. Fiches worden nooit verkocht.'
+    },
 
     gift: {
       title: 'Een cadeau sturen',
