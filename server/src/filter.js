@@ -1,5 +1,5 @@
-// Typed chat goes through here before anyone sees it: whitespace and control characters are cleaned up, then profanity,
-// slurs and contact details are masked with asterisks. Words match after case, accents and common look-alikes are
+// Typed chat goes through here before anyone sees it: whitespace and control characters are cleaned up, then profanity and
+// slurs are masked with asterisks. Contact details are not masked; contact() tells the caller to warn about them. Words match after case, accents and common look-alikes are
 // folded away, and a letter typed twice still counts. A word ending in * also matches what follows it; _ is a space.
 const WORDS = {
   en: 'fuck fucks fucked fucking fucker* fuk fuker* motherfuck* shit shits shitty shitting shithead* bullshit* bitch* bastard* asshole* dickhead* dick cunt cunts whore* slut sluts slutty nigger* nigga* faggot* fag fags retard* tranny kike kikes spic chink* wetback* pussy cocksucker* twat wanker* jackass ass arse',
@@ -59,20 +59,17 @@ const PHONE = /[(+]?(?:\p{Nd}[\s().\-/_,]{0,2})*\p{Nd}/gu;
 // 12.500.000 and 1,250,000 are amounts, not phone numbers
 const GROUPED = /^\p{Nd}{1,3}(?:[.,\s]\p{Nd}{3})+$/u;
 
+// whether the text holds a link, email address, @handle or phone number
+export function contact(text) {
+  // the ideographic full stop is only a dot to the link patterns
+  const view = text.normalize('NFKC').replace(/[。｡]/g, '.');
+  if ([EMAIL, HANDLE, LINK].some(re => view.search(re) >= 0)) return true;
+  return Array.from(view.matchAll(PHONE)).some(m => Array.from(m[0]).filter(c => /\p{Nd}/u.test(c)).length >= 8 && !GROUPED.test(m[0]));
+}
+
 // langs are the app languages of the people involved; English is always checked
 export function mask(text, langs = []) {
-  const flat = text.normalize('NFKC');
-  // the ideographic full stop is only a dot to the link patterns
-  const view = flat.replace(/[。｡]/g, '.');
-  const cs = flat.split('');
-  const star = (a, b) => {
-    for (let k = a; k < b; k++) if (/\S/u.test(cs[k])) cs[k] = '*';
-  };
-  for (const re of [EMAIL, HANDLE, LINK]) for (const m of view.matchAll(re)) star(m.index, m.index + m[0].length);
-  for (const m of view.matchAll(PHONE)) {
-    if (Array.from(m[0]).filter(c => /\p{Nd}/u.test(c)).length >= 8 && !GROUPED.test(m[0])) star(m.index, m.index + m[0].length);
-  }
-  const chars = Array.from(cs.join(''));
+  const chars = Array.from(text.normalize('NFKC'));
   // fold one character at a time so a match can be mapped back to the characters that were typed
   let s = '';
   const at = [];

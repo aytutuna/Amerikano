@@ -4,7 +4,7 @@ import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
 import { won, rel, apart } from './social.js';
-import { clean, mask } from './filter.js';
+import { clean, mask, contact } from './filter.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -515,6 +515,9 @@ export class Room extends DurableObject {
     const s = this.r.seats[i];
     const x = clean(m.x, TYPED);
     if (!this.st || !x || !s.pid || s.bot || !this.allow('t' + i)) return;
+    // contact details go out only once the sender has agreed to a warning
+    const c = contact(x);
+    if (c && m.ok !== true) return ws.readyState === 1 && ws.send(JSON.stringify({ t: 'confirm', k: 'contact' }));
     const ids = this.r.seats.filter(q => q && q.pid && !q.bot).map(q => q.pid);
     const [away, rows] = await Promise.all([apart(this.env.DB, s.pid),
       this.env.DB.prepare('SELECT id, typed, mute_until, lang FROM players WHERE id IN (' + ids.map(() => '?').join() + ')').bind(...ids).all()]);
@@ -523,14 +526,14 @@ export class Room extends DurableObject {
     if (!me || !me.typed) return this.fail(ws, 'typedoff');
     if (me.mute_until > Date.now()) return this.fail(ws, 'mute');
     for (const q of rows.results) if (!q.typed) away.add(q.id);
-    this.lines.push({ i: i, pid: s.pid, lang: me.lang, x: x });
+    this.lines.push({ i: i, pid: s.pid, lang: me.lang, x: x, c: c });
     if (this.lines.length > LINES) this.lines.shift();
     const n = this.r.n;
     // each reader gets the words masked for their own language and the sender's
     for (const w of this.socks()) {
       const at = w.deserializeAttachment().seat;
       const you = this.r.seats[at].pid;
-      if (!away.has(you)) w.send(JSON.stringify({ t: 'typed', p: (i - at + n) % n, x: mask(x, [me.lang, (rows.results.find(q => q.id === you) || {}).lang]) }));
+      if (!away.has(you)) w.send(JSON.stringify({ t: 'typed', p: (i - at + n) % n, x: mask(x, [me.lang, (rows.results.find(q => q.id === you) || {}).lang]), c: c }));
     }
   }
 
@@ -543,7 +546,7 @@ export class Room extends DurableObject {
     for (const l of this.lines) {
       // a line whose sender no longer sits in that seat is left out
       if (away.has(l.pid) || !this.r.seats[l.i] || this.r.seats[l.i].pid !== l.pid) continue;
-      ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: mask(l.x, [l.lang, me.lang]), old: true }));
+      ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: mask(l.x, [l.lang, me.lang]), c: l.c, old: true }));
     }
   }
 

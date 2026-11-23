@@ -9,6 +9,7 @@ var Social = (function () {
   let lines = [];
   let tlog = null;
   let talking = null;
+  let unsent = null;
   const asked = new Map();
 
   const fmt = n => n.toLocaleString(I18n.lang());
@@ -352,6 +353,18 @@ var Social = (function () {
     return !me || me.typed !== false;
   };
 
+  // the server found contact details in what was sent; it goes out only if the sender agrees
+  function warn(send, back) {
+    const body = node('div', 'warn');
+    body.appendChild(node('p', '', t('warn.text')));
+    Sheet.open({ kind: 'center', title: t('warn.title'), body: body, actions: [{ label: t('warn.edit'), kind: 'quiet', fn: back }, { label: t('warn.send'), kind: 'primary', fn: send }] });
+  }
+
+  S.confirm = () => {
+    const u = unsent;
+    if (u) warn(() => Net.send({ t: 'text', x: u.x, ok: true }), u.back);
+  };
+
   function logFill() {
     tlog.textContent = '';
     if (!lines.length) tlog.appendChild(node('p', 'note', t('chat.none')));
@@ -359,6 +372,7 @@ var Social = (function () {
       const p = node('p', 'ln');
       p.appendChild(node('b', '', l.name));
       p.appendChild(document.createTextNode(' ' + l.x));
+      if (l.c) p.appendChild(node('small', 'cw', t('warn.note')));
       if (!l.mine) {
         const b = button(t('rep.do'), 'quiet rep', () => report(b, { pid: l.pid, text: l.x, ctx: Net.code() }));
         p.appendChild(b);
@@ -382,7 +396,10 @@ var Social = (function () {
       const x = box.value.trim();
       if (!x) return;
       box.value = '';
-      go(x);
+      go(x, () => {
+        box.value = x;
+        box.focus();
+      });
     };
     box.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
@@ -399,7 +416,10 @@ var Social = (function () {
   function typeBox() {
     const fs = node('fieldset', 'fld');
     fs.appendChild(node('legend', '', t('chat.type')));
-    fs.appendChild(entry(x => Net.send({ t: 'text', x: x })));
+    fs.appendChild(entry((x, back) => {
+      unsent = { x: x, back: back };
+      Net.send({ t: 'text', x: x });
+    }));
     tlog = node('div', 'tlog');
     tlog.tabIndex = 0;
     tlog.setAttribute('role', 'region');
@@ -476,6 +496,7 @@ var Social = (function () {
         const l = node('p', 'ln' + (m.mine ? ' mine' : ''));
         l.appendChild(node('b', '', m.mine ? t('dm.you') : who(p.seed)));
         l.appendChild(document.createTextNode(' ' + m.text));
+        if (m.c) l.appendChild(node('small', 'cw', t('warn.note')));
         if (!m.mine) {
           const b = button(t('rep.do'), 'quiet rep', () => report(b, { pid: p.id, ctx: 'dm', mid: m.id }));
           l.appendChild(b);
@@ -500,12 +521,16 @@ var Social = (function () {
       }, () => {});
     }
 
-    body.appendChild(entry(x => {
+    body.appendChild(entry((x, back) => {
       note.textContent = '';
-      Account.call('POST', '/api/dm', { to: p.id, text: x }).then(d => {
+      const post = ok => Account.call('POST', '/api/dm', { to: p.id, text: x, ok: ok }).then(d => {
         msgs.unshift(d.message);
         draw();
-      }, e => { note.textContent = t('dm.' + ({ slow: 'slow', mute: 'mute', typedoff: 'off' }[e.message] || 'no')); });
+      }, e => {
+        if (e.message === 'contact') warn(() => post(true), back);
+        else note.textContent = t('dm.' + ({ slow: 'slow', mute: 'mute', typedoff: 'off' }[e.message] || 'no'));
+      });
+      post(false);
     }));
     body.appendChild(note);
     body.appendChild(list);
@@ -548,7 +573,7 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[m.p];
     if (!p || !typing() || S.blocked(p.pid)) return;
-    lines.push({ name: p.name, pid: p.pid, x: m.x, mine: m.p === 0 });
+    lines.push({ name: p.name, pid: p.pid, x: m.x, c: m.c, mine: m.p === 0 });
     if (lines.length > 30) lines.shift();
     if (tlog) logFill();
     if (m.old) return;

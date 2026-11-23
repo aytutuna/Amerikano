@@ -128,6 +128,7 @@ var Net = (function () {
       case 'sent': Social.sent(m); break;
       case 'said': if (App.online()) Social.said(m); break;
       case 'typed': if (App.online()) Social.typed(m); break;
+      case 'confirm': if (App.online()) Social.confirm(); break;
       case 'gifted': if (App.online()) Social.gifted(m); break;
       case 'error': fail(m); break;
     }

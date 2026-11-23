@@ -487,6 +487,14 @@ var I18n = (function () {
 
     rep: { do: 'Report', done: 'Reported' },
 
+    warn: {
+      title: 'Before you send',
+      text: 'Sharing contact details is up to you, but never share them with people you do not know. Amerikano chips can never be bought or sold. Report anyone who offers to trade them.',
+      send: 'Send anyway',
+      edit: 'Edit',
+      note: 'Be careful with links and contact details from other players. Chips are never sold.'
+    },
+
     gift: {
       title: 'Send a gift',
       note: 'A gift costs chips and nobody receives them.',
@@ -1068,6 +1076,14 @@ var I18n = (function () {
     },
 
     rep: { do: 'Şikâyet et', done: 'Şikâyet edildi' },
+
+    warn: {
+      title: 'Göndermeden önce',
+      text: 'İletişim bilgilerini paylaşmak sana kalmış, ama tanımadığın kişilerle asla paylaşma. Amerikano çipleri asla alınıp satılamaz. Çip takası öneren herkesi şikâyet et.',
+      send: 'Yine de gönder',
+      edit: 'Düzenle',
+      note: 'Diğer oyuncuların gönderdiği bağlantılara ve iletişim bilgilerine dikkat et. Çipler asla satılmaz.'
+    },
 
     gift: {
       title: 'Hediye gönder',

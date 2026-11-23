@@ -1,6 +1,6 @@
 import { verify, who, json, fail } from './account.js';
 import { rel } from './social.js';
-import { clean, mask } from './filter.js';
+import { clean, mask, contact } from './filter.js';
 
 const DAY = 86400000;
 const TEXT = 300;
@@ -23,10 +23,12 @@ async function send(env, ctx, p, request) {
   if (await rel(env.DB, p.id, b.to) !== 'friend') return fail('nodm', 403);
   const q = await who(env.DB, b.to);
   if (!q || q.typed === 0) return fail('nodm', 403);
+  // contact details are delivered only after the sender has agreed to a warning
+  if (contact(x) && b.ok !== true) return fail('contact', 409);
   const text = mask(x, [p.lang, q.lang]);
   const at = Date.now();
   const r = await env.DB.prepare('INSERT INTO messages (sender, recipient, text, at) VALUES (?, ?, ?, ?)').bind(p.id, b.to, text, at).run();
-  const m = { id: r.meta.last_row_id, text: text, at: at };
+  const m = { id: r.meta.last_row_id, text: text, c: contact(text), at: at };
   ctx.waitUntil(hub(env).dm(p.id, p.name_seed, b.to, m).catch(() => {}));
   return json({ message: Object.assign({ mine: true }, m) });
 }
@@ -40,7 +42,7 @@ async function thread(env, p, id, url) {
   const { results } = await env.DB.prepare('SELECT id, sender, text, at FROM messages WHERE ((sender = ?1 AND recipient = ?2) OR (sender = ?2 AND recipient = ?1)) AND id < ?3 ORDER BY id DESC LIMIT ?4')
     .bind(p.id, id, before, PAGE + 1).all();
   if (before === Number.MAX_SAFE_INTEGER) await env.DB.prepare('UPDATE messages SET seen = 1 WHERE recipient = ? AND sender = ? AND seen = 0').bind(p.id, id).run();
-  return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, at: r.at })) });
+  return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, c: contact(r.text), at: r.at })) });
 }
 
 // A report keeps who, what and where: a table code, dm or profile. Three different reporters, each with an account at least a day

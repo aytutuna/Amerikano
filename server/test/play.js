@@ -865,24 +865,26 @@ async function chat() {
 }
 
 async function words() {
-  const { mask, clean, typed, LANGS } = await import('../src/filter.js');
+  const { mask, clean, typed, contact, LANGS } = await import('../src/filter.js');
   for (const [from, to] of [['You are a Fuck', 'You are a ****'], ['what the sh1t', 'what the ****'], ['FUUUUCK you', '******* you'], ['ŞİKTİR git', '****** git'],
-    ['a$$hole', '*******'], ['Scheiße', '*******'], ['ПИЗДЕЦ тут', '****** тут'], ['хуй тебе', '*** тебе'], ['كسمك', '****'], ['씨발 뭐야', '** 뭐야'], ['他妈的真烦', '***真烦'],
-    ['visit www.evil.com now', 'visit ************ now'], ['mail bob@mail.com ok', 'mail ************ ok'], ['call 416-555-1234 now', 'call ************ now']]) {
+    ['a$$hole', '*******'], ['Scheiße', '*******'], ['ПИЗДЕЦ тут', '****** тут'], ['хуй тебе', '*** тебе'], ['كسمك', '****'], ['씨발 뭐야', '** 뭐야'], ['他妈的真烦', '***真烦']]) {
     assert.strictEqual(mask(from, LANGS), to, from);
   }
   for (const ok of ['I got a pass at the class', 'Scunthorpe assess classic', 'send pic', 'Amina says hi', 'as is', 'sikayet var', 'I have 500 chips and 2500', 'やくそく', 'go to the park.']) {
     assert.strictEqual(mask(ok), ok, ok);
   }
-  const stars = n => '*'.repeat(n);
-  for (const [from, to] of [['(555) 123-4567', '***** ********'], ['+90 (532) 123 45 67', '*** ***** *** ** **'], ['555/123/4567', stars(12)], ['call 416.555.1234.', 'call ' + stars(12) + '.'],
-    ['ｗｗｗ．ｅｘａｍｐｌｅ．ｃｏｍ', stars(15)], ['example。com ok', stars(11) + ' ok'], ['see foo.xyz/a', 'see ' + stars(9)], ['add @bobby now', 'add ' + stars(6) + ' now'], ['a@b.com', stars(7)], ['go to x.de now', 'go to ' + stars(4) + ' now']]) {
-    assert.strictEqual(mask(from), to, from);
+  // contact details are only flagged, never changed
+  for (const from of ['visit www.evil.com now', 'mail bob@mail.com ok', 'call 416-555-1234 now', '(555) 123-4567', '+90 (532) 123 45 67', '555/123/4567', 'call 416.555.1234.',
+    'ｗｗｗ．ｅｘａｍｐｌｅ．ｃｏｍ', 'example。com ok', 'see foo.xyz/a', 'add @bobby now', 'a@b.com', 'go to x.de now']) {
+    assert.strictEqual(contact(from), true, from);
+    assert.strictEqual(mask(from), from.normalize('NFKC'), from);
   }
-  for (const ok of ['12.500.000 chips', 'I have 1,250,000 chips', 'pay 25.000 now', 'me @ home', 'so e.g. this', 'Fukuoka', 'sık sık', 'siktir git', 'the pede']) {
-    assert.strictEqual(mask(ok), ok, ok);
+  for (const ok of ['12.500.000 chips', 'I have 1,250,000 chips', 'pay 25.000 now', 'I have 500 chips and 2500', 'me @ home', 'so e.g. this', 'go to the park.', 'sık sık']) {
+    assert.strictEqual(contact(ok), false, ok);
   }
-  assert.strictEqual(typed('f\u00adu\u2060c\ufe0fk exam\u00adple.com', 120), '**** ' + stars(11), 'format characters do not hide a word');
+  for (const ok of ['Fukuoka', 'sık sık', 'siktir git', 'the pede']) assert.strictEqual(mask(ok), ok, ok);
+  assert.strictEqual(typed('f\u00adu\u2060c\ufe0fk exam\u00adple.com', 120), '**** example.com', 'format characters do not hide a word');
+  assert.strictEqual(contact(clean('exam\u00adple\u2060.com', 120)), true, 'nor a link');
   assert.strictEqual(mask('siktir git', ['tr']), '****** git', 'a language list applies when that language is in play');
   assert.strictEqual(mask('on pede', ['pt']), 'on pede');
   assert.strictEqual(mask('on pede', ['fr']), 'on ****');
@@ -890,7 +892,7 @@ async function words() {
   assert.strictEqual(clean('  a\x00b\x07 \n\t c  ', 120), 'ab c');
   assert.strictEqual(clean('x'.repeat(200), 120).length, 120);
   assert.strictEqual(clean(5, 120), '');
-  console.log('filter: case, accents, look-alikes, repeats, links, emails and numbers masked; plain words left alone');
+  console.log('filter: case, accents, look-alikes, repeats, words masked, contact details only flagged, amounts left alone');
 }
 
 async function talk() {
@@ -919,11 +921,20 @@ async function talk() {
   assert.deepStrictEqual(heard, [], 'another table hears nothing');
   console.log('table chat: reaches the table, trimmed, cleaned and cut; nothing for other tables or empty text');
 
-  await sleep(2100);
+  await sleep(4100);
+  const tail = 'you sh1t, see www.example.com or mail me@x.org';
+  const ask = g.a.next(m => m.t === 'confirm');
+  const early = [];
+  g.b.handlers.push(m => { if (m.t === 'typed') early.push(m); });
+  g.a.send({ t: 'text', x: tail });
+  assert.strictEqual((await ask).k, 'contact', 'contact details need a yes first');
+  await sleep(300);
+  assert.deepStrictEqual(early, [], 'and nothing is delivered before it');
   const masked = line(g.b, seatA);
-  g.a.send({ t: 'text', x: 'you sh1t, see www.example.com or mail me@x.org' });
-  assert.strictEqual((await masked).x, 'you ****, see ' + '*'.repeat(15) + ' or mail ' + '*'.repeat(8));
-  console.log('table chat: filtered before it is relayed');
+  g.a.send({ t: 'text', x: tail, ok: true });
+  const shown = await masked;
+  assert.deepStrictEqual([shown.x, shown.c], ['you ****, see www.example.com or mail me@x.org', true], 'words masked, contact details kept and flagged');
+  console.log('table chat: filtered, and contact details confirmed then delivered with a flag');
 
   // a burst of 3, then one every 2 seconds; phrases have a budget of their own
   const flood = await pair(3, 3);
@@ -953,7 +964,8 @@ async function talk() {
   await sleep(400);
   assert.strictEqual(old.length, 3, 'three lines kept');
   assert(old.every(m => m.old && m.p === seatA));
-  assert.strictEqual(old[2].x, 'you ****, see ' + '*'.repeat(15) + ' or mail ' + '*'.repeat(8));
+  assert.deepStrictEqual([old[2].x, old[2].c], ['you ****, see www.example.com or mail me@x.org', true]);
+  assert.strictEqual(old[0].c, false, 'a plain line carries no flag');
   console.log('table chat: recent lines replayed on rejoin');
 
   // a block hides typed chat both ways
@@ -2169,13 +2181,19 @@ async function dms() {
   assert.deepStrictEqual([e.from, e.m.text, e.m.id], [a.id, 'hello there', r.body.message.id], 'the open app gets it through the hub');
   assert.strictEqual(e.seed, sql('SELECT name_seed FROM players WHERE id = ' + who(a))[0].name_seed);
   hb.ws.close();
-  assert.strictEqual((await dm(a, b, 'you sh1t, www.example.com')).status, 200);
+  const link = { to: b.id, text: 'you sh1t, www.example.com' };
+  const ask = await call('POST', '/api/dm', a, link);
+  assert.deepStrictEqual([ask.status, ask.body], [409, { error: 'contact' }], 'contact details need a yes first');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM messages WHERE sender = ' + who(a))[0].n, 1, 'and are not stored before it');
+  const yes = await call('POST', '/api/dm', a, Object.assign({ ok: true }, link));
+  assert.deepStrictEqual([yes.status, yes.body.message.text, yes.body.message.c], [200, 'you ****, www.example.com', true]);
   await dm(b, a, 'back at you');
   const waiting = async acc => (await call('GET', '/api/friends', acc)).body.friends.map(x => [x.id, x.unread]);
   assert.deepStrictEqual(await waiting(b), [[a.id, 2]], 'the friends list carries the unread count');
   assert.deepStrictEqual(await waiting(a), [[b.id, 1]]);
   r = await thread(b, a);
-  assert.deepStrictEqual(r.body.messages.map(m => [m.mine, m.text]), [[true, 'back at you'], [false, 'you ****, ' + '*'.repeat(15)], [false, 'hello there']], 'newest first');
+  assert.deepStrictEqual(r.body.messages.map(m => [m.mine, m.text]), [[true, 'back at you'], [false, 'you ****, www.example.com'], [false, 'hello there']], 'newest first');
+  assert.deepStrictEqual(r.body.messages.map(m => m.c), [false, true, false], 'the flag comes with the history');
   assert.strictEqual(r.body.more, false);
   assert.deepStrictEqual(await waiting(b), [[a.id, 0]], 'reading marks the conversation read');
   assert.deepStrictEqual(await waiting(a), [[b.id, 1]], 'the other side still has theirs');
