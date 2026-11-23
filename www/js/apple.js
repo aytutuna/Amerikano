@@ -3,6 +3,11 @@ var Apple = (function () {
   let sdk = null;
   let ready = null;
 
+  const LOCALES = {
+    en: 'en_US', tr: 'tr_TR', es: 'es_MX', pt: 'pt_BR', fr: 'fr_FR', it: 'it_IT', de: 'de_DE', nl: 'nl_NL', pl: 'pl_PL',
+    ru: 'ru_RU', uk: 'uk_UA', ar: 'ar_SA', hi: 'hi_IN', id: 'id_ID', ja: 'ja_JP', ko: 'ko_KR', 'zh-Hans': 'zh_CN', 'zh-Hant': 'zh_TW'
+  };
+
   const platform = () => (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || 'web';
 
   // The server hands out the raw nonce and wants the token's nonce to be its hex SHA-256. Plain JS, since
@@ -46,7 +51,7 @@ var Apple = (function () {
     if (window.AppleID) return Promise.resolve();
     sdk = sdk || new Promise((ok, no) => {
       const s = document.createElement('script');
-      s.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/' + (I18n.lang() === 'tr' ? 'tr_TR' : 'en_US') + '/appleid.auth.js';
+      s.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/' + (LOCALES[I18n.lang()] || 'en_US') + '/appleid.auth.js';
       s.onload = ok;
       s.onerror = () => { sdk = null; s.remove(); no(new Error('load')); };
       document.head.appendChild(s);
