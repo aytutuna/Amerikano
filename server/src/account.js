@@ -2,6 +2,7 @@ import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
 import { identity, refresh, revoke } from './apple.js';
 import { REGIONS, DEFAULT, regionOf } from './region.js';
+import { LANGS } from './text.js';
 
 const DAY = 86400000;
 const START = 5000;
@@ -246,7 +247,7 @@ async function device(db, p, request) {
   const now = Date.now();
   await db.batch([
     db.prepare('INSERT INTO devices (token, player, kind, lang, tz, session, created, seen) VALUES (?1, ?2, ?3, ?4, ?5, ?7, ?6, ?6) ON CONFLICT (token) DO UPDATE SET player = ?2, kind = ?3, lang = ?4, tz = ?5, session = ?7, seen = ?6')
-      .bind(token, p.id, b.kind, b.lang === 'tr' ? 'tr' : 'en', b.tz, now, p.session),
+      .bind(token, p.id, b.kind, LANGS.includes(b.lang) ? b.lang : 'en', b.tz, now, p.session),
     db.prepare('DELETE FROM devices WHERE player = ?1 AND rowid NOT IN (SELECT rowid FROM devices WHERE player = ?1 ORDER BY seen DESC, rowid DESC LIMIT ?2)').bind(p.id, DEVICES)
   ]);
 }

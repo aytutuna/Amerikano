@@ -2,6 +2,7 @@ import Names from '../../www/js/names.js';
 import { unb64, b64 } from './apple.js';
 import { reward } from './account.js';
 import { week } from './social.js';
+import more from './text.js';
 
 const DAY = 86400000;
 const TOPIC = 'com.aytutuna.amerikano';
@@ -48,6 +49,7 @@ const TEXT = {
     week: v => ['Haftalık sıralama', 'Geçen hafta ' + v.won.toLocaleString('tr') + ' çip kazandın ve sıralamada ' + v.rank + '. oldun.']
   }
 };
+Object.assign(TEXT, more);
 
 const pem = s => unb64(s.replace(/-----[A-Z ]+-----|\s/g, ''));
 

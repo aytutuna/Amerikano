@@ -2331,7 +2331,10 @@ async function push() {
   let d = devs(a);
   assert.deepStrictEqual([d.length, d[0].token, d[0].kind, d[0].lang, d[0].tz, d[0].sandbox, d[0].created === d[0].seen], [1, t1, 'apns', 'tr', 180, 0, true], 'an APNs token is kept in lower case');
   await sleep(20);
-  await reg(a, 'apns', t1, 'fr', -300);
+  await reg(a, 'apns', t1, 'es', 0);
+  assert.strictEqual(devs(a)[0].lang, 'es', 'a language with push texts is kept');
+  await sleep(20);
+  await reg(a, 'apns', t1, 'sv', -300);
   d = devs(a);
   assert.deepStrictEqual([d.length, d[0].lang, d[0].tz, d[0].seen > d[0].created], [1, 'en', -300, true], 'a refresh updates the row, an unknown language falls back to English');
   const t2 = fcmTok();
