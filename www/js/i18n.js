@@ -455,6 +455,11 @@ var I18n = (function () {
       open: 'Chat',
       phrases: 'Phrases',
       emotes: 'Emotes',
+      type: 'Message',
+      hint: 'Say something',
+      send: 'Send',
+      log: 'Messages at this table',
+      none: 'Nothing typed yet.',
       say: {
         hello: 'Hello!', luck: 'Good luck!', nice: 'Nice move!', thanks: 'Thanks!', oops: 'Oops!', hurry: 'Your turn, please.',
         wow: 'Wow!', close: 'So close!', sorry: 'Sorry!', rematch: 'Again?', well: 'Well played!', bye: 'Bye!'
@@ -1013,6 +1018,11 @@ var I18n = (function () {
       open: 'Sohbet',
       phrases: 'Sözler',
       emotes: 'İfadeler',
+      type: 'Mesaj',
+      hint: 'Bir şey yaz',
+      send: 'Gönder',
+      log: 'Bu masadaki mesajlar',
+      none: 'Henüz bir şey yazılmadı.',
       say: {
         hello: 'Merhaba!', luck: 'İyi şanslar!', nice: 'Güzel hamle!', thanks: 'Teşekkürler!', oops: 'Eyvah!', hurry: 'Sıra sende, hadi.',
         wow: 'Vay canına!', close: 'Ucu ucuna!', sorry: 'Pardon!', rematch: 'Bir daha?', well: 'Eline sağlık!', bye: 'Hoşça kal!'

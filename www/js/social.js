@@ -6,6 +6,8 @@ var Social = (function () {
   let mode = 'week';
   let late = null;
   let fade = 0;
+  let lines = [];
+  let tlog = null;
   const asked = new Map();
 
   const fmt = n => n.toLocaleString(I18n.lang());
@@ -323,9 +325,63 @@ var Social = (function () {
     S.profile(p.pid, hint, i || 0);
   };
 
+  // typed chat shows unless the player switched it off
+  const typing = () => {
+    const me = Account.me();
+    return !me || me.typed !== false;
+  };
+
+  function logFill() {
+    tlog.textContent = '';
+    if (!lines.length) tlog.appendChild(node('p', 'note', t('chat.none')));
+    for (const l of lines) {
+      const p = node('p', 'tl');
+      p.appendChild(node('b', '', l.name));
+      p.appendChild(document.createTextNode(' ' + l.x));
+      tlog.appendChild(p);
+    }
+    tlog.scrollTop = tlog.scrollHeight;
+  }
+
+  function typeBox() {
+    const fs = node('fieldset', 'fld');
+    fs.appendChild(node('legend', '', t('chat.type')));
+    const row = node('div', 'typing');
+    const box = node('input', 'txt');
+    box.type = 'text';
+    box.maxLength = 120;
+    box.autocomplete = 'off';
+    box.enterKeyHint = 'send';
+    box.placeholder = t('chat.hint');
+    box.setAttribute('aria-label', t('chat.type'));
+    const go = () => {
+      const x = box.value.trim();
+      if (!x) return;
+      Net.send({ t: 'text', x: x });
+      box.value = '';
+    };
+    box.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      go();
+    });
+    // the soft keyboard covers the lower part of the sheet
+    box.addEventListener('focus', () => setTimeout(() => box.scrollIntoView({ block: 'nearest' }), 300));
+    row.appendChild(box);
+    row.appendChild(button(t('chat.send'), 'primary', go));
+    fs.appendChild(row);
+    tlog = node('div', 'tlog');
+    tlog.tabIndex = 0;
+    tlog.setAttribute('role', 'region');
+    tlog.setAttribute('aria-label', t('chat.log'));
+    fs.appendChild(tlog);
+    logFill();
+    return fs;
+  }
+
   S.chat = () => {
     const body = node('div', 'form tray');
-    const h = Sheet.open({ kind: 'bottom', tall: true, title: t('chat.title'), body: body, actions: [{ label: t('close'), kind: 'quiet' }] });
+    const h = Sheet.open({ kind: 'bottom', tall: true, title: t('chat.title'), body: body, onClose: () => { tlog = null; }, actions: [{ label: t('close'), kind: 'quiet' }] });
     const send = k => () => {
       Net.send({ t: 'say', k: k });
       h.close();
@@ -336,6 +392,7 @@ var Social = (function () {
     for (const k of Chat.SAY) say.appendChild(button(t('chat.say.' + k), 'plain', send(k)));
     fs.appendChild(say);
     body.appendChild(fs);
+    if (typing()) body.appendChild(typeBox());
     const es = node('fieldset', 'fld');
     es.appendChild(node('legend', '', t('chat.emotes')));
     const emo = node('div', 'emos');
@@ -372,6 +429,22 @@ var Social = (function () {
     else b.textContent = what;
     pin(m.p, b, 3000);
     if (m.p) Live.say(t('chat.said', { name: p.name, what: what }));
+  };
+
+  S.fresh = () => { lines = []; };
+
+  S.typed = m => {
+    const st = App.state();
+    const p = st && st.players[m.p];
+    if (!p || !typing() || S.blocked(p.pid)) return;
+    lines.push({ name: p.name, x: m.x });
+    if (lines.length > 30) lines.shift();
+    if (tlog) logFill();
+    if (m.old) return;
+    const b = node('span', 'bub tx');
+    b.textContent = m.x;
+    pin(m.p, b, 5000);
+    if (m.p) Live.say(t('chat.said', { name: p.name, what: m.x }));
   };
 
   S.gifted = m => {

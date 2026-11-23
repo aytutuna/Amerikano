@@ -3,7 +3,8 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
-import { won, rel } from './social.js';
+import { won, rel, apart } from './social.js';
+import { typed } from './filter.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -20,6 +21,8 @@ const TALK = 4;
 const KEEP = 600000;
 const CUP_KEEP = 3 * 3600000;
 const BURST = 3;
+const LINES = 20;
+const TYPED = 120;
 const EVERY = 2000;
 const GAP = 5000;
 const ID = /^[0-9a-f]{32}$/;
@@ -78,6 +81,7 @@ export class Room extends DurableObject {
     this.k = Number(env.PACE) || 1;
     this.bucket = {};
     this.asked = {};
+    this.lines = [];
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     ctx.blockConcurrencyWhile(async () => {
       this.r = (await ctx.storage.get('r')) || null;
@@ -175,6 +179,7 @@ export class Room extends DurableObject {
     if (m.t === 'rematch') return this.rematch(ws, a.seat);
     if (m.t === 'act') return this.act(ws, a.seat, m);
     if (m.t === 'say') return this.say(a.seat, m);
+    if (m.t === 'text') return this.text(a.seat, m);
     if (m.t === 'gift') return this.gift(ws, a.seat, m);
     if (m.t === 'invite') return this.invite(ws, a.seat, m);
   }
@@ -289,6 +294,7 @@ export class Room extends DurableObject {
     this.arm();
     if (!r.over) this.report();
     if (r.open && !r.started && r.seats.every(Boolean)) this.ctx.waitUntil(this.go());
+    await this.replay(ws, i);
   }
 
   // a private room whose host starts with empty seats looks for players like a public table
@@ -501,6 +507,31 @@ export class Room extends DurableObject {
     if (!this.st || !(Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k)) || !this.allow(i)) return;
     this.cast(rot => ({ t: 'said', p: rot(i), k: m.k }));
     if (!this.r.seats[i].fake) this.chirp(this.other(i), REPLY[m.k] || ['smile', 'wink', 'cheer'], 0.25);
+  }
+
+  // Typed chat reaches the people at this table, except those who blocked the sender or were blocked by them. The last few lines
+  // are kept in memory for a player who reconnects.
+  async text(i, m) {
+    const s = this.r.seats[i];
+    const x = typed(m.x, TYPED);
+    if (!this.st || !x || !s.pid || s.bot || !this.allow('t' + i)) return;
+    const away = await apart(this.env.DB, s.pid);
+    if (!this.r) return;
+    this.lines.push({ i: i, pid: s.pid, x: x });
+    if (this.lines.length > LINES) this.lines.shift();
+    const n = this.r.n;
+    for (const w of this.socks()) {
+      const me = w.deserializeAttachment().seat;
+      if (!away.has(this.r.seats[me].pid)) w.send(JSON.stringify({ t: 'typed', p: (i - me + n) % n, x: x }));
+    }
+  }
+
+  async replay(ws, i) {
+    if (!this.lines.length) return;
+    const away = await apart(this.env.DB, this.r.seats[i].pid);
+    if (!this.r || ws.readyState !== 1) return;
+    const n = this.r.n;
+    for (const l of this.lines) if (!away.has(l.pid)) ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: l.x, old: true }));
   }
 
   // A persona now and then says something, through the same path as a player's chat.
@@ -894,6 +925,7 @@ export class Room extends DurableObject {
     this.report(true);
     for (const w of this.ctx.getWebSockets()) w.close(1000, 'closed');
     this.r = this.st = null;
+    this.lines = [];
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
     if (code) await release(this.env.DB, code).catch(() => {});

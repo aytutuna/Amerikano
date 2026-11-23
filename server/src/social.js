@@ -25,6 +25,12 @@ export async function rel(db, a, b) {
   return 'none';
 }
 
+// everyone who blocked this player or was blocked by them
+export async function apart(db, id) {
+  const { results } = await db.prepare("SELECT a, b FROM friends WHERE state = 'block' AND (a = ?1 OR b = ?1)").bind(id).all();
+  return new Set(results.map(r => r.a === id ? r.b : r.a));
+}
+
 const count = async (db, sql, id) => (await db.prepare(sql).bind(id).first()).n;
 
 const mark = r => ({ id: r.id, seed: r.name_seed, avatar: r.avatar.split(',').map(Number), level: r.level });

@@ -766,8 +766,8 @@ async function pair(n, games) {
   const b = client('/ws/' + ja.code);
   await b.ready;
   b.send({ t: 'join', auth: accB.auth });
-  await b.next(m => m.t === 'joined');
-  return { accA, accB, a, b, ja, code: ja.code };
+  const jb = await b.next(m => m.t === 'joined');
+  return { accA, accB, a, b, ja, jb, code: ja.code };
 }
 
 async function begin(g) {
@@ -878,6 +878,95 @@ async function words() {
   assert.strictEqual(clean('x'.repeat(200), 120).length, 120);
   assert.strictEqual(clean(5, 120), '');
   console.log('filter: case, accents, look-alikes, repeats, links, emails and numbers masked; plain words left alone');
+}
+
+async function talk() {
+  const g = await pair(3, 3);
+  const out = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  await begin(out);
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
+  const line = (c, from) => c.next(m => m.t === 'typed' && m.p === from);
+  const heard = [];
+  for (const c of [out.a, out.b]) c.handlers.push(m => { if (m.t === 'typed') heard.push(m); });
+  const atB = line(g.b, seatA);
+  const own = line(g.a, 0);
+  g.a.send({ t: 'text', x: '  hello\x00 there\n\n  all   ' + 'x'.repeat(200) });
+  const e = await atB;
+  assert.strictEqual(e.x.length, 120, 'cut to 120 characters');
+  assert(e.x.startsWith('hello there all x'), 'control characters dropped and whitespace collapsed: ' + e.x);
+  assert.strictEqual((await own).x, e.x, 'the sender sees it too');
+  g.a.send({ t: 'text', x: 'ok ' });
+  assert.strictEqual((await line(g.b, seatA)).x, 'ok');
+  g.a.send({ t: 'text', x: '   ' });
+  g.a.send({ t: 'text', x: 5 });
+  g.a.send({ t: 'text' });
+  await sleep(300);
+  assert.deepStrictEqual(heard, [], 'another table hears nothing');
+  console.log('table chat: reaches the table, trimmed, cleaned and cut; nothing for other tables or empty text');
+
+  await sleep(2100);
+  const masked = line(g.b, seatA);
+  g.a.send({ t: 'text', x: 'you sh1t, see www.example.com or mail me@x.org' });
+  assert.strictEqual((await masked).x, 'you ****, see ' + '*'.repeat(15) + ' or mail ' + '*'.repeat(8));
+  console.log('table chat: filtered before it is relayed');
+
+  // a burst of 3, then one every 2 seconds; phrases have a budget of their own
+  const flood = await pair(3, 3);
+  await begin(flood);
+  const got = [];
+  flood.b.handlers.push(m => { if (m.t === 'typed') got.push(m.x); });
+  for (let i = 0; i < 8; i++) flood.a.send({ t: 'text', x: 'n' + i });
+  flood.a.send({ t: 'say', k: 'hello' });
+  const said = flood.b.next(m => m.t === 'said');
+  await said;
+  await sleep(400);
+  assert.deepStrictEqual(got, ['n0', 'n1', 'n2'], 'the rate limit keeps the first three');
+  console.log('table chat: rate limited, phrases unaffected');
+  flood.a.ws.close();
+  flood.b.ws.close();
+
+  // a player who reconnects gets the recent lines back, marked old
+  const jb = g.jb;
+  g.b.ws.close();
+  await sleep(200);
+  const b2 = client('/ws/' + g.code);
+  await b2.ready;
+  const old = [];
+  b2.handlers.push(m => { if (m.t === 'typed') old.push(m); });
+  b2.send({ t: 'join', token: jb.token });
+  await b2.next(m => m.t === 'state');
+  await sleep(400);
+  assert.strictEqual(old.length, 3, 'three lines kept');
+  assert(old.every(m => m.old && m.p === seatA));
+  assert.strictEqual(old[2].x, 'you ****, see ' + '*'.repeat(15) + ' or mail ' + '*'.repeat(8));
+  console.log('table chat: recent lines replayed on rejoin');
+
+  // a block hides typed chat both ways
+  await call('POST', '/api/block/' + g.accB.id, g.accA);
+  await sleep(2100);
+  const mineA = line(g.a, 0);
+  const mineB = line(b2, 0);
+  const lost = [];
+  g.a.handlers.push(m => { if (m.t === 'typed' && m.p === seatB) lost.push(m); });
+  b2.handlers.push(m => { if (m.t === 'typed' && m.p === seatA) lost.push(m); });
+  g.a.send({ t: 'text', x: 'blocked one' });
+  b2.send({ t: 'text', x: 'blocked two' });
+  assert.strictEqual((await mineA).x, 'blocked one');
+  assert.strictEqual((await mineB).x, 'blocked two');
+  await sleep(400);
+  assert.deepStrictEqual(lost, [], 'neither side sees the other');
+  const b3 = client('/ws/' + g.code);
+  await b3.ready;
+  const again = [];
+  b3.handlers.push(m => { if (m.t === 'typed') again.push(m); });
+  b3.send({ t: 'join', token: jb.token });
+  await b3.next(m => m.t === 'state');
+  await sleep(400);
+  assert.deepStrictEqual(again.map(m => m.x), ['blocked two'], 'the replay leaves out a blocked sender');
+  console.log('table chat: a block hides typed lines both ways, live and replayed');
+  for (const c of [g.a, g.b, b2, b3, out.a, out.b]) c.ws.close();
 }
 
 async function gifts() {
@@ -2482,6 +2571,7 @@ async function push() {
   await friendRules();
   await words();
   await chat();
+  await talk();
   await gifts();
   await invites();
   await push();

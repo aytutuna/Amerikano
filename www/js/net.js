@@ -111,6 +111,7 @@ var Net = (function () {
     switch (m.t) {
       case 'joined':
         tries = 0;
+        Social.fresh();
         save({ code: m.code, token: m.token, hist: ses && ses.code === m.code ? ses.hist : [] });
         break;
       case 'room':
@@ -126,6 +127,7 @@ var Net = (function () {
         break;
       case 'sent': Social.sent(m); break;
       case 'said': if (App.online()) Social.said(m); break;
+      case 'typed': if (App.online()) Social.typed(m); break;
       case 'gifted': if (App.online()) Social.gifted(m); break;
       case 'error': fail(m); break;
     }
