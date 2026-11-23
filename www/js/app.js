@@ -824,7 +824,12 @@ var App = (function () {
     // a slow language file must not leave the screen blank: start in English and redraw when it lands
     let late = false;
     const wait = new Promise(res => setTimeout(() => { late = true; res(); }, 3000));
-    if (w) w.then(() => { if (late) A.refresh(); });
+    if (w) w.then(() => {
+      if (!late) return;
+      A.refresh();
+      Push.sync();
+      if (Account.has()) Account.refresh();
+    });
     Promise.race([Promise.resolve(w), wait]).then(start);
   });
 
