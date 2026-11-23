@@ -1067,7 +1067,7 @@ var I18n = (function () {
       no: 'Bu mesaj gönderilemedi.'
     },
 
-    rep: { do: 'Bildir', done: 'Bildirildi' },
+    rep: { do: 'Şikâyet et', done: 'Şikâyet edildi' },
 
     gift: {
       title: 'Hediye gönder',
