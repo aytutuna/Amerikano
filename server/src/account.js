@@ -118,6 +118,7 @@ function profile(p) {
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
     typed: !!p.typed,
+    voice: !!p.voice,
     lang: p.lang,
     region: p.region || DEFAULT,
     push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
@@ -260,6 +261,12 @@ async function prefs(db, p, request) {
   await db.prepare('UPDATE players SET ' + keys.map(k => 'push_' + k + ' = ?').join(', ') + ' WHERE id = ?').bind(...keys.map(k => +b[k]), p.id).run();
 }
 
+async function voiceSwitch(db, p, request) {
+  const b = await body(request);
+  if (typeof b.voice !== 'boolean') return fail('voice');
+  await db.prepare('UPDATE players SET voice = ? WHERE id = ?').bind(+b.voice, p.id).run();
+}
+
 async function typedSwitch(db, p, request) {
   const b = await body(request);
   if (typeof b.typed !== 'boolean') return fail('typed');
@@ -367,6 +374,7 @@ export async function api(request, env) {
   else if (path === '/api/push') err = await prefs(db, p, request);
   else if (path === '/api/region') err = await region(env, p, request);
   else if (path === '/api/typed') err = await typedSwitch(db, p, request);
+  else if (path === '/api/voice') err = await voiceSwitch(db, p, request);
   else if (path === '/api/lang') err = await langSwitch(db, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);

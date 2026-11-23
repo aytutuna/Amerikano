@@ -6,6 +6,7 @@
 // endpoint on 8794, and need throwaway keys in the same file:
 //   APNS_KEY (base64 pkcs8 P-256 like APPLE_KEY), APNS_KEY_ID=testkid, APNS_BASE=http://localhost:8792, APNS_SANDBOX=http://localhost:8793,
 //   FCM_BASE=http://localhost:8794, FCM_TOKEN_URL=http://localhost:8794/token,
+// The voice tests play the Realtime SFU on 8796 and need REALTIME_APP_ID=testapp, REALTIME_APP_TOKEN=testtoken and RTC_BASE=http://localhost:8796.
 //   FCM_KEY='{"client_email":"push-test@example.iam.gserviceaccount.com","private_key":"<a PEM pkcs8 RSA key, newlines as backslash n>"}'
 const assert = require('assert');
 const WebSocket = require('ws');
@@ -2894,6 +2895,176 @@ async function push() {
   f.close();
   console.log('push: nothing for personas, no hint of them in any text');
 }
+// plays the Realtime SFU on port 8796; REALTIME_APP_ID=testapp, REALTIME_APP_TOKEN=testtoken and RTC_BASE=http://localhost:8796 go in dev.vars
+function fakeSfu() {
+  const f = { log: [], sessions: {} };
+  let n = 0;
+  f.server = httpServer.createServer((req, res) => {
+    let raw = '';
+    req.on('data', d => { raw += d; });
+    req.on('end', () => {
+      const b = raw ? JSON.parse(raw) : {};
+      f.log.push({ method: req.method, path: req.url, body: b, auth: req.headers.authorization });
+      const send = (o, status) => {
+        res.writeHead(status || 200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(o));
+      };
+      const m = req.url.match(/^\/apps\/testapp\/sessions\/(new|(\w+)\/(tracks\/new|renegotiate|tracks\/close))$/);
+      if (!m) return send({ errorCode: 'not_found' }, 404);
+      if (m[1] === 'new') {
+        const id = 's' + ++n;
+        f.sessions[id] = {};
+        return send({ sessionId: id });
+      }
+      const s = f.sessions[m[2]];
+      if (!s) return send({ errorCode: 'session_error' }, 404);
+      if (m[3] === 'renegotiate') return send({});
+      if (m[3] === 'tracks/close') {
+        for (const t of b.tracks) for (const k of Object.keys(s)) if (s[k] === t.mid) delete s[k];
+        return send({ tracks: b.tracks });
+      }
+      const t = b.tracks[0];
+      if (t.location === 'local') {
+        s[t.trackName] = t.mid;
+        return send({ sessionDescription: { type: 'answer', sdp: 'answer' }, tracks: [{ mid: t.mid, trackName: t.trackName }] });
+      }
+      const from = f.sessions[t.sessionId];
+      if (!from || !(t.trackName in from)) return send({ tracks: [{ errorCode: 'not_found' }] });
+      send({ requiresImmediateRenegotiation: true, sessionDescription: { type: 'offer', sdp: 'offer' }, tracks: [{ mid: String(10 + n++), trackName: t.trackName, sessionId: t.sessionId }] });
+    });
+  }).listen(8796);
+  f.pushed = () => f.log.filter(r => r.method === 'POST' && /tracks\/new$/.test(r.path) && r.body.tracks[0].location === 'local');
+  f.pulled = () => f.log.filter(r => r.method === 'POST' && /tracks\/new$/.test(r.path) && r.body.tracks[0].location === 'remote');
+  return f;
+}
+
+const SDP = 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\n';
+
+async function voice(f) {
+  const vx = (acc, g, op, body) => call('POST', '/api/voice/' + op, acc, Object.assign({ scope: 'table', code: g.code }, body));
+  const g = await pair(3, 3);
+  const [sa] = await begin(g);
+  const h = await pair(3, 3);
+  await begin(h);
+  const o = await guest();
+  const heard = { a: [], b: [] };
+  g.a.handlers.push(m => { if (m.t === 'voice') heard.a.push(m); });
+  g.b.handlers.push(m => { if (m.t === 'voice') heard.b.push(m); });
+  const A = g.accA.id;
+  const B = g.accB.id;
+  const bots = sa.players.filter(p => p.pid && p.pid !== A && p.pid !== B).map(p => p.pid);
+  assert.strictEqual(bots.length, 1);
+
+  assert.strictEqual((await call('POST', '/api/voice/who', null, { scope: 'table', code: g.code })).status, 401);
+  assert.strictEqual((await call('GET', '/api/voice/who', g.accA)).status, 404);
+  assert.strictEqual((await call('POST', '/api/voice/who', g.accA, { scope: 'nowhere' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/voice/nope', g.accA, { scope: 'table', code: g.code })).status, 404);
+  assert.strictEqual((await vx(o, g, 'who')).status, 403, 'someone not seated here has no voice here');
+  assert.strictEqual((await vx(o, g, 'mic', { sdp: SDP, mid: '0' })).status, 403);
+
+  assert.strictEqual((await vx(g.accA, g, 'mic', { sdp: 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n', mid: '0' })).status, 400, 'only audio');
+  assert.strictEqual((await vx(g.accA, g, 'mic', { sdp: SDP + 'm=audio 9 RTP/AVP 0\r\n', mid: '0' })).status, 400, 'one track');
+  assert.strictEqual((await vx(g.accA, g, 'mic', { sdp: SDP, mid: 'x' })).status, 400);
+  assert.strictEqual(f.pushed().length, 0);
+  const on = await vx(g.accA, g, 'mic', { sdp: SDP, mid: '0' });
+  assert.deepStrictEqual([on.status, on.body], [200, { sdp: 'answer' }]);
+  await sleep(200);
+  assert.deepStrictEqual(heard.b, [{ t: 'voice', pid: A, on: true }], 'the table is told, the speaker is not');
+  assert.deepStrictEqual(heard.a, []);
+  const pub = f.pushed()[0];
+  const name = pub.body.tracks[0].trackName;
+  assert.strictEqual(pub.auth, 'Bearer testtoken');
+  assert(/^[0-9a-f]{32}$/.test(name), 'the track name is made by the server');
+  assert(!JSON.stringify(on.body).includes(name), 'and never sent to the client');
+
+  assert.deepStrictEqual((await vx(g.accB, g, 'who')).body, { pids: [A] });
+  assert.deepStrictEqual((await vx(g.accA, g, 'who')).body, { pids: [] });
+  assert.strictEqual((await vx(o, g, 'pull', { pid: A })).status, 403, 'an outsider cannot pull a table track');
+  assert.strictEqual((await vx(g.accA, g, 'pull', { pid: A })).status, 404, 'nor can anyone pull their own');
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: bots[0], fresh: true })).status, 404, 'a bot has no track');
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: 'zz' })).status, 404);
+  assert.strictEqual(f.pulled().length, 0);
+  const pull = await vx(g.accB, g, 'pull', { pid: A, fresh: true });
+  assert.deepStrictEqual([pull.status, pull.body.sdp, pull.body.pid], [200, 'offer', A]);
+  const got = f.pulled()[0];
+  assert.deepStrictEqual([got.body.tracks[0].sessionId, got.body.tracks[0].trackName], [pub.path.split('/')[4], name], 'the pull names what was published');
+  assert.notStrictEqual(got.path.split('/')[4], pub.path.split('/')[4], 'through a session of its own');
+  assert.strictEqual((await vx(g.accB, g, 'answer', { sdp: 'x' })).status, 200);
+  assert(f.log.some(r => r.method === 'PUT' && /renegotiate$/.test(r.path) && r.body.sessionDescription.type === 'answer'));
+  assert.strictEqual((await vx(g.accA, g, 'answer', { sdp: 'x' })).status, 400, 'no listening session to answer for');
+
+  // another table has its own tracks
+  const A2 = h.accA.id;
+  assert.strictEqual((await vx(h.accA, h, 'mic', { sdp: SDP, mid: '0' })).status, 200);
+  assert.strictEqual(new Set(f.pushed().map(r => r.body.tracks[0].trackName)).size, 2, 'every track has its own name');
+  assert.strictEqual((await vx(g.accB, h, 'pull', { pid: A2 })).status, 403, 'a player of one table cannot pull at another');
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: A2 })).status, 404, 'nor reach it by asking for the player here');
+  assert.strictEqual((await vx(h.accB, h, 'pull', { pid: A })).status, 404);
+  assert.deepStrictEqual((await vx(h.accB, h, 'who')).body, { pids: [A2] });
+
+  // voice off, both ways
+  assert.strictEqual((await call('POST', '/api/voice', g.accB, { voice: 'no' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/voice', g.accB, { voice: false })).body.voice, false);
+  assert.strictEqual((await call('GET', '/api/me', g.accA)).body.voice, true, 'on by default');
+  assert.strictEqual((await vx(g.accB, g, 'who')).status, 403, 'a player with voice off cannot listen');
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: A })).status, 403);
+  assert.strictEqual((await vx(g.accB, g, 'mic', { sdp: SDP, mid: '0' })).status, 403, 'or talk');
+  await call('POST', '/api/voice', g.accA, { voice: false });
+  await call('POST', '/api/voice', g.accB, { voice: true });
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: A })).status, 404, 'and nobody hears them');
+  assert.deepStrictEqual((await vx(g.accB, g, 'who')).body, { pids: [] });
+  await call('POST', '/api/voice', g.accA, { voice: true });
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: A })).status, 200);
+
+  // blocked, either way round
+  assert.strictEqual((await vx(g.accB, g, 'mic', { sdp: SDP, mid: '0' })).status, 200);
+  await sleep(200);
+  assert.deepStrictEqual(heard.a.pop(), { t: 'voice', pid: B, on: true });
+  await call('POST', '/api/block/' + B, g.accA);
+  assert.strictEqual((await vx(g.accA, g, 'pull', { pid: B })).status, 404, 'a player does not hear one they blocked');
+  assert.strictEqual((await vx(g.accB, g, 'pull', { pid: A })).status, 404, 'nor one who blocked them');
+  assert.deepStrictEqual([(await vx(g.accA, g, 'who')).body, (await vx(g.accB, g, 'who')).body], [{ pids: [] }, { pids: [] }]);
+  await vx(g.accB, g, 'stop');
+  await vx(g.accB, g, 'mic', { sdp: SDP, mid: '0' });
+  await sleep(200);
+  assert.deepStrictEqual(heard.a, [], 'and is not told when they talk');
+  await call('DELETE', '/api/block/' + B, g.accA);
+  assert.strictEqual((await vx(g.accA, g, 'pull', { pid: B })).status, 200);
+
+  // the proxy is rate limited per player
+  const codes = [];
+  for (let i = 0; i < 40; i++) codes.push((await vx(h.accA, h, 'who')).status);
+  assert(codes.includes(429), 'a flood of requests is refused');
+  assert.strictEqual(codes[0], 200);
+  assert.deepStrictEqual((await vx(h.accB, h, 'who')).body, { pids: [A2] }, 'one player flooding does not touch another');
+
+  // leaving the table ends the voice
+  const before = f.log.length;
+  g.a.ws.close();
+  await sleep(300);
+  assert.deepStrictEqual(heard.b.pop(), { t: 'voice', pid: A, on: false });
+  assert(f.log.slice(before).some(r => /tracks\/close$/.test(r.path) && r.body.force === true), 'the track is closed at the SFU');
+  assert.deepStrictEqual((await vx(g.accB, g, 'who')).body, { pids: [] });
+  console.log('voice: tablemates only, names made by the server, blocked and voice-off kept apart, rate limited');
+
+  // the hub says voice is available; without an app id it is off and silent
+  const hi = client('/ws/hub');
+  await hi.ready;
+  const hello = hi.next(m => m.t === 'hub');
+  hi.send({ t: 'hello', auth: o.auth });
+  assert.strictEqual((await hello).voice, true);
+  hi.ws.close();
+  const { on: live, voice: api } = await import('../src/voice.js');
+  assert.strictEqual(live({ REALTIME_APP_ID: '' }), false);
+  assert.strictEqual(live({}), false);
+  const off = await api(new Request('http://x/api/voice/who', { method: 'POST', body: '{}' }), { REALTIME_APP_ID: '' });
+  assert.strictEqual(off.status, 404);
+  console.log('voice: off without an app id');
+  g.b.ws.close();
+  h.a.ws.close();
+  h.b.ws.close();
+}
+
 (async () => {
   schema();
   await math();
@@ -2917,6 +3088,9 @@ async function push() {
   await invites();
   await push();
   await dms();
+  const sfu = fakeSfu();
+  await voice(sfu);
+  sfu.server.close();
   await purge();
   await typedOff();
   await reports();

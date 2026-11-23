@@ -6,6 +6,7 @@ import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } fr
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
+import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -82,11 +83,14 @@ export class Room extends DurableObject {
     this.bucket = {};
     this.asked = {};
     this.lines = [];
+    this.vx = {};
+    this.limit = new Map();
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     ctx.blockConcurrencyWhile(async () => {
       this.r = (await ctx.storage.get('r')) || null;
       const s = await ctx.storage.get('st');
       this.st = s ? Game.load(s) : null;
+      this.vx = (await ctx.storage.get('vx')) || {};
       if (this.r && this.r.over && !this.r.paid) ctx.storage.setAlarm(Date.now());
     });
   }
@@ -431,6 +435,7 @@ export class Room extends DurableObject {
 
   leave(ws, a) {
     const r = this.r;
+    if (r.seats[a.seat]) this.hush(r.seats[a.seat].pid);
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
       const s = r.seats[a.seat];
@@ -449,7 +454,10 @@ export class Room extends DurableObject {
     if (!r) return;
     const i = ws.deserializeAttachment().seat;
     const rest = this.socks().filter(w => w !== ws);
-    if (i >= 0 && !rest.some(w => w.deserializeAttachment().seat === i)) r.seats[i].gone = Date.now();
+    if (i >= 0 && !rest.some(w => w.deserializeAttachment().seat === i)) {
+      r.seats[i].gone = Date.now();
+      this.hush(r.seats[i].pid);
+    }
     if (!rest.length && !r.over) r.dead = Date.now() + KEEP * this.k;
     if (this.pooled() && !r.started && this.lonely()) return this.ctx.waitUntil(this.wipe());
     this.save();
@@ -589,6 +597,39 @@ export class Room extends DurableObject {
     this.send();
     this.cast(rot => ({ t: 'gifted', from: rot(i), to: rot(to), k: g.k }));
     this.chirp(to, ['thanks', 'smile', 'love'], 0.6);
+  }
+
+  // Voice at the table goes through the Worker's SFU proxy: only people seated here with voice on can publish or listen, and nobody
+  // hears a player who blocked them or was blocked by them.
+  async vox(pid, op, b) {
+    const seated = q => !!this.r && this.r.seats.some(s => s && s.pid === q && !s.bot);
+    if (!on(this.env) || !seated(pid)) return { status: 403, body: { error: 'seat' } };
+    if (slow(this.limit, pid)) return { status: 429, body: { error: 'slow' } };
+    const p = await player(this.env.DB, pid);
+    if (!p || !p.voice || !seated(pid)) return { status: 403, body: { error: 'off' } };
+    const res = await act(this.env, this.vx, op, pid, b, async q => seated(q) && await may(this.env.DB, pid, q));
+    if (this.r) this.ctx.storage.put('vx', this.vx);
+    if (res.status === 200 && (op === 'mic' || op === 'stop')) await this.voiced(pid, op === 'mic');
+    return res;
+  }
+
+  // tells the table that a player started or stopped talking, except those who must not hear them
+  async voiced(pid, live) {
+    const away = await apart(this.env.DB, pid);
+    if (!this.r) return;
+    for (const w of this.socks()) {
+      const q = this.r.seats[w.deserializeAttachment().seat];
+      if (q && q.pid !== pid && !away.has(q.pid)) w.send(JSON.stringify({ t: 'voice', pid: pid, on: live }));
+    }
+  }
+
+  // a player who left or lost the connection no longer talks
+  hush(pid) {
+    const e = this.vx[pid];
+    if (!e) return;
+    delete this.vx[pid];
+    this.ctx.storage.put('vx', this.vx);
+    this.ctx.waitUntil(Promise.all([shut(this.env, e), this.voiced(pid, false)]).catch(() => {}));
   }
 
   // the Hub knows who is in the lobby, so the table asks it to pass the invitation on
@@ -943,6 +984,7 @@ export class Room extends DurableObject {
     for (const w of this.ctx.getWebSockets()) w.close(1000, 'closed');
     this.r = this.st = null;
     this.lines = [];
+    this.vx = {};
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
     if (code) await release(this.env.DB, code).catch(() => {});

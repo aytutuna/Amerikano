@@ -5,6 +5,7 @@ import { rel, won } from './social.js';
 import { claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
 import { DEFAULT } from './region.js';
+import { on } from './voice.js';
 
 const LIFE = 3 * 3600000;
 const MAX = 4000;
@@ -114,7 +115,7 @@ export class Hub extends DurableObject {
         w.close(4000, 'replaced');
       }
       ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
-      this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY });
+      this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, voice: on(this.env) });
       this.put(ws, this.counts(reg(p)));
       const f = this.forming(p.id);
       if (f) this.put(ws, this.state(f));
