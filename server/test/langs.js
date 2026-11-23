@@ -22,6 +22,9 @@ function flat(o, pre, out) {
 
 const en = flat(S.en, '', {});
 const codes = process.argv.length > 2 ? process.argv.slice(2) : fs.readdirSync(path.join(www, 'lang')).map(f => f.replace('.js', ''));
+const push = fs.readFileSync(path.join(__dirname, '../src/push.js'), 'utf8');
+const pushKeys = push.slice(push.indexOf('  en: {'), push.indexOf('  tr: {')).match(/^ {4}(\w+):/gm).map(k => k.trim().slice(0, -1));
+const registry = fs.readFileSync(path.join(__dirname, '../src/text.js'), 'utf8');
 let bad = 0;
 
 for (const c of codes) {
@@ -50,7 +53,15 @@ for (const c of codes) {
     }
     if (long.length > 26) out.push('long name: ' + long);
   }
-  if (!fs.existsSync(path.join(__dirname, '../src/text', c + '.js'))) out.push('no server/src/text/' + c + '.js');
+  if (!vm.runInContext('I18n.codes', cx).includes(c)) out.push('not in CODES in i18n.js');
+  const file = path.join(__dirname, '../src/text', c + '.js');
+  if (!fs.existsSync(file)) out.push('no server/src/text/' + c + '.js');
+  else {
+    const src = fs.readFileSync(file, 'utf8');
+    for (const k of pushKeys) if (!src.includes('  ' + k + ': ')) out.push('push text lacks ' + k);
+    if (!src.includes('names/' + c + '.js')) out.push('push text does not load names/' + c + '.js');
+    if (!registry.includes("'./text/" + c + ".js'")) out.push('not registered in server/src/text.js');
+  }
   console.log(c + ': ' + (out.length ? out.length + ' to look at' : 'complete'));
   for (const l of out) console.log('  ' + l);
   bad += out.length;

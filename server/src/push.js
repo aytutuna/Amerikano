@@ -175,7 +175,13 @@ export async function ring(env, from, to, k, v) {
 export async function send(env, ds, k, v) {
   const spec = KIND[k];
   const tap = spec.tap(v);
-  const done = await Promise.all(ds.map(d => (d.kind === 'apns' ? viaApns : viaFcm)(env, d, (TEXT[d.lang] || TEXT.en)[k](v), tap, spec.ttl).catch(() => false)));
+  const done = await Promise.all(ds.map(async d => {
+    try {
+      return await (d.kind === 'apns' ? viaApns : viaFcm)(env, d, ((TEXT[d.lang] || {})[k] || TEXT.en[k])(v), tap, spec.ttl);
+    } catch (e) {
+      return false;
+    }
+  }));
   return done.filter(Boolean).length;
 }
 
