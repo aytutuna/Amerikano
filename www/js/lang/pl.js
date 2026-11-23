@@ -131,7 +131,7 @@
       broke: 'Masz za mało żetonów na ten prezent.',
       blocked: 'Nie możesz wysłać prezentu temu graczowi.',
       mute: 'Na razie nie możesz pisać wiadomości.',
-      typedoff: 'Czat pisany jest wyłączony. Włączysz go w ustawieniach.',
+      typedoff: 'Czat tekstowy jest wyłączony. Włączysz go w ustawieniach.',
       other: 'Nie udało się.'
     },
 
@@ -213,8 +213,10 @@
       region: 'Region',
       reg: { am: 'Ameryka', eu: 'Europa', tr: 'Turcja', mea: 'Bliski Wschód i Afryka', ap: 'Azja i Pacyfik' },
       regionNote: 'Szybka gra, stoły publiczne i turnieje łączą cię z graczami z twojego regionu. Znajomi i stoły prywatne działają wszędzie.',
-      typed: 'Czat pisany',
+      typed: 'Czat tekstowy',
       typedNote: 'Pokazuje, co inni piszą przy stołach, oraz prywatne wiadomości od znajomych. Frazy i emotikony działają zawsze.',
+      voice: 'Czat głosowy',
+      voiceNote: 'Słyszysz innych graczy przy stołach i w rozmowach, a ty mówisz przez mikrofon. Po wyłączeniu czat głosowy nie działa w ogóle.',
       sound: 'Dźwięk',
       haptics: 'Wibracje',
       fourc: 'Cztery kolory',
@@ -494,11 +496,41 @@
       new: v => v.name + ' wysyła ci wiadomość.',
       slow: 'Trochę wolniej, proszę.',
       mute: 'Na razie nie możesz pisać wiadomości.',
-      off: 'Czat pisany jest wyłączony. Włączysz go w ustawieniach.',
+      off: 'Czat tekstowy jest wyłączony. Włączysz go w ustawieniach.',
       no: 'Nie udało się wysłać tej wiadomości.'
     },
 
+    voice: {
+      mic: { on: 'Mikrofon włączony. Dotknij, aby wyłączyć.', off: 'Mikrofon wyłączony. Dotknij, aby włączyć.' },
+      spk: { on: 'Głos włączony. Dotknij, aby wyciszyć wszystkich.', off: 'Głos wyciszony. Dotknij, aby słuchać.' },
+      denied: 'Brak zgody na mikrofon. Możesz jej udzielić w ustawieniach urządzenia.',
+      fail: 'Nie udało się połączyć czatu głosowego.',
+      mute: 'Wycisz głos',
+      unmute: 'Włącz głos',
+      call: 'Zadzwoń',
+      in: v => v.name + ' dzwoni.',
+      calling: v => 'Dzwonisz do gracza ' + v.name + '.',
+      talking: v => 'Rozmowa z graczem ' + v.name + '.',
+      accept: 'Odbierz',
+      decline: 'Odrzuć',
+      hang: 'Rozłącz',
+      muteMe: 'Wycisz',
+      end: {
+        missed: 'Bez odpowiedzi.', missedIn: 'Nieodebrane połączenie.', declined: 'Połączenie odrzucone.', busy: 'Rozmówca jest zajęty.', away: 'Gracz jest offline.',
+        no: 'Nie można wykonać tego połączenia.', slow: 'Poczekaj chwilę przed ponownym dzwonieniem.', dropped: 'Połączenie zostało przerwane.'
+      },
+      line: { missed: 'Nieodebrane połączenie', missedMine: 'Bez odpowiedzi', declined: 'Połączenie odrzucone' }
+    },
+
     rep: { do: 'Zgłoś', done: 'Zgłoszono' },
+
+    warn: {
+      title: 'Zanim wyślesz',
+      text: 'To, czy podasz dane kontaktowe, zależy od ciebie, ale nigdy nie podawaj ich osobom, których nie znasz. Żetonów Amerikano nie można kupić ani sprzedać. Zgłoś każdego, kto proponuje ich wymianę.',
+      send: 'Wyślij mimo to',
+      edit: 'Edytuj',
+      note: 'Uważaj na linki i dane kontaktowe od innych graczy. Żetony nigdy nie są sprzedawane.'
+    },
 
     gift: {
       title: 'Wyślij prezent',
