@@ -358,7 +358,7 @@
         opts: 'Queste impostazioni di partita non sono consentite.',
         join: 'Entra prima in una sala.',
         lost: 'Impossibile connettersi. Controlla la connessione e riprova.',
-        replaced: 'Hai aperto questa partita da un’altra finestra.',
+        replaced: 'Sei entrato in questa partita da un’altra finestra.',
         ended: 'La partita è finita.',
         other: 'Non ha funzionato.'
       }
@@ -371,7 +371,7 @@
       pick: 'Scegli una sala',
       finding: 'Cerco giocatori',
       all: 'Vedi tutto',
-      quickAt: v => 'Ti siede a un tavolo da ' + v.n,
+      quickAt: v => 'Ti mette a un tavolo da ' + v.n,
       friendsNote: 'Crea un tavolo o inserisci un codice',
       quick: 'Partita veloce',
       fill: 'La partita inizia appena tutti i posti sono occupati.',
