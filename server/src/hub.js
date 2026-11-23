@@ -1,9 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
-import { freeCode } from './room.js';
+import { freeCode, stub } from './room.js';
 import { verify, player, seat, credit, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
 import { claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
+import { DEFAULT } from './region.js';
 
 const LIFE = 3 * 3600000;
 const MAX = 4000;
@@ -29,6 +30,8 @@ function shuffle(a) {
 
 // a public table, or a private one whose host opened its empty seats
 const pool = t => t.pub || t.open;
+const reg = p => p.region || DEFAULT;
+const slot = (r, buy) => r + ':' + buy;
 const people = (tables, stake, fast) => tables.filter(t => pool(t) && t.stake === stake && !!t.fast === fast).reduce((n, t) => n + t.seats.filter(Boolean).length, 0);
 
 // One instance for everyone. Every open app keeps a socket here, so it knows where each player is:
@@ -38,12 +41,19 @@ export class Hub extends DurableObject {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.bucket = new WeakMap();
-    this.rooms = '';
+    this.rooms = {};
     this.k = Number(env.PACE) || 1;
     this.hello = Math.ceil(HELLO * this.k);
     ctx.blockConcurrencyWhile(async () => {
       this.tables = (await ctx.storage.get('tables')) || {};
       this.cups = (await ctx.storage.get('cups')) || { form: {}, run: {} };
+      // forms made before regions were keyed by the buy-in alone
+      for (const [k, f] of Object.entries(this.cups.form)) {
+        if (f.region) continue;
+        delete this.cups.form[k];
+        f.region = DEFAULT;
+        this.cups.form[slot(f.region, f.buy)] = f;
+      }
     });
   }
 
@@ -100,9 +110,9 @@ export class Hub extends DurableObject {
         w.send(JSON.stringify({ t: 'error', k: 'replaced' }));
         w.close(4000, 'replaced');
       }
-      ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, at: m.at === 'training' ? 'training' : 'lobby' });
+      ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
       ws.send(JSON.stringify({ t: 'hub', stakes: STAKES, entry: ENTRY }));
-      ws.send(JSON.stringify(this.counts()));
+      ws.send(JSON.stringify(this.counts(reg(p))));
       const f = this.forming(p.id);
       if (f) ws.send(JSON.stringify(this.state(f)));
       else if (!this.inCup(p.id)) ws.send(JSON.stringify({ t: 'cup', buy: 0 }));
@@ -169,7 +179,18 @@ export class Hub extends DurableObject {
   }
 
   room(code) {
-    return this.env.ROOM.get(this.env.ROOM.idFromName(code));
+    return stub(this.env.ROOM, code);
+  }
+
+  // the account changed its region: its sockets follow, tables and tournaments it is in stay as they are
+  move(pid, r) {
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (w.readyState !== 1 || a.pid !== pid) continue;
+      w.serializeAttachment(Object.assign({}, a, { region: r }));
+      w.send(JSON.stringify(this.counts(r)));
+    }
+    this.tell();
   }
 
   // Where each of these players is; the ones who are offline are left out.
@@ -233,14 +254,14 @@ export class Hub extends DurableObject {
     return Object.entries(this.tables).filter(([, t]) => pool(t) && !t.started && t.seats.some(x => !x));
   }
 
-  list(stake, fast) {
-    return this.open().filter(([, t]) => t.stake === stake && !!t.fast === fast).map(([code, t]) => ({ code: code, seats: t.seats }));
+  list(stake, fast, r) {
+    return this.open().filter(([, t]) => t.region === r && t.stake === stake && !!t.fast === fast).map(([code, t]) => ({ code: code, seats: t.seats }));
   }
 
   // Seated people count too, and a table fills its empty seats on its own, so these include those.
-  counts() {
-    const all = Object.values(this.tables);
-    const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid);
+  counts(r) {
+    const all = Object.values(this.tables).filter(t => t.region === r);
+    const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().region === r);
     const out = { t: 'rooms', n: {}, f: {} };
     for (const s of STAKES) {
       const here = socks.map(w => w.deserializeAttachment()).filter(a => a.stake === s);
@@ -252,14 +273,14 @@ export class Hub extends DurableObject {
 
   tell() {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid);
-    const n = JSON.stringify(this.counts());
-    const same = n === this.rooms;
-    this.rooms = n;
+    const now = {};
     for (const w of socks) {
-      const { stake, fast } = w.deserializeAttachment();
-      if (!same) w.send(n);
-      if (stake) w.send(JSON.stringify({ t: 'tables', stake: stake, fast: !!fast, tables: this.list(stake, !!fast) }));
+      const { stake, fast, region } = w.deserializeAttachment();
+      const n = now[region] || (now[region] = JSON.stringify(this.counts(region)));
+      if (n !== this.rooms[region]) w.send(n);
+      if (stake) w.send(JSON.stringify({ t: 'tables', stake: stake, fast: !!fast, tables: this.list(stake, !!fast, region) }));
     }
+    this.rooms = now;
   }
 
   // whether the account holds a seat at a pool table other than this one, or is in a tournament
@@ -302,18 +323,20 @@ export class Hub extends DurableObject {
   // the open table of the room with the most people, real ones first, else a new one
   async quick(ws, pid, stake, fast) {
     if (!STAKES.includes(stake)) return;
-    if (!await this.afford(ws, pid, stake)) return;
+    const p = await this.afford(ws, pid, stake);
+    if (!p) return;
+    const r = reg(p);
     const fill = t => t.seats.filter(Boolean).length;
     const real = t => t.pids.filter(Boolean).length;
-    const open = this.open().filter(([, t]) => t.stake === stake && !!t.fast === fast).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
+    const open = this.open().filter(([, t]) => t.region === r && t.stake === stake && !!t.fast === fast).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
     for (const [code] of open) {
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
     }
     for (let i = 0; i < 3; i++) {
-      const code = await freeCode(this.env.ROOM);
+      const code = await freeCode(this.env.ROOM, r);
       if (!code) break;
-      if (!await this.room(code).openTable(code, stake, fast)) continue;
+      if (!await this.room(code).openTable(code, stake, fast, r)) continue;
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
     }
@@ -357,7 +380,8 @@ export class Hub extends DurableObject {
     if (!p) return this.refuse(ws, 'auth');
     const k = p.chips < buy ? 'poor' : this.holds(pid) ? 'busy' : null;
     if (k) return ws.send(JSON.stringify({ t: 'error', k: k }));
-    const g = this.cups.form[buy] || (this.cups.form[buy] = { id: crypto.randomUUID(), buy: buy, hs: [], ps: [], due: now + WAIT * this.k, next: now + between(JOIN, 2 * JOIN) * this.k });
+    const r = reg(p);
+    const g = this.cups.form[slot(r, buy)] || (this.cups.form[slot(r, buy)] = { id: crypto.randomUUID(), buy: buy, region: r, hs: [], ps: [], due: now + WAIT * this.k, next: now + between(JOIN, 2 * JOIN) * this.k });
     // a form that is full is waiting to start
     if (g.hs.length + g.ps.length >= CUP) return ws.send(JSON.stringify({ t: 'error', k: 'starting' }));
     if (!g.hs.length) {
@@ -401,7 +425,7 @@ export class Hub extends DurableObject {
     for (const f of Object.values(this.cups.form)) {
       if (!f.hs.length) {
         if (f.drop > Date.now()) continue;
-        delete this.cups.form[f.buy];
+        delete this.cups.form[slot(f.region, f.buy)];
         this.save();
         await release(this.env.DB, f.id);
         continue;
@@ -415,7 +439,7 @@ export class Hub extends DurableObject {
       }
       f.next = Date.now() + (Date.now() >= f.due ? between(200, 900) : between(1500, 5000)) * this.k;
       const p = await this.persona(f, [...f.hs, ...f.ps]);
-      if (this.cups.form[f.buy] !== f) {
+      if (this.cups.form[slot(f.region, f.buy)] !== f) {
         await giveBack(this.env.DB, p.pid);
         continue;
       }
@@ -443,15 +467,15 @@ export class Hub extends DurableObject {
         }
       }
       if (!hs.length) {
-        delete this.cups.form[f.buy];
+        delete this.cups.form[slot(f.region, f.buy)];
         this.save();
         return release(db, f.id);
       }
       while (hs.length + f.ps.length < CUP) f.ps.push(await this.persona(f, [...hs, ...f.ps]));
       const mem = shuffle([...hs, ...f.ps]);
-      c = { id: f.id, buy: f.buy, mem: mem, held: hs.map(h => h.pid), tabs: {}, plan: {}, done: {}, fails: 0, at: Date.now() };
+      c = { id: f.id, buy: f.buy, region: f.region, mem: mem, held: hs.map(h => h.pid), tabs: {}, plan: {}, done: {}, fails: 0, at: Date.now() };
       this.cups.run[c.id] = c;
-      delete this.cups.form[f.buy];
+      delete this.cups.form[slot(f.region, f.buy)];
       this.save();
     } catch (e) {
       f.next = Date.now() + RETRY * this.k;
@@ -476,7 +500,7 @@ export class Hub extends DurableObject {
   // Chooses the table for these four and writes it down before it is opened, so a restart can finish the job.
   async plan(c, round, mem) {
     let code;
-    do code = await freeCode(this.env.ROOM); while (code && c.tabs[code]);
+    do code = await freeCode(this.env.ROOM, c.region); while (code && c.tabs[code]);
     if (!code) throw new Error('no table');
     c.tabs[code] = round;
     c.plan[code] = mem.map(m => m.pid);

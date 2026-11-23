@@ -1,6 +1,7 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
 import { identity, refresh, revoke } from './apple.js';
+import { REGIONS, DEFAULT, regionOf } from './region.js';
 
 const DAY = 86400000;
 const START = 5000;
@@ -115,6 +116,7 @@ function profile(p) {
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
+    region: p.region || DEFAULT,
     push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
   };
 }
@@ -255,6 +257,20 @@ async function prefs(db, p, request) {
   await db.prepare('UPDATE players SET ' + keys.map(k => 'push_' + k + ' = ?').join(', ') + ' WHERE id = ?').bind(...keys.map(k => +b[k]), p.id).run();
 }
 
+// from the country Cloudflare saw; the dev server (PACE set) has no real one, so the tests pin it by header
+function guess(env, request) {
+  const h = request.headers;
+  if (env.PACE) return h.get('X-Country') ? regionOf(h.get('X-Country'), h.get('X-Continent')) : DEFAULT;
+  return regionOf(request.cf && request.cf.country, request.cf && request.cf.continent);
+}
+
+async function region(env, p, request) {
+  const b = await body(request);
+  if (!REGIONS.includes(b.region)) return fail('region');
+  await env.DB.prepare('UPDATE players SET region = ? WHERE id = ?').bind(b.region, p.id).run();
+  await env.HUB.get(env.HUB.idFromName('h')).move(p.id, b.region).catch(() => {});
+}
+
 async function bailout(db, p) {
   if (p.chips >= MIN_ROOM) return fail('rich', 409);
   const now = Date.now();
@@ -287,6 +303,10 @@ export async function api(request, env) {
   if (path === '/api/apple' && method === 'POST') return signIn(env, request);
   const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
   if (!p) return fail('auth', 401);
+  if (!p.region) {
+    p.region = guess(env, request);
+    await db.prepare('UPDATE players SET region = ?1 WHERE id = ?2 AND region IS NULL').bind(p.region, p.id).run();
+  }
   if (path === '/api/me' && method === 'DELETE') {
     let token = p.apple_refresh;
     let client = p.apple_client;
@@ -326,6 +346,7 @@ export async function api(request, env) {
   else if (path === '/api/bailout') err = await bailout(db, p);
   else if (path === '/api/device') err = await device(db, p, request);
   else if (path === '/api/push') err = await prefs(db, p, request);
+  else if (path === '/api/region') err = await region(env, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);
   if (err) return err;

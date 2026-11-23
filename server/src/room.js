@@ -5,6 +5,7 @@ import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
 import { won, rel } from './social.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
+import { hint, LEADS, PRIVATE, DEFAULT } from './region.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
@@ -23,11 +24,15 @@ const EVERY = 2000;
 const GAP = 5000;
 const ID = /^[0-9a-f]{32}$/;
 
-export async function freeCode(ns) {
+export const stub = (ns, code) => ns.get(ns.idFromName(code), hint(code));
+
+// a table of a region takes a code from that region's letters, any other room from the rest
+export async function freeCode(ns, region) {
+  const lead = region ? LEADS[region] : PRIVATE;
   for (let i = 0; i < 8; i++) {
-    let c = '';
-    for (let j = 0; j < 4; j++) c += LETTERS[Math.floor(Math.random() * LETTERS.length)];
-    if (await ns.get(ns.idFromName(c)).free()) return c;
+    let c = lead[Math.floor(Math.random() * lead.length)];
+    for (let j = 0; j < 3; j++) c += LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    if (await stub(ns, c).free()) return c;
   }
   return null;
 }
@@ -96,10 +101,10 @@ export class Room extends DurableObject {
   }
 
   // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
-  openTable(code, stake, fast) {
+  openTable(code, stake, fast, region) {
     if (this.r) return false;
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, fast: !!fast, host: -1, seats: Array(4).fill(null),
+      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, fast: !!fast, region: region, host: -1, seats: Array(4).fill(null),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
     this.save();
@@ -239,7 +244,7 @@ export class Room extends DurableObject {
     if (this.r) return this.refuse(ws, 'taken');
     if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, fast: m.fast === true, host: -1,
+      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, fast: m.fast === true, region: p.region || DEFAULT, host: -1,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
     this.join(ws, a, m, p);
@@ -911,7 +916,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
+      pub: r.pub, open: !!r.open, region: r.region, stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };

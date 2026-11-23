@@ -1,4 +1,4 @@
-import { Room, freeCode } from './room.js';
+import { Room, freeCode, stub } from './room.js';
 import { Hub } from './hub.js';
 import { api } from './account.js';
 import { social } from './social.js';
@@ -41,6 +41,6 @@ export default {
       if (!code) return new Response('busy', { status: 503 });
       url.pathname = '/ws/' + code;
     }
-    return env.ROOM.get(env.ROOM.idFromName(code)).fetch(new Request(url, request));
+    return stub(env.ROOM, code).fetch(new Request(url, request));
   }
 };
