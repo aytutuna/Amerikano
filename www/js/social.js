@@ -30,6 +30,12 @@ var Social = (function () {
     return c;
   }
 
+  // tells the server; the button then says so
+  function report(b, o) {
+    b.disabled = true;
+    Account.call('POST', '/api/report', o).then(() => { b.textContent = t('rep.done'); }, () => { b.disabled = false; });
+  }
+
   const S = {};
 
   S.refresh = () => Account.call('GET', '/api/friends').then(d => (book = d));
@@ -43,7 +49,7 @@ var Social = (function () {
 
   S.list = () => book.friends;
 
-  S.unread = () => book.friends.reduce((n, f) => n + (f.unread || 0), 0);
+  S.unread = () => (typing() ? book.friends.reduce((n, f) => n + (f.unread || 0), 0) : 0);
 
   S.blocked = pid => !!pid && book.blocked.some(x => x.id === pid);
 
@@ -124,7 +130,7 @@ var Social = (function () {
 
   function mailBtn(p, again) {
     const b = button(t('dm.open'), 'plain', () => S.talk(p, again));
-    if (p.unread) b.appendChild(node('i', 'badge', String(p.unread)));
+    if (p.unread) b.appendChild(node('i', 'unread', String(p.unread)));
     return b;
   }
 
@@ -316,8 +322,14 @@ var Social = (function () {
         }
       }
       if (seat && (!data || data.rel !== 'you')) body.appendChild(gifts());
-      if (data && data.rel === 'block') left.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
-      else if (data && data.rel !== 'you') left.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
+      if (data && data.rel !== 'you') {
+        const row = node('div', 'pbtns');
+        if (data.rel === 'block') row.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
+        else row.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
+        const b = button(t('rep.do'), 'quiet', () => report(b, { pid: pid, ctx: 'profile' }));
+        row.appendChild(b);
+        left.appendChild(row);
+      }
     }
 
     fill();
@@ -344,9 +356,13 @@ var Social = (function () {
     tlog.textContent = '';
     if (!lines.length) tlog.appendChild(node('p', 'note', t('chat.none')));
     for (const l of lines) {
-      const p = node('p', 'tl');
+      const p = node('p', 'ln');
       p.appendChild(node('b', '', l.name));
       p.appendChild(document.createTextNode(' ' + l.x));
+      if (!l.mine) {
+        const b = button(t('rep.do'), 'quiet rep', () => report(b, { pid: l.pid, text: l.x, ctx: Net.code() }));
+        p.appendChild(b);
+      }
       tlog.appendChild(p);
     }
     tlog.scrollTop = tlog.scrollHeight;
@@ -457,9 +473,13 @@ var Social = (function () {
       list.textContent = '';
       if (!msgs.length) list.appendChild(node('p', 'note', t('dm.none')));
       for (const m of msgs) {
-        const l = node('p', 'tl' + (m.mine ? ' mine' : ''));
+        const l = node('p', 'ln' + (m.mine ? ' mine' : ''));
         l.appendChild(node('b', '', m.mine ? t('dm.you') : who(p.seed)));
         l.appendChild(document.createTextNode(' ' + m.text));
+        if (!m.mine) {
+          const b = button(t('rep.do'), 'quiet rep', () => report(b, { pid: p.id, ctx: 'dm', mid: m.id }));
+          l.appendChild(b);
+        }
         list.appendChild(l);
       }
       if (more) list.appendChild(button(t('dm.older'), 'quiet', () => {
@@ -485,7 +505,7 @@ var Social = (function () {
       Account.call('POST', '/api/dm', { to: p.id, text: x }).then(d => {
         msgs.unshift(d.message);
         draw();
-      }, e => { note.textContent = t(e.status === 429 ? 'dm.slow' : 'dm.no'); });
+      }, e => { note.textContent = t('dm.' + ({ slow: 'slow', mute: 'mute', typedoff: 'off' }[e.message] || 'no')); });
     }));
     body.appendChild(note);
     body.appendChild(list);
@@ -526,7 +546,7 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[m.p];
     if (!p || !typing() || S.blocked(p.pid)) return;
-    lines.push({ name: p.name, x: m.x });
+    lines.push({ name: p.name, pid: p.pid, x: m.x, mine: m.p === 0 });
     if (lines.length > 30) lines.shift();
     if (tlog) logFill();
     if (m.old) return;

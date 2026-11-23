@@ -226,6 +226,7 @@ var UI = (function () {
       form.appendChild(how);
       form.appendChild(toggle('sound', t('set.sound')));
       form.appendChild(toggle('haptics', t('set.haptics')));
+      if (Account.me()) form.appendChild(toggle('typed', t('set.typed'), t('set.typedNote'), null, { get: () => Account.me().typed !== false, set: (k, v) => Account.typed(v) }));
       const sw = node('span', 'suits');
       sw.setAttribute('aria-hidden', 'true');
       for (const s of ['s', 'h', 'd', 'c']) sw.appendChild(Cards.icon('su-' + s, 'su sx-' + s));
@@ -1282,7 +1283,7 @@ var UI = (function () {
     for (const [k, label] of [['rooms', t('hall.rooms')], ['cups', t('cup.tab')], ['friends', t('fr.tab')], ['top', t('top.tab')]]) {
       const b = raw('tab', () => pick(k));
       b.textContent = label;
-      if (k === 'friends' && Social.unread()) b.appendChild(node('i', 'badge', String(Social.unread())));
+      if (k === 'friends' && Social.unread()) b.appendChild(node('i', 'unread', String(Social.unread())));
       b.dataset.k = 'tab' + k;
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', at.tab === k);

@@ -115,6 +115,8 @@ var I18n = (function () {
       offline: 'Reconnecting. Try again in a moment.',
       broke: 'You do not have enough chips for that gift.',
       blocked: 'You cannot send a gift to this player.',
+      mute: 'You cannot type messages for now.',
+      typedoff: 'Typed chat is off. You can turn it on in Settings.',
       other: 'That did not work.'
     },
 
@@ -198,6 +200,8 @@ var I18n = (function () {
       region: 'Region',
       reg: { am: 'Americas', eu: 'Europe', tr: 'Turkey', mea: 'Middle East and Africa', ap: 'Asia-Pacific' },
       regionNote: 'Quick play, public tables and tournaments match you with players in your region. Friends and private tables work everywhere.',
+      typed: 'Typed chat',
+      typedNote: 'Shows what other players type at tables and private messages from friends. Phrases and emotes always work.',
       sound: 'Sound',
       haptics: 'Vibration',
       fourc: 'Four-colour suits',
@@ -476,8 +480,12 @@ var I18n = (function () {
       older: 'Older messages',
       new: v => v.name + ' sent you a message.',
       slow: 'Slow down a little.',
+      mute: 'You cannot type messages for now.',
+      off: 'Typed chat is off. You can turn it on in Settings.',
       no: 'This message could not be sent.'
     },
+
+    rep: { do: 'Report', done: 'Reported' },
 
     gift: {
       title: 'Send a gift',
@@ -686,6 +694,8 @@ var I18n = (function () {
       offline: 'Yeniden bağlanılıyor. Birazdan tekrar dene.',
       broke: 'Bu hediye için yeterli çipin yok.',
       blocked: 'Bu oyuncuya hediye gönderemezsin.',
+      mute: 'Şu an mesaj yazamazsın.',
+      typedoff: 'Yazılı sohbet kapalı. Ayarlar bölümünden açabilirsin.',
       other: 'Olmadı.'
     },
 
@@ -771,6 +781,8 @@ var I18n = (function () {
       region: 'Bölge',
       reg: { am: 'Amerika', eu: 'Avrupa', tr: 'Türkiye', mea: 'Orta Doğu ve Afrika', ap: 'Asya-Pasifik' },
       regionNote: 'Hızlı oyun, herkese açık masalar ve turnuvalar seni bölgendeki oyuncularla eşleştirir. Arkadaşlar ve özel masalar her yerde çalışır.',
+      typed: 'Yazılı sohbet',
+      typedNote: 'Diğer oyuncuların masada yazdıklarını ve arkadaşlarından gelen özel mesajları gösterir. Hazır sözler ve ifadeler her zaman çalışır.',
       sound: 'Ses',
       haptics: 'Titreşim',
       fourc: 'Dört renkli işaretler',
@@ -1050,8 +1062,12 @@ var I18n = (function () {
       older: 'Eski mesajlar',
       new: v => v.name + ' sana bir mesaj gönderdi.',
       slow: 'Biraz yavaş.',
+      mute: 'Şu an mesaj yazamazsın.',
+      off: 'Yazılı sohbet kapalı. Ayarlar bölümünden açabilirsin.',
       no: 'Bu mesaj gönderilemedi.'
     },
+
+    rep: { do: 'Bildir', done: 'Bildirildi' },
 
     gift: {
       title: 'Hediye gönder',
