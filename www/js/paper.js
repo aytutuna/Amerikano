@@ -212,7 +212,7 @@
     return f;
   }
 
-  const fmt = n => Math.abs(n).toLocaleString(I18n.lang());
+  const fmt = n => Math.abs(n).toLocaleString(I18n.loc());
   const sgn = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(n);
 
   function count(el, from, to, ms, text) {
@@ -400,7 +400,7 @@
       }
       body.appendChild(node('p', 'pline', sentence));
       if (st.res) {
-        body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.lang()), unit: (st.stake / 10).toLocaleString(I18n.lang()) })));
+        body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.loc()), unit: (st.stake / 10).toLocaleString(I18n.loc()) })));
       }
     }
 

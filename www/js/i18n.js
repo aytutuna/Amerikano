@@ -1,6 +1,9 @@
 var I18n = (function () {
   let lang = 'en';
+  let loc = 'en';
   let pref = 'auto';
+  let nf = new Intl.NumberFormat('en');
+  let rules = {};
   const RANKS = ['', 'ace', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king'];
   const PLURAL = ['', 'aces', 'twos', 'threes', 'fours', 'fives', 'sixes', 'sevens', 'eights', 'nines', 'tens', 'jacks', 'queens', 'kings'];
   const SUITS = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -15,6 +18,7 @@ var I18n = (function () {
   const en = {
     you: 'You',
     joker: 'Joker',
+    rot: 'Turn your phone sideways',
     cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
@@ -195,8 +199,6 @@ var I18n = (function () {
       privacy: 'Privacy policy',
       lang: 'Language',
       auto: 'Follow device',
-      en: 'English',
-      tr: 'Türkçe',
       region: 'Region',
       reg: { am: 'Americas', eu: 'Europe', tr: 'Turkey', mea: 'Middle East and Africa', ap: 'Asia-Pacific' },
       regionNote: 'Quick play, public tables and tournaments match you with players in your region. Friends and private tables work everywhere.',
@@ -776,8 +778,6 @@ var I18n = (function () {
       privacy: 'Gizlilik politikası',
       lang: 'Dil',
       auto: 'Telefonun dili',
-      en: 'English',
-      tr: 'Türkçe',
       region: 'Bölge',
       reg: { am: 'Amerika', eu: 'Avrupa', tr: 'Türkiye', mea: 'Orta Doğu ve Afrika', ap: 'Asya-Pasifik' },
       regionNote: 'Hızlı oyun, herkese açık masalar ve turnuvalar seni bölgendeki oyuncularla eşleştirir. Arkadaşlar ve özel masalar her yerde çalışır.',
@@ -1157,7 +1157,16 @@ var I18n = (function () {
   };
 
   const S = { en: en, tr: tr };
-  
+
+  const CODES = ['en', 'tr', 'es', 'pt', 'fr', 'de', 'it', 'nl', 'pl', 'ru', 'uk', 'ar', 'hi', 'id', 'ja', 'ko', 'zh-Hans', 'zh-Hant'];
+  const NAMES = {
+    en: 'English', tr: 'Türkçe', es: 'Español', pt: 'Português (Brasil)', fr: 'Français', de: 'Deutsch', it: 'Italiano', nl: 'Nederlands', pl: 'Polski',
+    ru: 'Русский', uk: 'Українська', ar: 'العربية', hi: 'हिन्दी', id: 'Bahasa Indonesia', ja: '日本語', ko: '한국어', 'zh-Hans': '简体中文', 'zh-Hant': '繁體中文'
+  };
+  // the region a language is formatted for; Arabic keeps Western digits, like the card numbers beside it
+  const LOC = { es: 'es-419', pt: 'pt-BR', ar: 'ar-u-nu-latn' };
+  const RTL = ['ar'];
+
   function find(tbl, key) {
     let o = tbl;
     for (const k of key.split('.')) {
@@ -1175,19 +1184,66 @@ var I18n = (function () {
     return s;
   }
 
-  function resolve(p) {
-    if (p === 'tr' || p === 'en') return p;
-    const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en'];
-    return String(langs[0]).toLowerCase().indexOf('tr') === 0 ? 'tr' : 'en';
+  const fmt = n => nf.format(n);
+
+  // picks the form Intl names for n: { one: '# carta', other: '# cartas' }, # is the number; ordinal: true for 1st, 2nd
+  function pl(n, forms, ordinal) {
+    const k = ordinal ? 'ordinal' : 'cardinal';
+    const r = rules[k] || (rules[k] = new Intl.PluralRules(loc, { type: k }));
+    return (forms[r.select(n)] || forms.other).replace('#', fmt(n));
   }
 
+  function code(l) {
+    const p = l.toLowerCase().split(/[-_]/);
+    if (p[0] === 'zh') return p.includes('hans') ? 'zh-Hans' : p.some(x => ['hant', 'tw', 'hk', 'mo'].includes(x)) ? 'zh-Hant' : 'zh-Hans';
+    return CODES.find(c => c === (p[0] === 'in' ? 'id' : p[0]));
+  }
+
+  function resolve(p) {
+    if (CODES.includes(p)) return p;
+    const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en'];
+    return langs.map(code).find(Boolean) || 'en';
+  }
+
+  function script(src) {
+    return new Promise(res => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = s.onerror = () => { s.remove(); res(); };
+      document.head.appendChild(s);
+    });
+  }
+
+  const loading = {};
+
+  function load(c) {
+    if (!loading[c]) loading[c] = Promise.all(['lang/', 'names/'].map(d => script('js/' + d + c + '.js'))).then(() => { delete loading[c]; });
+    return loading[c];
+  }
+
+  function use(c) {
+    lang = S[c] ? c : 'en';
+    loc = LOC[lang] || lang;
+    nf = new Intl.NumberFormat(loc);
+    rules = {};
+    const h = document.documentElement;
+    h.lang = lang;
+    h.classList.toggle('rtl', RTL.includes(lang));
+    document.getElementById('rotx').textContent = t('rot');
+  }
+
+  // returns a promise while a language file is still coming in, nothing otherwise
   function set(p) {
     pref = p;
-    lang = resolve(p);
-    document.documentElement.lang = lang;
+    const c = resolve(p);
+    if (S[c]) return use(c);
+    return load(c).then(() => { if (pref === p) use(c); });
   }
 
-  return { t: t, set: set, cap: cap, num: num, pref: () => pref, lang: () => lang, S: S };
+  return {
+    t: t, set: set, add: (c, tbl) => { S[c] = tbl; }, cap: cap, num: num, fmt: fmt, pl: pl,
+    pref: () => pref, lang: () => lang, loc: () => loc, codes: CODES, names: NAMES, S: S
+  };
 })();
 
 var t = I18n.t;

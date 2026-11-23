@@ -11,7 +11,7 @@ var Social = (function () {
   let talking = null;
   const asked = new Map();
 
-  const fmt = n => n.toLocaleString(I18n.lang());
+  const fmt = n => n.toLocaleString(I18n.loc());
   const who = seed => Names.text(seed, I18n.lang());
   const face = p => p.avatar || p.av;
   const rate = p => (p.games ? Math.round(p.wins / p.games * 100) + '%' : '-');

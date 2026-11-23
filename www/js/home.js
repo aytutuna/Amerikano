@@ -211,11 +211,12 @@ var UI = (function () {
     function fill() {
       const was = document.activeElement && form.contains(document.activeElement) ? document.activeElement.dataset.f : null;
       form.textContent = '';
-      form.appendChild(choice('lang', t('set.lang'), [
-        { v: 'auto', label: t('set.auto') },
-        { v: 'en', label: t('set.en') },
-        { v: 'tr', label: t('set.tr') }
-      ], Settings.get('lang'), v => { Settings.set('lang', v); Push.sync(); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
+      const lg = choice('lang', t('set.lang'), [{ v: 'auto', label: t('set.auto') }].concat(I18n.codes.map(c => ({ v: c, label: I18n.names[c] }))), Settings.get('lang'), v => {
+        Promise.resolve(Settings.set('lang', v)).then(() => { Push.sync(); fill(); if (h) h.set(t('set.title'), done()); });
+      }, 'seg langs');
+      // each name in its own script, so Han characters get the right glyphs
+      lg.querySelectorAll('.face b').forEach((b, i) => { if (i) b.lang = I18n.codes[i - 1]; });
+      form.appendChild(lg);
       if (Account.me()) {
         const rg = choice('region', t('set.region'), ['am', 'eu', 'tr', 'mea', 'ap'].map(v => ({ v: v, label: t('set.reg.' + v) })), Account.me().region, v => Account.region(v).catch(() => fill()), 'rows');
         rg.appendChild(node('p', 'note', t('set.regionNote')));
@@ -316,7 +317,7 @@ var UI = (function () {
     body.appendChild(node('p', 'note', t(cup ? 'cup.leaveNote' : net ? 'pause.onlineNote' : 'pause.note')));
   }
 
-  const fmt = n => n.toLocaleString(I18n.lang());
+  const fmt = n => n.toLocaleString(I18n.loc());
   const who = seed => Names.text(seed, I18n.lang());
 
   function xpBar(me) {
@@ -905,7 +906,7 @@ var UI = (function () {
     return true;
   }
 
-  const short = n => n >= 1e4 ? new Intl.NumberFormat(I18n.lang(), { notation: 'compact' }).format(n) : fmt(n);
+  const short = n => n >= 1e4 ? new Intl.NumberFormat(I18n.loc(), { notation: 'compact' }).format(n) : fmt(n);
   const redraw = () => { if (!$('home').hidden) draw(); };
   const afford = (me, s) => !!me && me.chips >= at.entry * s;
 

@@ -6,20 +6,24 @@ var Settings = (function () {
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY))); } catch (e) { /* first run */ }
   s.felt = OLD_FELT[s.felt] || s.felt;
 
+  // a language that is not loaded yet makes this return a promise
   function apply() {
-    I18n.set(s.lang);
     Sfx.set(s.sound);
     Haptic.set(s.haptics);
     document.body.classList.toggle('fourc', !!s.fourc);
     document.body.dataset.back = s.back;
     document.body.dataset.felt = s.felt;
+    return I18n.set(s.lang);
   }
 
   function set(k, v, quiet) {
     s[k] = v;
     try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* kept for this session only */ }
-    apply();
-    if (!quiet && window.App) App.refresh();
+    const w = apply();
+    const redraw = () => { if (!quiet && window.App) App.refresh(); };
+    if (w) w.then(redraw);
+    else redraw();
+    return w;
   }
 
   return { get: k => s[k], set: set, apply: apply };
@@ -812,8 +816,7 @@ var App = (function () {
     schedule();
   };
   document.addEventListener('visibilitychange', schedule);
-  document.addEventListener('DOMContentLoaded', () => {
-    Settings.apply();
+  document.addEventListener('DOMContentLoaded', () => Promise.resolve(Settings.apply()).then(() => {
     Cards.preload();
     if (native()) {
       const app = window.Capacitor.Plugins.App;
@@ -825,7 +828,7 @@ var App = (function () {
       UI.show();
       UI.link();
     }
-  });
+  }));
 
   // The native splash stays up until the faces are loaded and the system bars have
   // reported their size, so the home screen is built once at its final size.

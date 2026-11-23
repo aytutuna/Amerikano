@@ -116,7 +116,7 @@ var Table = (function () {
     });
   }
 
-  const short = n => n >= 1e6 ? +(n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? +(n / 1e3).toFixed(1) + 'K' : n.toLocaleString(I18n.lang());
+  const short = n => n >= 1e6 ? +(n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? +(n / 1e3).toFixed(1) + 'K' : n.toLocaleString(I18n.loc());
 
   function seatEl(i) {
     const e = Cards.node('div', 'seat');
@@ -245,7 +245,7 @@ var Table = (function () {
     $('cup').hidden = !st.cup;
     if (st.cup) {
       $('cupt').textContent = t('cup.table');
-      $('cupr').textContent = t('cup.round.' + st.cup.round) + ', ' + st.cup.buy.toLocaleString(I18n.lang());
+      $('cupr').textContent = t('cup.round.' + st.cup.round) + ', ' + st.cup.buy.toLocaleString(I18n.loc());
     }
     $('chat').hidden = !App.online();
     $('chat').setAttribute('aria-label', t('chat.open'));
