@@ -211,6 +211,8 @@
       regionNote: 'Main cepat, meja umum, dan turnamen mempertemukanmu dengan pemain di wilayahmu. Teman dan meja pribadi bisa dipakai di mana saja.',
       typed: 'Obrolan ketik',
       typedNote: 'Menampilkan tulisan pemain lain di meja dan pesan pribadi dari temanmu. Kalimat cepat dan emote selalu bisa dipakai.',
+      voice: 'Obrolan suara',
+      voiceNote: 'Dengarkan pemain lain di meja dan saat telepon, dan bicara lewat mikrofon. Kalau mati, suara dimatikan sepenuhnya.',
       sound: 'Suara',
       haptics: 'Getaran',
       fourc: 'Jenis kartu empat warna',
@@ -494,7 +496,37 @@
       no: 'Pesan ini tidak bisa dikirim.'
     },
 
+    voice: {
+      mic: { on: 'Mikrofon menyala. Ketuk untuk mematikan.', off: 'Mikrofon mati. Ketuk untuk menyalakan.' },
+      spk: { on: 'Suara menyala. Ketuk untuk membisukan semua.', off: 'Suara dibisukan. Ketuk untuk mendengarkan.' },
+      denied: 'Mikrofon belum diizinkan. Kamu bisa mengizinkannya di pengaturan perangkatmu.',
+      fail: 'Suara tidak bisa tersambung.',
+      mute: 'Bisukan suara',
+      unmute: 'Aktifkan suara',
+      call: 'Telepon',
+      in: v => v.name + ' menelepon.',
+      calling: v => 'Menelepon ' + v.name + '.',
+      talking: v => 'Sedang telepon dengan ' + v.name + '.',
+      accept: 'Angkat',
+      decline: 'Tolak',
+      hang: 'Tutup telepon',
+      muteMe: 'Bisukan',
+      end: {
+        missed: 'Tidak diangkat.', missedIn: 'Panggilan tak terjawab.', declined: 'Panggilan ditolak.', busy: 'Sedang sibuk.', away: 'Sedang offline.',
+        no: 'Panggilan ini tidak bisa dilakukan.', slow: 'Tunggu sebentar sebelum menelepon lagi.', dropped: 'Panggilan terputus.'
+      },
+      line: { missed: 'Panggilan tak terjawab', missedMine: 'Tidak diangkat', declined: 'Panggilan ditolak' }
+    },
+
     rep: { do: 'Laporkan', done: 'Sudah dilaporkan' },
+
+    warn: {
+      title: 'Sebelum mengirim',
+      text: 'Mau membagikan kontak atau tidak itu terserah kamu, tapi jangan pernah berikan ke orang yang tidak kamu kenal. Chip Amerikano tidak bisa dibeli atau dijual. Laporkan siapa pun yang menawarkan jual beli chip.',
+      send: 'Tetap kirim',
+      edit: 'Ubah',
+      note: 'Hati-hati dengan tautan dan kontak dari pemain lain. Chip tidak pernah dijual.'
+    },
 
     gift: {
       title: 'Kirim hadiah',
