@@ -92,6 +92,7 @@ var Account = (function () {
   A.daily = async () => set(await call('POST', '/api/daily'));
   A.bailout = async () => set(await call('POST', '/api/bailout'));
   A.push = async (k, v) => set(await call('POST', '/api/push', { [k]: v }));
+  A.region = async r => set(await call('POST', '/api/region', { region: r }));
 
   // an Apple account the server holds no token for has to send a fresh credential
   A.remove = async cred => {

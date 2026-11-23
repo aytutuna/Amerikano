@@ -216,6 +216,11 @@ var UI = (function () {
         { v: 'en', label: t('set.en') },
         { v: 'tr', label: t('set.tr') }
       ], Settings.get('lang'), v => { Settings.set('lang', v); Push.sync(); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
+      if (Account.me()) {
+        const rg = choice('region', t('set.region'), ['am', 'eu', 'tr', 'mea', 'ap'].map(v => ({ v: v, label: t('set.reg.' + v) })), Account.me().region, v => Account.region(v).catch(() => fill()), 'rows');
+        rg.appendChild(node('p', 'note', t('set.regionNote')));
+        form.appendChild(rg);
+      }
       const how = button(t('start.how'), 'plain', howTo);
       how.dataset.f = 'how';
       form.appendChild(how);
