@@ -24,7 +24,7 @@ const WORDS = {
 export const LANGS = Object.keys(WORDS);
 
 // one list serves both Chinese scripts
-const listOf = l => l.startsWith('zh-') ? 'zh' : l;
+const listOf = l => String(l).startsWith('zh-') ? 'zh' : l;
 
 const SWAP = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's', ł: 'l', ø: 'o', đ: 'd', ı: 'i', ß: 'ss', æ: 'ae', œ: 'oe', أ: 'ا', إ: 'ا', آ: 'ا', ى: 'ي', ة: 'ه' };
 const CJK = /[぀-ヿ㐀-鿿가-힯]/;
