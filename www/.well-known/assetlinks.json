@@ -1,10 +1,14 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "com.aytutuna.amerikano",
       "sha256_cert_fingerprints": [
+        "AB:E8:6A:40:91:5A:87:45:2C:76:73:2A:BC:DA:92:10:7C:B2:48:C7:78:13:D3:47:77:E6:2D:EE:93:8B:B1:64",
+        "D2:69:0C:16:8F:11:56:E3:7A:F6:71:74:DF:D8:F6:92:7A:ED:51:4C:74:3A:FA:70:8E:86:04:CB:FF:C9:73:0B",
         "70:EF:DF:94:2E:FB:C6:56:2C:28:5C:7A:97:E9:B8:51:AD:B2:BC:16:A9:2B:AC:1C:F2:D8:F9:81:06:59:D9:0D"
       ]
     }
