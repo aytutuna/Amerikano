@@ -3065,6 +3065,124 @@ async function voice(f) {
   h.b.ws.close();
 }
 
+async function calls(f) {
+  const [a, b, c, e, d] = [await guest(), await guest(), await guest(), await guest(), await guest()];
+  await befriend(a, b);
+  await befriend(a, e);
+  await befriend(b, e);
+  await befriend(a, d);
+  const [ha, hb, hc, he] = [await hub(a), await hub(b), await hub(c), await hub(e)];
+  const ring = (x, from) => x.next(m => m.t === 'ring' && m.from.pid === from.id);
+  const dial = (x, to) => x.send({ t: 'call', to: to.id });
+  const ended = (x, why) => x.next(m => m.t === 'call' && m.st === 'end' && m.why === why);
+  const line = (me, other) => call('GET', '/api/dm/' + other.id, me).then(r => r.body.messages.filter(m => m.k).map(m => [m.k, m.mine]));
+  const gap = () => sleep(100);
+  const vc = (acc, id, op, body) => call('POST', '/api/voice/' + op, acc, Object.assign({ scope: 'call', id: id }, body));
+  const refuse = async (x, to, why) => {
+    const n = ended(x, why);
+    dial(x, to);
+    await n;
+    await gap();
+  };
+
+  // only a friend who is online, with voice on on both sides, can be rung
+  await refuse(ha, c, 'no');
+  await refuse(ha, d, 'away');
+  await call('POST', '/api/voice', b, { voice: false });
+  await refuse(ha, b, 'no');
+  await call('POST', '/api/voice', b, { voice: true });
+  await call('POST', '/api/voice', a, { voice: false });
+  await refuse(ha, b, 'no');
+  await call('POST', '/api/voice', a, { voice: true });
+
+  // ringing, busy, decline
+  let r = ring(hb, a);
+  const mine = ha.next(m => m.t === 'call' && m.st === 'ring');
+  dial(ha, b);
+  const rb = await r;
+  assert.strictEqual(rb.id, (await mine).id);
+  assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed']);
+  await gap();
+  await refuse(he, b, 'busy');
+  await refuse(ha, e, 'busy');
+  const dd = Promise.all([ended(ha, 'declined'), ended(hb, 'declined')]);
+  hb.send({ t: 'hang', id: rb.id });
+  await dd;
+  assert.deepStrictEqual(await line(a, b), [['declined', true]], 'a declined call leaves a line');
+
+  // accepted, then talk through the SFU
+  await gap();
+  r = ring(hb, a);
+  dial(ha, b);
+  const id = (await r).id;
+  const on = Promise.all([ha.next(m => m.t === 'call' && m.st === 'on'), hb.next(m => m.t === 'call' && m.st === 'on')]);
+  hc.send({ t: 'accept', id: id });
+  he.send({ t: 'accept', id: id });
+  ha.send({ t: 'accept', id: id });
+  await sleep(100);
+  hb.send({ t: 'accept', id: id });
+  const [oa, ob] = await on;
+  assert.deepStrictEqual([oa.with, ob.with, oa.id], [b.id, a.id, id], 'only the one rung can answer');
+  const hear = hb.next(m => m.t === 'voice');
+  assert.strictEqual((await vc(a, id, 'mic', { sdp: SDP, mid: '0' })).status, 200);
+  assert.deepStrictEqual(await hear, { t: 'voice', id: id, pid: a.id, on: true });
+  assert.strictEqual((await vc(c, id, 'who')).status, 403, 'a stranger cannot reach the call');
+  assert.strictEqual((await vc(e, id, 'pull', { pid: a.id })).status, 403, 'nor a friend of both');
+  assert.deepStrictEqual((await vc(b, id, 'who')).body, { pids: [a.id] });
+  assert.strictEqual((await vc(b, id, 'pull', { pid: a.id, fresh: true })).status, 200);
+  assert.strictEqual((await vc(b, id, 'answer', { sdp: 'x' })).status, 200);
+  assert.strictEqual((await vc(b, id, 'pull', { pid: c.id })).status, 404);
+  assert.strictEqual((await call('POST', '/api/voice/who', a, { scope: 'call', id: 'nope' })).status, 403);
+  assert.strictEqual((await vc(b, id, 'mic', { sdp: SDP, mid: '0' })).status, 200);
+  await call('POST', '/api/voice', b, { voice: false });
+  assert.strictEqual((await vc(a, id, 'pull', { pid: b.id })).status, 404, 'a friend with voice off is not heard in a call either');
+  await call('POST', '/api/voice', b, { voice: true });
+  const codes = [];
+  for (let i = 0; i < 40; i++) codes.push((await vc(a, id, 'who')).status);
+  assert(codes.includes(429), 'the proxy is rate limited in a call too');
+  const bye = Promise.all([ended(ha, 'ended'), ended(hb, 'ended')]);
+  const closes = f.log.length;
+  ha.send({ t: 'hang', id: id });
+  await bye;
+  await sleep(100);
+  assert(f.log.slice(closes).some(x => /tracks\/close$/.test(x.path)), 'the tracks are closed at the SFU');
+  assert.strictEqual((await vc(b, id, 'who')).status, 403, 'nothing after hanging up');
+  assert.deepStrictEqual(await line(a, b), [['declined', true]], 'a call that happened leaves no line');
+
+  // nobody answers
+  await gap();
+  const miss = Promise.all([ended(ha, 'missed'), ended(hb, 'missed')]);
+  dial(ha, b);
+  await miss;
+  assert.strictEqual((await call('GET', '/api/friends', b)).body.friends.find(x => x.id === a.id).unread, 1, 'a missed call counts as unread');
+  assert.deepStrictEqual(await line(b, a), [['missed', false], ['declined', false]]);
+
+  // the caller gives up while it rings, and cannot ring again at once
+  await gap();
+  r = ring(hb, a);
+  dial(ha, b);
+  const rid = (await r).id;
+  const quick = ended(ha, 'slow');
+  dial(ha, b);
+  await quick;
+  const gave = Promise.all([ended(ha, 'missed'), ended(hb, 'missed')]);
+  ha.send({ t: 'hang', id: rid });
+  await gave;
+
+  // a dropped connection ends it after a short grace
+  await gap();
+  r = ring(hb, a);
+  dial(ha, b);
+  const did = (await r).id;
+  const up = hb.next(m => m.t === 'call' && m.st === 'on');
+  hb.send({ t: 'accept', id: did });
+  await up;
+  const lost = ended(ha, 'dropped');
+  hb.ws.close();
+  await lost;
+  console.log('calls: friends only, busy, decline, missed, accept, SFU proxy, hang up, dropped');
+  for (const x of [ha, hc, he]) x.ws.close();
+}
 (async () => {
   schema();
   await math();
@@ -3090,6 +3208,7 @@ async function voice(f) {
   await dms();
   const sfu = fakeSfu();
   await voice(sfu);
+  await calls(sfu);
   sfu.server.close();
   await purge();
   await typedOff();

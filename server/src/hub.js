@@ -5,7 +5,7 @@ import { rel, won } from './social.js';
 import { claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
 import { DEFAULT } from './region.js';
-import { on } from './voice.js';
+import { on, act, slow, may, shut } from './voice.js';
 
 const LIFE = 3 * 3600000;
 const MAX = 4000;
@@ -20,6 +20,9 @@ const WAIT = 20000;
 const JOIN = 4000;
 const GRACE = 6000;
 const RETRY = 5000;
+const RING = 30000;
+const DIAL = 4000;
+const ID = /^[0-9a-f]{32}$/;
 
 const between = (lo, hi) => Math.round(lo + Math.random() * (hi - lo));
 
@@ -45,6 +48,9 @@ export class Hub extends DurableObject {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.bucket = new WeakMap();
     this.chatty = new Map();
+    this.calls = new Map();
+    this.dialed = new Map();
+    this.limit = new Map();
     this.rooms = {};
     this.k = Number(env.PACE) || 1;
     this.hello = Math.ceil(HELLO * this.k);
@@ -116,6 +122,11 @@ export class Hub extends DurableObject {
       }
       ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
       this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, voice: on(this.env) });
+      const c = this.inCall(p.id);
+      if (c) {
+        clearTimeout(c.gone[p.id]);
+        this.put(ws, this.brief(c, p.id));
+      }
       this.put(ws, this.counts(reg(p)));
       const f = this.forming(p.id);
       if (f) this.put(ws, this.state(f));
@@ -132,6 +143,9 @@ export class Hub extends DurableObject {
     if (m.t === 'sit') return this.queue(() => this.sit(ws, a.pid, m.code));
     if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake, m.fast === true));
     if (m.t === 'cup') return this.queue(() => this.enter(ws, a.pid, m.buy));
+    if (m.t === 'call') return this.queue(() => this.dial(ws, a.pid, m.to));
+    if (m.t === 'accept') return this.accept(a.pid, m.id);
+    if (m.t === 'hang') return this.hang(a.pid, m.id);
   }
 
   webSocketClose(ws) {
@@ -148,6 +162,9 @@ export class Hub extends DurableObject {
   away(ws) {
     const { pid } = ws.deserializeAttachment();
     if (!pid) return;
+    // a call survives a short loss of the connection
+    const c = this.inCall(pid);
+    if (c && !this.online(pid)) c.gone[pid] = setTimeout(() => !this.online(pid) && this.finish(c, c.st === 'on' ? 'dropped' : 'missed').catch(() => {}), GRACE * this.k);
     this.queue(async () => {
       const f = this.forming(pid);
       if (f && !this.online(pid)) await this.leave(f, pid);
@@ -225,6 +242,85 @@ export class Hub extends DurableObject {
   // A push for a player whose app has no socket here.
   async ring(from, to, k, v) {
     if (!this.online(to)) await ring(this.env, from, to, k, v);
+  }
+
+  inCall(pid) {
+    for (const c of this.calls.values()) if (c.a === pid || c.b === pid) return c;
+    return null;
+  }
+
+  // what each side of a call is told: the callee rings, the caller waits, and both hear when it is on
+  brief(c, pid) {
+    if (c.st === 'on') return { t: 'call', id: c.id, st: 'on', with: pid === c.a ? c.b : c.a };
+    return pid === c.b ? { t: 'ring', id: c.id, from: c.from } : { t: 'call', id: c.id, st: 'ring' };
+  }
+
+  // Rings a friend. Whatever stops it, the answer is only that it did not go through, so nobody learns who blocked or muted them.
+  async dial(ws, pid, to) {
+    if (!on(this.env) || typeof to !== 'string' || !ID.test(to) || to === pid) return;
+    const no = why => this.put(ws, { t: 'call', st: 'end', why: why });
+    const now = Date.now();
+    if (this.dialed.size > 1000) this.dialed.clear();
+    if (now - (this.dialed.get(pid) || 0) < DIAL * this.k) return no('slow');
+    this.dialed.set(pid, now);
+    const db = this.env.DB;
+    // offline first, so a persona, which is never online, answers like a friend who is away
+    if (!this.online(to)) return no('away');
+    const [p, q] = await Promise.all([player(db, pid), player(db, to)]);
+    if (!p || !q || !p.voice || !q.voice || await rel(db, pid, to) !== 'friend') return no('no');
+    if (this.inCall(pid) || this.inCall(to)) return no('busy');
+    const c = { id: crypto.randomUUID(), a: pid, b: to, st: 'ring', from: seat(p), vx: {}, gone: {} };
+    c.timer = setTimeout(() => this.finish(c, 'missed').catch(() => {}), RING * this.k);
+    this.calls.set(c.id, c);
+    this.to(pid, this.brief(c, pid));
+    this.to(to, this.brief(c, to));
+  }
+
+  accept(pid, id) {
+    const c = this.calls.get(id);
+    if (!c || c.b !== pid || c.st !== 'ring') return;
+    clearTimeout(c.timer);
+    c.st = 'on';
+    this.to(c.a, this.brief(c, c.a));
+    this.to(c.b, this.brief(c, c.b));
+  }
+
+  // hanging up while it rings is a decline for the callee and a missed call for the caller
+  hang(pid, id) {
+    const c = this.calls.get(id);
+    // a call this hub no longer knows is over, so the app is told and lets go of it
+    if (!c) return this.to(pid, { t: 'call', id: id, st: 'end', why: 'ended' });
+    if (c.a !== pid && c.b !== pid) return;
+    return this.finish(c, c.st === 'on' ? 'ended' : pid === c.b ? 'declined' : 'missed');
+  }
+
+  // A missed or declined call leaves a line in the conversation, written before the two sides hear that it ended so that reloading finds it.
+  async finish(c, why) {
+    if (this.calls.get(c.id) !== c) return;
+    this.calls.delete(c.id);
+    clearTimeout(c.timer);
+    for (const x of Object.values(c.gone)) clearTimeout(x);
+    for (const e of Object.values(c.vx)) this.ctx.waitUntil(shut(this.env, e));
+    if (why === 'missed' || why === 'declined') {
+      await this.env.DB.prepare("INSERT INTO messages (sender, recipient, text, at, seen, kind) VALUES (?1, ?2, '', ?3, ?4, ?5)")
+        .bind(c.a, c.b, Date.now(), why === 'declined' ? 1 : 0, why).run().catch(() => {});
+    }
+    const m = { t: 'call', id: c.id, st: 'end', why: why };
+    this.to(c.a, m);
+    this.to(c.b, m);
+  }
+
+  // Voice of a call through the SFU proxy: only the two people of a call that is on, still friends and not blocked, with voice on.
+  async vox(pid, op, b) {
+    const c = this.calls.get(b.id);
+    if (!on(this.env) || !c || c.st !== 'on' || c.a !== pid && c.b !== pid) return { status: 403, body: { error: 'call' } };
+    if (slow(this.limit, pid)) return { status: 429, body: { error: 'slow' } };
+    const other = pid === c.a ? c.b : c.a;
+    const p = await player(this.env.DB, pid);
+    if (!p || !p.voice || this.calls.get(c.id) !== c) return { status: 403, body: { error: 'off' } };
+    const res = await act(this.env, c.vx, op, pid, b, async q => q === other && await may(this.env.DB, pid, q, true));
+    if (res.status === 200 && (op === 'mic' || op === 'stop')) this.to(other, { t: 'voice', id: c.id, pid: pid, on: op === 'mic' });
+    return res;
   }
 
   // Private messages: a short burst per sender, then one every three seconds. Kept in memory, so a restart only forgives.

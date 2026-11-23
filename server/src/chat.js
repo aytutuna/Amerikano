@@ -39,10 +39,10 @@ async function thread(env, p, id, url) {
   const page = url.searchParams.get('before');
   if (page !== null && !/^\d{1,15}$/.test(page)) return fail('before');
   const before = page === null ? Number.MAX_SAFE_INTEGER : Number(page);
-  const { results } = await env.DB.prepare('SELECT id, sender, text, at FROM messages WHERE ((sender = ?1 AND recipient = ?2) OR (sender = ?2 AND recipient = ?1)) AND id < ?3 ORDER BY id DESC LIMIT ?4')
+  const { results } = await env.DB.prepare('SELECT id, sender, text, at, kind FROM messages WHERE ((sender = ?1 AND recipient = ?2) OR (sender = ?2 AND recipient = ?1)) AND id < ?3 ORDER BY id DESC LIMIT ?4')
     .bind(p.id, id, before, PAGE + 1).all();
   if (before === Number.MAX_SAFE_INTEGER) await env.DB.prepare('UPDATE messages SET seen = 1 WHERE recipient = ? AND sender = ? AND seen = 0').bind(p.id, id).run();
-  return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, c: contact(r.text), at: r.at })) });
+  return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, c: contact(r.text), at: r.at, k: r.kind || undefined })) });
 }
 
 // A report keeps who, what and where: a table code, dm or profile. Three different reporters, each with an account at least a day
