@@ -12,8 +12,9 @@ import ar from './text/ar.js';
 import hi from './text/hi.js';
 import id from './text/id.js';
 import ja from './text/ja.js';
+import ko from './text/ko.js';
 
-const more = { es, pt, fr, it, nl, de, pl, ru, uk, ar, hi, id, ja };
+const more = { es, pt, fr, it, nl, de, pl, ru, uk, ar, hi, id, ja, ko };
 
 export const LANGS = ['en', 'tr', ...Object.keys(more)];
 export default more;
