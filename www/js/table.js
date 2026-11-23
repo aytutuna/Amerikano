@@ -249,6 +249,7 @@ var Table = (function () {
     }
     $('chat').hidden = !App.online();
     $('chat').setAttribute('aria-label', t('chat.open'));
+    Voice.draw();
     seatsEl.setAttribute('aria-label', t('seatsLabel'));
     $('rack').setAttribute('aria-label', t('hand'));
     $('tools').setAttribute('aria-label', t('ctlLabel'));

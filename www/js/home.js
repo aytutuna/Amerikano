@@ -227,6 +227,7 @@ var UI = (function () {
       form.appendChild(toggle('sound', t('set.sound')));
       form.appendChild(toggle('haptics', t('set.haptics')));
       if (Account.me()) form.appendChild(toggle('typed', t('set.typed'), t('set.typedNote'), null, { get: () => Account.me().typed !== false, set: (k, v) => Account.typed(v) }));
+      if (Account.me() && Voice.can()) form.appendChild(toggle('voice', t('set.voice'), t('set.voiceNote'), null, { get: () => Account.me().voice !== false, set: (k, v) => Account.voice(v).then(Voice.refresh) }));
       const sw = node('span', 'suits');
       sw.setAttribute('aria-hidden', 'true');
       for (const s of ['s', 'h', 'd', 'c']) sw.appendChild(Cards.icon('su-' + s, 'su sx-' + s));

@@ -37,6 +37,8 @@
 <symbol id="i-chip" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#A23C2F" stroke="#4A2C1A"/><circle cx="12" cy="12" r="8.2" fill="none" stroke="#F6ECD2" stroke-width="2.4" stroke-dasharray="3.2 3.2"/><circle cx="12" cy="12" r="4.6" fill="#F2CF63"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1.5a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 20.5v-9A1.5 1.5 0 0 1 5.5 10zm2.4 0h5.2V8a2.6 2.6 0 0 0-5.2 0z"/></symbol>
 <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 3.5h16a2 2 0 0 1 2 2V15a2 2 0 0 1-2 2h-6.5L8 21v-4H4a2 2 0 0 1-2-2V5.5a2 2 0 0 1 2-2z"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14.5a3.5 3.5 0 0 0 3.5-3.5V5.5a3.5 3.5 0 0 0-7 0V11a3.5 3.5 0 0 0 3.5 3.5zM6 11h-2a8 8 0 0 0 7 7.9V22h2v-3.1A8 8 0 0 0 20 11h-2a6 6 0 0 1-12 0z"/></symbol>
+<symbol id="i-spk" viewBox="0 0 24 24"><path d="M3 9.5h4l5-4.5v14l-5-4.5H3zM15.5 8.2a5 5 0 0 1 0 7.6l-1.4-1.4a3 3 0 0 0 0-4.8zM18.4 5.3a9 9 0 0 1 0 13.4L17 17.3a7 7 0 0 0 0-10.6z"/></symbol>
 <symbol id="e-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#F2CF63" stroke="#4A2C1A" stroke-width="1.5"/><circle cx="8.6" cy="10" r="1.4" fill="#4A2C1A"/><circle cx="15.4" cy="10" r="1.4" fill="#4A2C1A"/><path d="M7.5 14q4.5 4.5 9 0" fill="none" stroke="#4A2C1A" stroke-width="1.8" stroke-linecap="round"/></symbol>
 <symbol id="e-laugh" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#F2CF63" stroke="#4A2C1A" stroke-width="1.5"/><path d="M6.6 10.8q1.9-2.6 3.8 0M13.6 10.8q1.9-2.6 3.8 0" fill="none" stroke="#4A2C1A" stroke-width="1.8" stroke-linecap="round"/><path d="M7 13.4h10q-.9 5.6-5 5.6t-5-5.6z" fill="#4A2C1A"/></symbol>
 <symbol id="e-wink" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#F2CF63" stroke="#4A2C1A" stroke-width="1.5"/><circle cx="8.6" cy="10" r="1.4" fill="#4A2C1A"/><path d="M13.6 10.2h3.6" fill="none" stroke="#4A2C1A" stroke-width="1.8" stroke-linecap="round"/><path d="M7.5 14q4.5 4.5 9 0" fill="none" stroke="#4A2C1A" stroke-width="1.8" stroke-linecap="round"/></symbol>
@@ -59,7 +61,7 @@
 <h1 class="sr">Amerikano</h1>
 <div id="table"><i class="kil"></i></div>
 <div id="hudl"><button id="menu" class="ib" type="button" data-i="menu"><svg class="ic"><use href="#i-menu"/></svg></button><div id="tinfo"><div id="tname"></div><div id="tsub"></div></div></div>
-<div id="hudr"><div id="cup" hidden><b id="cupt"></b><span id="cupr"></span></div><button id="score" type="button"><svg class="chip"><use href="#i-chip"/></svg><span id="scl" class="sr"></span><span id="pot"></span></button><button id="chat" class="ib" type="button" hidden><svg class="ic"><use href="#i-chat"/></svg></button></div>
+<div id="hudr"><div id="cup" hidden><b id="cupt"></b><span id="cupr"></span></div><button id="score" type="button"><svg class="chip"><use href="#i-chip"/></svg><span id="scl" class="sr"></span><span id="pot"></span></button><button id="mic" class="ib" type="button" hidden><svg class="ic"><use href="#i-mic"/></svg></button><button id="spk" class="ib" type="button" hidden><svg class="ic"><use href="#i-spk"/></svg></button><button id="chat" class="ib" type="button" hidden><svg class="ic"><use href="#i-chat"/></svg></button></div>
 <div id="seats" role="region"></div>
 <main id="melds" tabindex="-1"><div id="mlist"></div><p id="nomelds"></p></main>
 <div id="piles" role="group"><button id="stock" class="pile" type="button"></button><button id="discard" class="pile" type="button"></button></div>
@@ -92,6 +94,7 @@
 <script src="js/account.js"></script>
 <script src="js/apple.js"></script>
 <script src="js/push.js"></script>
+<script src="js/voice.js"></script>
 <script src="js/net.js"></script>
 <script src="js/app.js"></script>
 <script src="js/home.js"></script>

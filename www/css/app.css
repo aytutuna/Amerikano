@@ -735,3 +735,13 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 #cup[hidden] { display: none; }
 #cup b { font: 400 calc(13 * var(--r))/1.1 var(--disp); }
 #cup span { font-weight: 700; font-size: calc(11 * var(--r)); }
+#mic.on { background: linear-gradient(#8ee6b0, #3fae6c); color: #10331f; }
+#spk.off { color: #8a7a62; }
+#spk.off::after { content: ''; position: absolute; left: 22%; right: 22%; top: calc(50% - 1.5px); height: 3px; border-radius: 2px; background: var(--madder); transform: rotate(-45deg); }
+.av.talk { outline: calc(3 * var(--u)) solid #6ee7a0; outline-offset: calc(2 * var(--u)); }
+.callbar { position: absolute; left: 50%; bottom: calc(6 * var(--u)); z-index: 65; transform: translateX(-50%); display: flex; align-items: center; gap: calc(10 * var(--u)); padding: calc(6 * var(--u)) calc(10 * var(--u)); border-radius: calc(14 * var(--u)); background: var(--cream); color: var(--ink); box-shadow: 0 calc(3 * var(--u)) 0 var(--edge), 0 calc(6 * var(--u)) calc(12 * var(--u)) rgba(0, 0, 0, .4); }
+.callbar .cn { font-weight: 700; font-size: calc(14 * var(--r)); }
+.callbar .btn { min-height: calc(32 * var(--u)); padding: 0 calc(12 * var(--u)); font-size: calc(14 * var(--r)); }
+.callbar .btn.lit { outline: 2px solid var(--gold); }
+.ln.sys { font-style: italic; opacity: .8; text-align: center; }
+.ringing { display: flex; justify-content: center; }

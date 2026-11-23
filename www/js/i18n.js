@@ -202,6 +202,8 @@ var I18n = (function () {
       regionNote: 'Quick play, public tables and tournaments match you with players in your region. Friends and private tables work everywhere.',
       typed: 'Typed chat',
       typedNote: 'Shows what other players type at tables and private messages from friends. Phrases and emotes always work.',
+      voice: 'Voice',
+      voiceNote: 'Hear other players at tables and in calls, and talk with your microphone. Off turns voice off completely.',
       sound: 'Sound',
       haptics: 'Vibration',
       fourc: 'Four-colour suits',
@@ -483,6 +485,28 @@ var I18n = (function () {
       mute: 'You cannot type messages for now.',
       off: 'Typed chat is off. You can turn it on in Settings.',
       no: 'This message could not be sent.'
+    },
+
+    voice: {
+      mic: { on: 'Microphone on. Tap to turn off.', off: 'Microphone off. Tap to turn on.' },
+      spk: { on: 'Voice on. Tap to mute everyone.', off: 'Voice muted. Tap to listen.' },
+      denied: 'The microphone is not allowed. You can allow it in your device settings.',
+      fail: 'Voice could not connect.',
+      mute: 'Mute voice',
+      unmute: 'Unmute voice',
+      call: 'Call',
+      in: v => v.name + ' is calling.',
+      calling: v => 'Calling ' + v.name + '.',
+      talking: v => 'In a call with ' + v.name + '.',
+      accept: 'Answer',
+      decline: 'Decline',
+      hang: 'Hang up',
+      muteMe: 'Mute',
+      end: {
+        missed: 'No answer.', missedIn: 'Missed call.', declined: 'Call declined.', busy: 'Busy right now.', away: 'Not online.',
+        no: 'This call could not be made.', slow: 'Wait a moment before calling again.', dropped: 'The call dropped.'
+      },
+      line: { missed: 'Missed call', missedMine: 'No answer', declined: 'Call declined' }
     },
 
     rep: { do: 'Report', done: 'Reported' },
@@ -791,6 +815,8 @@ var I18n = (function () {
       regionNote: 'Hızlı oyun, herkese açık masalar ve turnuvalar seni bölgendeki oyuncularla eşleştirir. Arkadaşlar ve özel masalar her yerde çalışır.',
       typed: 'Yazılı sohbet',
       typedNote: 'Diğer oyuncuların masada yazdıklarını ve arkadaşlarından gelen özel mesajları gösterir. Hazır sözler ve ifadeler her zaman çalışır.',
+      voice: 'Sesli konuşma',
+      voiceNote: 'Masada ve aramalarda diğer oyuncuları duyarsın, mikrofonunla konuşabilirsin. Kapalıyken sesli konuşma tamamen devre dışı kalır.',
       sound: 'Ses',
       haptics: 'Titreşim',
       fourc: 'Dört renkli işaretler',
@@ -1073,6 +1099,28 @@ var I18n = (function () {
       mute: 'Şu an mesaj yazamazsın.',
       off: 'Yazılı sohbet kapalı. Ayarlar bölümünden açabilirsin.',
       no: 'Bu mesaj gönderilemedi.'
+    },
+
+    voice: {
+      mic: { on: 'Mikrofon açık. Kapatmak için dokun.', off: 'Mikrofon kapalı. Açmak için dokun.' },
+      spk: { on: 'Ses açık. Herkesi susturmak için dokun.', off: 'Ses kapalı. Dinlemek için dokun.' },
+      denied: 'Mikrofon izni yok. Cihazının ayarlarından izin verebilirsin.',
+      fail: 'Ses bağlanamadı.',
+      mute: 'Sesini kapat',
+      unmute: 'Sesini aç',
+      call: 'Ara',
+      in: v => v.name + ' arıyor.',
+      calling: v => v.name + ' aranıyor.',
+      talking: v => v.name + ' ile görüşüyorsun.',
+      accept: 'Cevapla',
+      decline: 'Reddet',
+      hang: 'Kapat',
+      muteMe: 'Sessize al',
+      end: {
+        missed: 'Cevap yok.', missedIn: 'Cevapsız arama.', declined: 'Arama reddedildi.', busy: 'Şu an meşgul.', away: 'Çevrimdışı.',
+        no: 'Bu arama yapılamadı.', slow: 'Tekrar aramadan önce biraz bekle.', dropped: 'Arama koptu.'
+      },
+      line: { missed: 'Cevapsız arama', missedMine: 'Cevap yok', declined: 'Arama reddedildi' }
     },
 
     rep: { do: 'Şikâyet et', done: 'Şikâyet edildi' },

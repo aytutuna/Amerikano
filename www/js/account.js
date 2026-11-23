@@ -95,6 +95,7 @@ var Account = (function () {
   A.push = async (k, v) => set(await call('POST', '/api/push', { [k]: v }));
   A.region = async r => set(await call('POST', '/api/region', { region: r }));
   A.typed = async v => set(await call('POST', '/api/typed', { typed: v }));
+  A.voice = async v => set(await call('POST', '/api/voice', { voice: v }));
 
   // an Apple account the server holds no token for has to send a fresh credential
   A.remove = async cred => {

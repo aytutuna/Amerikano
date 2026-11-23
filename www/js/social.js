@@ -327,6 +327,13 @@ var Social = (function () {
         const row = node('div', 'pbtns');
         if (data.rel === 'block') row.appendChild(button(t('pc.unblock'), 'plain', post('/api/block/' + pid, 'DELETE')));
         else row.appendChild(button(t('pc.block'), 'quiet', post('/api/block/' + pid, 'POST')));
+        if (seat && Voice.on()) {
+          const v = button(t(Voice.muted(pid) ? 'voice.unmute' : 'voice.mute'), 'quiet', () => {
+            Voice.toggle(pid);
+            fill();
+          });
+          row.appendChild(v);
+        }
         const b = button(t('rep.do'), 'quiet', () => report(b, { pid: pid, ctx: 'profile' }));
         row.appendChild(b);
         left.appendChild(row);
@@ -493,6 +500,10 @@ var Social = (function () {
       list.textContent = '';
       if (!msgs.length) list.appendChild(node('p', 'note', t('dm.none')));
       for (const m of msgs) {
+        if (m.k) {
+          list.appendChild(node('p', 'ln sys', t('voice.line.' + m.k + (m.k === 'missed' && m.mine ? 'Mine' : ''))));
+          continue;
+        }
         const l = node('p', 'ln' + (m.mine ? ' mine' : ''));
         l.appendChild(node('b', '', m.mine ? t('dm.you') : who(p.seed)));
         l.appendChild(document.createTextNode(' ' + m.text));
@@ -521,6 +532,11 @@ var Social = (function () {
       }, () => {});
     }
 
+    if (Voice.on()) {
+      const c = button(t('voice.call'), 'plain', () => Voice.dial(p));
+      c.disabled = p.online === false;
+      body.appendChild(c);
+    }
     body.appendChild(entry((x, back) => {
       note.textContent = '';
       const post = ok => Account.call('POST', '/api/dm', { to: p.id, text: x, ok: ok }).then(d => {
@@ -565,6 +581,17 @@ var Social = (function () {
     el.appendChild(button(t('fr.later'), 'quiet', off));
     box.appendChild(el);
     fade = setTimeout(off, 8000);
+  };
+
+  // a call with this friend ended: a missed one of theirs counts as unread, and an open conversation shows the new line
+  S.called = (pid, why, out) => {
+    if (talking && talking.id === pid) return talking.load();
+    if (out || why !== 'missed' || !typing()) return;
+    const f = book.friends.find(x => x.id === pid);
+    if (f) {
+      f.unread = (f.unread || 0) + 1;
+      UI.redraw();
+    } else S.refresh().catch(() => {});
   };
 
   S.fresh = () => { lines = []; };
