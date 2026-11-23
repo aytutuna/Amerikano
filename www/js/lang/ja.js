@@ -173,7 +173,7 @@
 
     start: {
       title: 'Amerikano',
-      go: 'トレーニング',
+      go: '練習',
       goNote: 'ボット相手・チップなし',
       botTag: 'ボット',
       cont: 'つづきから',
@@ -368,8 +368,8 @@
       pick: 'ルームを選ぶ',
       finding: 'プレイヤーを探しています',
       all: 'すべて見る',
-      quickAt: v => v.n + 'チップのテーブルに着席します',
-      friendsNote: 'テーブルを作るか、コードを入力',
+      quickAt: v => v.n + 'チップのテーブルへ',
+      friendsNote: 'テーブル作成・コード入力',
       quick: 'クイックプレイ',
       fill: '全席が埋まるとすぐに対戦が始まります。',
       stake: '参加費',
@@ -414,7 +414,7 @@
 
     nonet: {
       down: 'オフライン',
-      downNote: 'オンラインのテーブルには接続が必要です。トレーニングはオフラインでも遊べます。',
+      downNote: 'オンラインのテーブルには接続が必要です。練習モードはオフラインでも遊べます。',
       retry: '再試行',
       replaced: '別の場所で開かれています',
       replacedNote: 'Amerikanoが別の端末またはウィンドウで開かれています。',
@@ -568,7 +568,7 @@
       inviteNote: 'オンラインのフレンドを自分のテーブルに招待できます。',
       createFirst: 'フレンドを招待するには、まずテーブルを作りましょう。空席のあるフレンドのテーブルには参加できます。',
       playing: 'プレイ中',
-      at: { lobby: 'ロビー', training: 'トレーニング中', table: 'テーブルにいます' },
+      at: { lobby: 'ロビー', training: '練習中', table: 'テーブルにいます' },
       lateNote: v => v.name + 'から招待されました',
       invTitle: '招待',
       invText: v => v.name + 'さんからテーブルへの招待です。参加費' + v.n + 'チップ。',
