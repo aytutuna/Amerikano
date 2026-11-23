@@ -1159,7 +1159,7 @@ var I18n = (function () {
   const S = { en: en, tr: tr };
 
   // the languages that have a file; add a code here when its lang/ and names/ files land
-  const CODES = ['en', 'tr', 'es', 'pt', 'fr', 'it', 'nl', 'de', 'pl', 'ru', 'uk', 'ar', 'hi', 'id'];
+  const CODES = ['en', 'tr', 'es', 'pt', 'fr', 'it', 'nl', 'de', 'pl', 'ru', 'uk', 'ar', 'hi', 'id', 'ja'];
   const NAMES = {
     en: 'English', tr: 'Türkçe', es: 'Español', pt: 'Português (Brasil)', fr: 'Français', de: 'Deutsch', it: 'Italiano', nl: 'Nederlands', pl: 'Polski',
     ru: 'Русский', uk: 'Українська', ar: 'العربية', hi: 'हिन्दी', id: 'Bahasa Indonesia', ja: '日本語', ko: '한국어', 'zh-Hans': '简体中文', 'zh-Hant': '繁體中文'
