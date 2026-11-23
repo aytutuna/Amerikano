@@ -214,6 +214,8 @@
       regionNote: 'Les parties rapides, les tables publiques et les tournois te placent avec des joueurs de ta région. Les amis et les tables privées marchent partout.',
       typed: 'Chat écrit',
       typedNote: 'Affiche ce que les autres écrivent aux tables et les messages privés de tes amis. Les phrases et les émotes marchent toujours.',
+      voice: 'Voix',
+      voiceNote: 'Entends les autres joueurs aux tables et pendant les appels, et parle avec ton micro. Désactivée, la voix est coupée complètement.',
       sound: 'Son',
       haptics: 'Vibrations',
       fourc: 'Cartes en quatre teintes',
@@ -497,7 +499,37 @@
       no: 'Ce message n’a pas pu être envoyé.'
     },
 
+    voice: {
+      mic: { on: 'Micro activé. Touche pour le couper.', off: 'Micro coupé. Touche pour l’activer.' },
+      spk: { on: 'Voix activée. Touche pour couper le son de tout le monde.', off: 'Voix coupée. Touche pour écouter.' },
+      denied: 'Le micro n’est pas autorisé. Tu peux l’autoriser dans les réglages de ton appareil.',
+      fail: 'La voix n’a pas pu se connecter.',
+      mute: 'Couper la voix',
+      unmute: 'Activer la voix',
+      call: 'Appeler',
+      in: v => v.name + ' t’appelle.',
+      calling: v => 'Tu appelles ' + v.name + '.',
+      talking: v => 'En appel avec ' + v.name + '.',
+      accept: 'Répondre',
+      decline: 'Refuser',
+      hang: 'Raccrocher',
+      muteMe: 'Muet',
+      end: {
+        missed: 'Pas de réponse.', missedIn: 'Appel manqué.', declined: 'Appel refusé.', busy: 'Occupé pour le moment.', away: 'Pas en ligne.',
+        no: 'Cet appel n’a pas pu être passé.', slow: 'Attends un instant avant de rappeler.', dropped: 'L’appel a été coupé.'
+      },
+      line: { missed: 'Appel manqué', missedMine: 'Pas de réponse', declined: 'Appel refusé' }
+    },
+
     rep: { do: 'Signaler', done: 'Signalé' },
+
+    warn: {
+      title: 'Avant d’envoyer',
+      text: 'Partager tes coordonnées, c’est ton choix, mais ne les donne jamais à des gens que tu ne connais pas. Les jetons d’Amerikano ne peuvent ni s’acheter ni se vendre. Signale toute personne qui propose de les échanger.',
+      send: 'Envoyer quand même',
+      edit: 'Modifier',
+      note: 'Fais attention aux liens et aux coordonnées venant d’autres joueurs. Les jetons ne sont jamais vendus.'
+    },
 
     gift: {
       title: 'Envoyer un cadeau',
