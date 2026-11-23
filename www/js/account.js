@@ -59,6 +59,7 @@ var Account = (function () {
   A.refresh = async () => {
     const a = acc;
     const p = await call('GET', '/api/me');
+    if (p.lang !== I18n.lang()) call('POST', '/api/lang', { lang: I18n.lang() }).catch(() => {});
     return acc === a ? set(p) : p;
   };
 

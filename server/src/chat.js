@@ -1,6 +1,6 @@
 import { verify, who, json, fail } from './account.js';
-import { rel, unread } from './social.js';
-import { typed, clean } from './filter.js';
+import { rel } from './social.js';
+import { clean, mask } from './filter.js';
 
 const DAY = 86400000;
 const TEXT = 300;
@@ -14,7 +14,7 @@ async function send(env, ctx, p, request) {
   let b = {};
   try { b = await request.json(); } catch (e) { /* no body */ }
   if (!ID.test(b.to)) return fail('id');
-  const x = typed(b.text, TEXT);
+  const x = clean(b.text, TEXT);
   if (!x) return fail('text');
   if (!p.typed) return fail('typedoff', 403);
   if (p.mute_until > Date.now()) return fail('mute', 403);
@@ -23,9 +23,10 @@ async function send(env, ctx, p, request) {
   if (await rel(env.DB, p.id, b.to) !== 'friend') return fail('nodm', 403);
   const q = await who(env.DB, b.to);
   if (!q || q.typed === 0) return fail('nodm', 403);
+  const text = mask(x, [p.lang, q.lang]);
   const at = Date.now();
-  const r = await env.DB.prepare('INSERT INTO messages (sender, recipient, text, at) VALUES (?, ?, ?, ?)').bind(p.id, b.to, x, at).run();
-  const m = { id: r.meta.last_row_id, text: x, at: at };
+  const r = await env.DB.prepare('INSERT INTO messages (sender, recipient, text, at) VALUES (?, ?, ?, ?)').bind(p.id, b.to, text, at).run();
+  const m = { id: r.meta.last_row_id, text: text, at: at };
   ctx.waitUntil(hub(env).dm(p.id, p.name_seed, b.to, m).catch(() => {}));
   return json({ message: Object.assign({ mine: true }, m) });
 }
@@ -33,15 +34,17 @@ async function send(env, ctx, p, request) {
 // the newest page, or the one before message `before`; the first page counts as read
 async function thread(env, p, id, url) {
   if (!ID.test(id) || await rel(env.DB, p.id, id) !== 'friend') return fail('nodm', 403);
-  const before = Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER;
+  const page = url.searchParams.get('before');
+  if (page !== null && !/^\d{1,15}$/.test(page)) return fail('before');
+  const before = page === null ? Number.MAX_SAFE_INTEGER : Number(page);
   const { results } = await env.DB.prepare('SELECT id, sender, text, at FROM messages WHERE ((sender = ?1 AND recipient = ?2) OR (sender = ?2 AND recipient = ?1)) AND id < ?3 ORDER BY id DESC LIMIT ?4')
     .bind(p.id, id, before, PAGE + 1).all();
   if (before === Number.MAX_SAFE_INTEGER) await env.DB.prepare('UPDATE messages SET seen = 1 WHERE recipient = ? AND sender = ? AND seen = 0').bind(p.id, id).run();
   return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, at: r.at })) });
 }
 
-// A report keeps who, what and where: a table code, dm or profile. Three different reporters within a week mute the reported
-// player's typed chat for a day. A persona can be reported like anyone, so a report says nothing about who is one.
+// A report keeps who, what and where: a table code, dm or profile. Three different reporters, each with an account at least a day
+// old, within a week and since the last mute ended mute the reported player's typed chat for a day. A persona can be reported like anyone, so a report says nothing about who is one.
 async function report(env, p, request) {
   let b = {};
   try { b = await request.json(); } catch (e) { /* no body */ }
@@ -60,7 +63,8 @@ async function report(env, p, request) {
   const sent = await env.DB.prepare('SELECT count(*) AS n FROM reports WHERE reporter = ? AND at > ?').bind(p.id, now - DAY).first();
   if (sent.n >= REPORTS) return fail('slow', 429);
   await env.DB.prepare('INSERT INTO reports (reporter, reported, text, ctx, at) VALUES (?, ?, ?, ?, ?)').bind(p.id, b.pid, text, b.ctx, now).run();
-  const n = await env.DB.prepare('SELECT count(DISTINCT reporter) AS n FROM reports WHERE reported = ? AND at > ?').bind(b.pid, now - 7 * DAY).first();
+  const since = Math.max(now - 7 * DAY, q.mute_until || 0);
+  const n = await env.DB.prepare('SELECT count(DISTINCT r.reporter) AS n FROM reports r JOIN players p ON p.id = r.reporter WHERE r.reported = ? AND r.at > ? AND p.created < ?').bind(b.pid, since, now - DAY).first();
   if (n.n >= 3) await env.DB.prepare('UPDATE players SET mute_until = ?1 WHERE id = ?2 AND mute_until < ?3').bind(now + DAY, b.pid, now).run();
   return json({ ok: true });
 }
@@ -74,6 +78,5 @@ export async function chat(request, env, ctx) {
   if (what === 'report' && m === 'POST') return report(env, p, request);
   if (what === 'dm' && m === 'POST' && !arg) return send(env, ctx, p, request);
   if (what === 'dm' && m === 'GET' && arg) return thread(env, p, arg, url);
-  if (what === 'dm' && m === 'GET') return json({ unread: await unread(env.DB, p.id) });
   return fail('nope', 404);
 }

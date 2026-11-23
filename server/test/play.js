@@ -865,15 +865,28 @@ async function chat() {
 }
 
 async function words() {
-  const { mask, clean } = await import('../src/filter.js');
+  const { mask, clean, typed, LANGS } = await import('../src/filter.js');
   for (const [from, to] of [['You are a Fuck', 'You are a ****'], ['what the sh1t', 'what the ****'], ['FUUUUCK you', '******* you'], ['ŞİKTİR git', '****** git'],
     ['a$$hole', '*******'], ['Scheiße', '*******'], ['ПИЗДЕЦ тут', '****** тут'], ['хуй тебе', '*** тебе'], ['كسمك', '****'], ['씨발 뭐야', '** 뭐야'], ['他妈的真烦', '***真烦'],
     ['visit www.evil.com now', 'visit ************ now'], ['mail bob@mail.com ok', 'mail ************ ok'], ['call 416-555-1234 now', 'call ************ now']]) {
-    assert.strictEqual(mask(from), to, from);
+    assert.strictEqual(mask(from, LANGS), to, from);
   }
   for (const ok of ['I got a pass at the class', 'Scunthorpe assess classic', 'send pic', 'Amina says hi', 'as is', 'sikayet var', 'I have 500 chips and 2500', 'やくそく', 'go to the park.']) {
     assert.strictEqual(mask(ok), ok, ok);
   }
+  const stars = n => '*'.repeat(n);
+  for (const [from, to] of [['(555) 123-4567', '***** ********'], ['+90 (532) 123 45 67', '*** ***** *** ** **'], ['555/123/4567', stars(12)], ['call 416.555.1234.', 'call ' + stars(12) + '.'],
+    ['ｗｗｗ．ｅｘａｍｐｌｅ．ｃｏｍ', stars(15)], ['example。com ok', stars(11) + ' ok'], ['see foo.xyz/a', 'see ' + stars(9)], ['add @bobby now', 'add ' + stars(6) + ' now'], ['a@b.com', stars(7)], ['go to x.de now', 'go to ' + stars(4) + ' now']]) {
+    assert.strictEqual(mask(from), to, from);
+  }
+  for (const ok of ['12.500.000 chips', 'I have 1,250,000 chips', 'pay 25.000 now', 'me @ home', 'so e.g. this', 'Fukuoka', 'sık sık', 'siktir git', 'the pede']) {
+    assert.strictEqual(mask(ok), ok, ok);
+  }
+  assert.strictEqual(typed('f\u00adu\u2060c\ufe0fk exam\u00adple.com', 120), '**** ' + stars(11), 'format characters do not hide a word');
+  assert.strictEqual(mask('siktir git', ['tr']), '****** git', 'a language list applies when that language is in play');
+  assert.strictEqual(mask('on pede', ['pt']), 'on pede');
+  assert.strictEqual(mask('on pede', ['fr']), 'on ****');
+  assert.strictEqual(mask('kurwa mac', ['pl', 'tr']), '***** mac');
   assert.strictEqual(clean('  a\x00b\x07 \n\t c  ', 120), 'ab c');
   assert.strictEqual(clean('x'.repeat(200), 120).length, 120);
   assert.strictEqual(clean(5, 120), '');
@@ -967,6 +980,37 @@ async function talk() {
   assert.deepStrictEqual(again.map(m => m.x), ['blocked two'], 'the replay leaves out a blocked sender');
   console.log('table chat: a block hides typed lines both ways, live and replayed');
   for (const c of [g.a, g.b, b2, b3, out.a, out.b]) c.ws.close();
+}
+
+async function tongues() {
+  const g = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
+  assert.strictEqual((await call('POST', '/api/lang', g.accA, { lang: 'xx' })).status, 400);
+  assert.strictEqual((await call('POST', '/api/lang', g.accA, {})).status, 400);
+  assert.strictEqual((await call('POST', '/api/lang', g.accA, { lang: 'en' })).body.lang, 'en');
+  assert.strictEqual((await call('POST', '/api/lang', g.accB, { lang: 'tr' })).body.lang, 'tr');
+  // English only checks English; a Turkish reader or sender brings the Turkish list in
+  const atB = g.b.next(m => m.t === 'typed' && m.p === seatA);
+  const mine = g.a.next(m => m.t === 'typed' && m.p === 0);
+  g.a.send({ t: 'text', x: 'siktir git' });
+  assert.strictEqual((await atB).x, '****** git', 'the Turkish reader gets it masked');
+  assert.strictEqual((await mine).x, 'siktir git', 'the English sender sees their own line');
+  const atA = g.a.next(m => m.t === 'typed' && m.p === seatB);
+  g.b.send({ t: 'text', x: 'siktir git' });
+  assert.strictEqual((await atA).x, '****** git', 'a Turkish sender is masked for everyone');
+  console.log('languages: table lines are masked per reader with the sender language and their own');
+
+  await befriend(g.accA, g.accB);
+  const dm = (from, to) => call('POST', '/api/dm', from, { to: to.id, text: 'siktir git' });
+  assert.strictEqual((await dm(g.accA, g.accB)).body.message.text, '****** git');
+  const c = await guest();
+  await befriend(g.accA, c);
+  assert.strictEqual((await dm(g.accA, c)).body.message.text, 'siktir git', 'two English players share no Turkish list');
+  g.a.ws.close();
+  g.b.ws.close();
+  console.log('languages: private messages are masked for the pair');
 }
 
 async function gifts() {
@@ -1648,7 +1692,7 @@ async function seatTwo(stake) {
   b.send({ t: 'quick', stake: stake });
   const B = await sb;
   assert.strictEqual(B.code, A.code);
-  const t = { accA, accB, a, b, A, ra: seated(A), rb: seated(B) };
+  const t = { accA, accB, a, b, A, B, ra: seated(A), rb: seated(B) };
   t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm));
   for (const c of [t.ra, t.rb]) play(c, { finish: () => {} });
   return t;
@@ -1665,6 +1709,9 @@ async function rematchBoth() {
     assert(m.rm.left > 0 && m.rm.left <= 15000);
     assert.strictEqual(m.rm.mine, false);
   }
+  const line = t.rb.next(m => m.t === 'typed');
+  t.ra.send({ t: 'text', x: 'good game' });
+  assert.strictEqual((await line).x, 'good game');
   const next = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.phase !== 'matchend'));
   t.ra.send({ t: 'rematch' });
   t.rb.send({ t: 'rematch' });
@@ -1680,6 +1727,15 @@ async function rematchBoth() {
     assert.strictEqual(refs.length, 2);
     assert.notStrictEqual(refs[0], refs[1]);
   }
+  const again = client('/ws/' + t.B.code);
+  await again.ready;
+  const old = [];
+  again.handlers.push(m => { if (m.t === 'typed') old.push(m); });
+  again.send({ t: 'join', token: t.B.token });
+  await again.next(m => m.t === 'state');
+  await sleep(400);
+  assert.deepStrictEqual(old, [], 'a rematch starts with an empty chat log');
+  again.ws.close();
   console.log('rematch: both pressed, the room dealt again with a new escrow each');
   for (const c of [t.ra, t.rb, t.a, t.b]) c.ws.close();
 }
@@ -2115,15 +2171,15 @@ async function dms() {
   hb.ws.close();
   assert.strictEqual((await dm(a, b, 'you sh1t, www.example.com')).status, 200);
   await dm(b, a, 'back at you');
-  assert.deepStrictEqual((await call('GET', '/api/dm', b)).body, { unread: { [a.id]: 2 } });
-  assert.deepStrictEqual((await call('GET', '/api/dm', a)).body, { unread: { [b.id]: 1 } });
-  const fl = (await call('GET', '/api/friends', b)).body.friends;
-  assert.deepStrictEqual(fl.map(x => [x.id, x.unread]), [[a.id, 2]], 'the friends list carries the unread count');
+  const waiting = async acc => (await call('GET', '/api/friends', acc)).body.friends.map(x => [x.id, x.unread]);
+  assert.deepStrictEqual(await waiting(b), [[a.id, 2]], 'the friends list carries the unread count');
+  assert.deepStrictEqual(await waiting(a), [[b.id, 1]]);
   r = await thread(b, a);
   assert.deepStrictEqual(r.body.messages.map(m => [m.mine, m.text]), [[true, 'back at you'], [false, 'you ****, ' + '*'.repeat(15)], [false, 'hello there']], 'newest first');
   assert.strictEqual(r.body.more, false);
-  assert.deepStrictEqual((await call('GET', '/api/dm', b)).body, { unread: {} }, 'reading marks the conversation read');
-  assert.deepStrictEqual((await call('GET', '/api/dm', a)).body, { unread: { [b.id]: 1 } }, 'the other side still has theirs');
+  assert.deepStrictEqual(await waiting(b), [[a.id, 0]], 'reading marks the conversation read');
+  assert.deepStrictEqual(await waiting(a), [[b.id, 1]], 'the other side still has theirs');
+  for (const bad of ['abc', '1e400', '-5', '1.5', '']) assert.strictEqual((await thread(b, a, '?before=' + bad)).status, 400, 'before=' + bad);
   console.log('dm: friends only, cleaned and filtered, live through the hub, unread counts, read on open');
 
   // 5 in a burst, then one every 3 seconds
@@ -2228,7 +2284,13 @@ async function reports() {
   const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
   const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
   await befriend(g.accA, g.accB);
-  const [r1, r2, r3] = [await guest(), await guest(), await guest()];
+  // only accounts at least a day old count as reporters
+  const aged = async () => {
+    const x = await guest();
+    sql('UPDATE players SET created = created - ' + 2 * DAY + ' WHERE id = ' + who(x));
+    return x;
+  };
+  const [r1, r2, r3] = [await aged(), await aged(), await aged()];
   const rep = (from, to, o) => call('POST', '/api/report', from, Object.assign({ pid: to.id, text: 'rude words', ctx: g.code }, o));
   const rows = who => sql('SELECT reporter, reported, text, ctx FROM reports WHERE reported = ' + who);
   const muted = acc => sql('SELECT mute_until FROM players WHERE id = ' + who(acc))[0].mute_until > Date.now();
@@ -2286,6 +2348,17 @@ async function reports() {
   sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO reports (reporter, reported, text, ctx, at) SELECT ' + who(r1) + ", 'a', 'x', 'dm', " + Date.now() + ' FROM n');
   assert.strictEqual((await rep(r1, g.accA)).status, 429, 'at most 20 reports a day');
   console.log('reports: private messages read back from the conversation, 20 a day');
+
+  // new accounts do not count, and reports from before the last mute are spent
+  for (const y of [await guest(), await guest(), await guest()]) assert.strictEqual((await rep(y, g.accA)).status, 200);
+  assert.strictEqual(muted(g.accA), false, 'three accounts under a day old do not mute');
+  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), false, 'the three reports before the last mute are not counted again');
+  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), false);
+  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), true, 'three new reporters after the mute ended mute again');
+  console.log('reports: only accounts a day old count, and only reports since the last mute');
 
   // 180 days, and a deleted reporter takes their reports along
   const n = id => sql('SELECT count(*) AS n FROM reports WHERE reporter = ' + who(id))[0].n;
@@ -2812,6 +2885,7 @@ async function push() {
   await words();
   await chat();
   await talk();
+  await tongues();
   await gifts();
   await invites();
   await push();

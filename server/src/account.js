@@ -2,6 +2,7 @@ import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
 import { identity, refresh, revoke } from './apple.js';
 import { REGIONS, DEFAULT, regionOf } from './region.js';
+import { LANGS } from './filter.js';
 
 const DAY = 86400000;
 const START = 5000;
@@ -117,6 +118,7 @@ function profile(p) {
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
     typed: !!p.typed,
+    lang: p.lang,
     region: p.region || DEFAULT,
     push: Object.fromEntries(PUSH.map(k => [k, !!p['push_' + k]]))
   };
@@ -264,6 +266,13 @@ async function typedSwitch(db, p, request) {
   await db.prepare('UPDATE players SET typed = ? WHERE id = ?').bind(+b.typed, p.id).run();
 }
 
+// the app language decides which word lists apply to what this player types and reads
+async function langSwitch(db, p, request) {
+  const b = await body(request);
+  if (!LANGS.includes(b.lang)) return fail('lang');
+  await db.prepare('UPDATE players SET lang = ? WHERE id = ?').bind(b.lang, p.id).run();
+}
+
 // from the country Cloudflare saw; the dev server (PACE set) has no real one, so the tests pin it by header
 function guess(env, request) {
   const h = request.headers;
@@ -358,6 +367,7 @@ export async function api(request, env) {
   else if (path === '/api/push') err = await prefs(db, p, request);
   else if (path === '/api/region') err = await region(env, p, request);
   else if (path === '/api/typed') err = await typedSwitch(db, p, request);
+  else if (path === '/api/lang') err = await langSwitch(db, p, request);
   else if (path === '/api/apple/link') err = await link(env, request, p);
   else return fail('nope', 404);
   if (err) return err;

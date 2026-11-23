@@ -4,7 +4,7 @@ import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
 import { won, rel, apart } from './social.js';
-import { typed } from './filter.js';
+import { clean, mask } from './filter.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -513,22 +513,24 @@ export class Room extends DurableObject {
   // chat off. The last few lines are kept in memory for a player who reconnects.
   async text(ws, i, m) {
     const s = this.r.seats[i];
-    const x = typed(m.x, TYPED);
+    const x = clean(m.x, TYPED);
     if (!this.st || !x || !s.pid || s.bot || !this.allow('t' + i)) return;
     const ids = this.r.seats.filter(q => q && q.pid && !q.bot).map(q => q.pid);
     const [away, rows] = await Promise.all([apart(this.env.DB, s.pid),
-      this.env.DB.prepare('SELECT id, typed, mute_until FROM players WHERE id IN (' + ids.map(() => '?').join() + ')').bind(...ids).all()]);
+      this.env.DB.prepare('SELECT id, typed, mute_until, lang FROM players WHERE id IN (' + ids.map(() => '?').join() + ')').bind(...ids).all()]);
     if (!this.r) return;
     const me = rows.results.find(q => q.id === s.pid);
     if (!me || !me.typed) return this.fail(ws, 'typedoff');
     if (me.mute_until > Date.now()) return this.fail(ws, 'mute');
     for (const q of rows.results) if (!q.typed) away.add(q.id);
-    this.lines.push({ i: i, pid: s.pid, x: x });
+    this.lines.push({ i: i, pid: s.pid, lang: me.lang, x: x });
     if (this.lines.length > LINES) this.lines.shift();
     const n = this.r.n;
+    // each reader gets the words masked for their own language and the sender's
     for (const w of this.socks()) {
-      const me = w.deserializeAttachment().seat;
-      if (!away.has(this.r.seats[me].pid)) w.send(JSON.stringify({ t: 'typed', p: (i - me + n) % n, x: x }));
+      const at = w.deserializeAttachment().seat;
+      const you = this.r.seats[at].pid;
+      if (!away.has(you)) w.send(JSON.stringify({ t: 'typed', p: (i - at + n) % n, x: mask(x, [me.lang, (rows.results.find(q => q.id === you) || {}).lang]) }));
     }
   }
 
@@ -538,7 +540,11 @@ export class Room extends DurableObject {
     const [away, me] = await Promise.all([apart(this.env.DB, pid), player(this.env.DB, pid)]);
     if (!this.r || ws.readyState !== 1 || !me || !me.typed) return;
     const n = this.r.n;
-    for (const l of this.lines) if (!away.has(l.pid)) ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: l.x, old: true }));
+    for (const l of this.lines) {
+      // a line whose sender no longer sits in that seat is left out
+      if (away.has(l.pid) || !this.r.seats[l.i] || this.r.seats[l.i].pid !== l.pid) continue;
+      ws.send(JSON.stringify({ t: 'typed', p: (l.i - i + n) % n, x: mask(l.x, [l.lang, me.lang]), old: true }));
+    }
   }
 
   // A persona now and then says something, through the same path as a player's chat.
@@ -831,6 +837,7 @@ export class Room extends DurableObject {
     if (!rm) return;
     const want = this.wanting();
     r.rm = null;
+    this.lines = [];
     if (!want.some(i => !r.seats[i].fake)) {
       await release(this.env.DB, r.code);
       this.report(true);

@@ -520,8 +520,10 @@ var Social = (function () {
     if (!typing()) return;
     if (talking && talking.id === m.from) return talking.load();
     const f = book.friends.find(x => x.id === m.from);
-    if (f) f.unread = (f.unread || 0) + 1;
-    else S.refresh().catch(() => {});
+    if (f) {
+      f.unread = (f.unread || 0) + 1;
+      UI.redraw();
+    } else S.refresh().catch(() => {});
     const text = t('dm.new', { name: who(m.seed) });
     Live.say(text);
     const box = document.getElementById('toast');

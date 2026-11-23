@@ -215,7 +215,7 @@ var UI = (function () {
         { v: 'auto', label: t('set.auto') },
         { v: 'en', label: t('set.en') },
         { v: 'tr', label: t('set.tr') }
-      ], Settings.get('lang'), v => { Settings.set('lang', v); Push.sync(); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
+      ], Settings.get('lang'), v => { Settings.set('lang', v); Push.sync(); if (Account.has()) Account.refresh().catch(() => {}); fill(); if (h) h.set(t('set.title'), done()); }, 'seg'));
       if (Account.me()) {
         const rg = choice('region', t('set.region'), ['am', 'eu', 'tr', 'mea', 'ap'].map(v => ({ v: v, label: t('set.reg.' + v) })), Account.me().region, v => Account.region(v).catch(() => fill()), 'rows');
         rg.appendChild(node('p', 'note', t('set.regionNote')));
