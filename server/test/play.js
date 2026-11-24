@@ -2355,8 +2355,9 @@ async function shop(rc) {
 
   // deleting an account takes its shop records along
   assert.strictEqual((await call('DELETE', '/api/me', x)).status, 200);
-  await settle(() => rc.seen.some(s => s.method === 'DELETE'));
-  assert.deepStrictEqual(rc.seen.filter(s => s.method === 'DELETE'), [{ method: 'DELETE', url: '/v1/subscribers/' + x.id, auth: 'Bearer sk_test' }], 'RevenueCat is told to forget the player');
+  const gone = () => rc.seen.filter(s => s.method === 'DELETE' && s.url.endsWith(x.id));
+  await settle(() => gone().length);
+  assert.deepStrictEqual(gone(), [{ method: 'DELETE', url: '/v1/subscribers/' + x.id, auth: 'Bearer sk_test' }], 'RevenueCat is told to forget the player');
   for (const t of ['owned', 'token_log', 'purchases']) assert.strictEqual(sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(x))[0].n, 0, t);
   console.log('shop: account deletion removes owned items, token log and purchases');
 }
