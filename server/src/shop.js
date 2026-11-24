@@ -1,8 +1,8 @@
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, grantTokens, worn, json, fail } from './account.js';
+import { verify, player, grantTokens, worn, rcBase, json, fail } from './account.js';
 
 const DAY = 86400000;
-const API = 'https://api.revenuecat.com';
+const SYNC_GAP = 10000;
 const ID = /^[0-9a-f]{32}$/;
 
 export async function owns(db, id, item) {
@@ -50,19 +50,29 @@ async function wear(db, p, request) {
 
 // Credits one store transaction. The ref makes the tokens arrive once whichever of the webhook and sync sees it first.
 async function take(db, id, product, tx, env) {
+  const old = await db.prepare('SELECT refunded FROM purchases WHERE tx = ?').bind(tx).first();
+  if (old && old.refunded) return;
   const tokens = Catalog.amount(product);
   await grantTokens(db, id, tokens, 'purchase', 'rc:' + tx);
   await db.prepare('INSERT OR IGNORE INTO purchases (tx, player, product, tokens, env, at) VALUES (?, ?, ?, ?, ?, ?)').bind(tx, id, product, tokens, env || null, Date.now()).run();
 }
 
-// a refund takes back what is still there: tokens that were spent stay spent
-async function refund(db, tx) {
-  const r = await db.prepare('SELECT * FROM purchases WHERE tx = ? AND refunded = 0').bind(tx).first();
-  const p = r && await player(db, r.player);
-  if (!p) return;
-  const back = Math.min(r.tokens, p.tokens);
-  if (back > 0) await grantTokens(db, p.id, -back, 'refund', 'refund:' + tx);
-  await db.prepare('UPDATE purchases SET refunded = 1 WHERE tx = ?').bind(tx).run();
+// A refund takes back what is still there: tokens that were spent stay spent. One that arrives before its purchase is
+// written down as already refunded, so the purchase is never credited. Marked done only once the tokens are really back.
+async function refund(db, tx, id, product) {
+  const r = await db.prepare('SELECT * FROM purchases WHERE tx = ?').bind(tx).first();
+  if (!r) {
+    await db.prepare('INSERT OR IGNORE INTO purchases (tx, player, product, tokens, at, refunded) VALUES (?, ?, ?, ?, ?, 1)').bind(tx, id, product, Catalog.amount(product), Date.now()).run();
+    return;
+  }
+  if (r.refunded) return;
+  for (let i = 0; i < 3; i++) {
+    const p = await player(db, r.player);
+    const back = p ? Math.min(r.tokens, p.tokens) : 0;
+    if (back > 0 && !await grantTokens(db, p.id, -back, 'refund', 'refund:' + tx)) continue;
+    await db.prepare('UPDATE purchases SET refunded = 1 WHERE tx = ?').bind(tx).run();
+    return;
+  }
 }
 
 const digest = async s => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
@@ -81,21 +91,25 @@ async function hook(env, request) {
   if (!tx || !Catalog.amount(e.product_id)) return json({ ok: true });
   if (e.type === 'INITIAL_PURCHASE' || e.type === 'NON_RENEWING_PURCHASE') {
     if (ID.test(e.app_user_id) && await player(env.DB, e.app_user_id)) await take(env.DB, e.app_user_id, e.product_id, tx, e.environment);
-  } else if (e.type === 'CANCELLATION' && e.cancel_reason === 'CUSTOMER_SUPPORT') await refund(env.DB, tx);
+  } else if (e.type === 'CANCELLATION' && e.cancel_reason === 'CUSTOMER_SUPPORT') await refund(env.DB, tx, String(e.app_user_id), e.product_id);
   return json({ ok: true });
 }
 
 // The app asks right after a purchase, so the tokens do not wait for the webhook. Without a key there is nobody to ask.
 async function sync(env, p) {
   if (!env.RC_SECRET_KEY) return null;
-  const r = await fetch((env.RC_API || API) + '/v1/subscribers/' + p.id, { headers: { Authorization: 'Bearer ' + env.RC_SECRET_KEY } });
+  // every call asks RevenueCat, so one a player at a time
+  const now = Date.now();
+  const t0 = await env.DB.prepare('UPDATE players SET sync_at = ?1 WHERE id = ?2 AND sync_at <= ?3').bind(now, p.id, now - SYNC_GAP).run();
+  if (t0.meta.changes !== 1) return fail('slow', 429);
+  const r = await fetch(rcBase(env) + '/v1/subscribers/' + p.id, { headers: { Authorization: 'Bearer ' + env.RC_SECRET_KEY } });
   if (!r.ok) return fail('rc', 502);
   const list = ((await r.json()).subscriber || {}).non_subscriptions || {};
   for (const product of Object.keys(list)) {
     if (!Catalog.amount(product) || !Array.isArray(list[product])) continue;
     for (const t of list[product]) {
-      // the store's own transaction id is what the webhook carries as well
-      const tx = t && (t.store_transaction_id || t.id);
+      // only the store's own transaction id is the one the webhook carries; RevenueCat's own would credit twice
+      const tx = t && t.store_transaction_id;
       if (typeof tx !== 'string' || await env.DB.prepare('SELECT 1 FROM purchases WHERE tx = ?').bind(tx).first()) continue;
       await take(env.DB, p.id, product, tx, t.is_sandbox ? 'SANDBOX' : 'PRODUCTION');
     }

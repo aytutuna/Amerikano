@@ -330,7 +330,9 @@ async function bailout(db, p) {
   if (r[1].meta.changes !== 1) return fail('claimed', 409);
 }
 
-export async function api(request, env) {
+export const rcBase = env => env.RC_API || 'https://api.revenuecat.com';
+
+export async function api(request, env, ctx) {
   const db = env.DB;
   const path = new URL(request.url).pathname;
   const method = request.method;
@@ -382,6 +384,8 @@ export async function api(request, env) {
       db.prepare('DELETE FROM reports WHERE reporter = ?').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
+    // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion
+    if (env.RC_SECRET_KEY && ctx) ctx.waitUntil(fetch(rcBase(env) + '/v1/subscribers/' + p.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + env.RC_SECRET_KEY } }).catch(() => {}));
     return json({ ok: true });
   }
   if (path === '/api/me' && method === 'GET') return json(profile(p));

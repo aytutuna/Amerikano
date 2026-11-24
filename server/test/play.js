@@ -103,6 +103,7 @@ function leakCheck(m) {
   m.players.forEach((p, k) => {
     for (const x of Object.keys(p)) assert(SEAT.has(x), 'unexpected player key ' + x);
     assert.strictEqual('hand' in p, k === 0, 'hand on seat ' + k);
+    assert.strictEqual(typeof p.wear, 'object', 'every seat carries wear, bots too');
   });
 }
 
@@ -2202,7 +2203,7 @@ async function metrics() {
 function fakeRc() {
   const f = { subs: {}, seen: [], down: false };
   f.server = httpServer.createServer((req, res) => {
-    f.seen.push({ url: req.url, auth: req.headers.authorization });
+    f.seen.push({ method: req.method, url: req.url, auth: req.headers.authorization });
     if (f.down) {
       res.writeHead(500);
       return res.end('{}');
@@ -2224,6 +2225,7 @@ async function shop(rc) {
   sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%'");
   const a = await guest();
   const b = await guest();
+  assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE wear IS NULL')[0].n, 0, 'every persona has an outfit, mostly empty');
   assert.strictEqual((await call('GET', '/api/shop')).status, 401);
   assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, earned: 0, cap: 20 });
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).status, 409, 'no tokens, no frame');
@@ -2296,21 +2298,32 @@ async function shop(rc) {
   rc.subs[c.id] = {
     [PACK(500)]: [{ id: 'rc-a', store_transaction_id: 'tx-sync-1', is_sandbox: true }, { id: 'rc-b', store_transaction_id: 'tx-sync-2', is_sandbox: false }],
     [PACK(81)]: [{ id: 'x', store_transaction_id: 'tx-sync-3' }],
+    [PACK(80)]: [{ id: 'no-store-id' }],
     other: []
   };
   assert.strictEqual((await call('POST', '/api/shop/sync')).status, 401);
   rc.down = true;
   assert.strictEqual((await call('POST', '/api/shop/sync', c)).status, 502);
+  assert.strictEqual((await call('POST', '/api/shop/sync', c)).status, 429, 'one sync at a time for a player');
+  const again = () => sql('UPDATE players SET sync_at = 0 WHERE id = ' + who(c));
+  again();
   assert.strictEqual((await shopOf(c)).tokens, 0);
   rc.down = false;
+  again();
   r = await call('POST', '/api/shop/sync', c);
-  assert.deepStrictEqual([r.status, r.body.tokens], [200, 1000], 'both transactions are credited, the unknown product is not');
-  assert.deepStrictEqual(rc.seen[rc.seen.length - 1], { url: '/v1/subscribers/' + c.id, auth: 'Bearer sk_test' });
+  assert.deepStrictEqual([r.status, r.body.tokens], [200, 1000], 'both transactions are credited, the unknown product and an entry without a store id are not');
+  assert.deepStrictEqual(rc.seen[rc.seen.length - 1], { method: 'GET', url: '/v1/subscribers/' + c.id, auth: 'Bearer sk_test' });
+  again();
   assert.strictEqual((await call('POST', '/api/shop/sync', c)).body.tokens, 1000, 'sync twice credits once');
   await hook(event('NON_RENEWING_PURCHASE', c, PACK(500), 'tx-sync-1'));
   assert.strictEqual((await shopOf(c)).tokens, 1000, 'the webhook after a sync credits nothing more');
   rc.subs[c.id][PACK(80)] = [{ id: 'rc-c', store_transaction_id: 'tx-sync-9' }];
+  again();
   assert.strictEqual((await call('POST', '/api/shop/sync', c)).body.tokens, 1080, 'a new transaction is picked up');
+  // a refund that comes first means the purchase is never credited
+  await hook(event('CANCELLATION', c, PACK(500), 'tx-early', { cancel_reason: 'CUSTOMER_SUPPORT' }));
+  await hook(event('NON_RENEWING_PURCHASE', c, PACK(500), 'tx-early'));
+  assert.strictEqual((await shopOf(c)).tokens, 1080, 'a purchase refunded before it arrived credits nothing');
   assert.deepStrictEqual(sql("SELECT env FROM purchases WHERE tx IN ('tx-sync-1', 'tx-sync-2') ORDER BY tx").map(x => x.env), ['SANDBOX', 'PRODUCTION']);
   console.log('shop: sync credits transactions the webhook has not delivered, once');
 
@@ -2343,6 +2356,8 @@ async function shop(rc) {
 
   // deleting an account takes its shop records along
   assert.strictEqual((await call('DELETE', '/api/me', x)).status, 200);
+  await settle(() => rc.seen.some(s => s.method === 'DELETE'));
+  assert.deepStrictEqual(rc.seen.filter(s => s.method === 'DELETE'), [{ method: 'DELETE', url: '/v1/subscribers/' + x.id, auth: 'Bearer sk_test' }], 'RevenueCat is told to forget the player');
   for (const t of ['owned', 'token_log', 'purchases']) assert.strictEqual(sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(x))[0].n, 0, t);
   console.log('shop: account deletion removes owned items, token log and purchases');
 }
