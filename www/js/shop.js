@@ -4,9 +4,10 @@ var Shop = (function () {
   const KEYS = { ios: 'appl_cEUnkcNStTBVeCTrDPvqTfHWOEs', android: '' };
   const fmt = n => n.toLocaleString(I18n.loc());
   const who = seed => Names.text(seed, I18n.lang());
-  const TABS = ['tokens', 'frame', 'plate', 'back', 'felt', 'emote'];
+  const TABS = ['vip', 'tokens', 'frame', 'plate', 'back', 'felt', 'emote'];
   let state = null;
   let prices = null;
+  let vipProduct = null;
   let rc = Promise.resolve('');
   let tab = 'tokens';
   let ask = '';
@@ -47,6 +48,14 @@ var Shop = (function () {
     const r = await plug().getProducts({ productIdentifiers: Catalog.PACKS.map(Catalog.product), type: 'NON_SUBSCRIPTION' });
     prices = Object.fromEntries(r.products.map(p => [p.identifier, p]));
     return prices;
+  }
+
+  async function subscription() {
+    if (vipProduct) return vipProduct;
+    if (!await link()) throw new Error('rc');
+    const r = await plug().getProducts({ productIdentifiers: [Catalog.VIP], type: 'SUBSCRIPTION' });
+    vipProduct = r.products.find(p => p.identifier === Catalog.VIP) || null;
+    return vipProduct;
   }
 
   function start() {
@@ -122,7 +131,8 @@ var Shop = (function () {
     e.appendChild(node('b', 'inm', name));
     const bt = node('div', 'ibt');
     const done = () => { ask = ''; UI.redraw(); draw(); };
-    if (!has(item.id)) {
+    if (item.vip && !has(item.id)) bt.appendChild(node('span', 'tag', t('shop.vip.only')));
+    else if (!has(item.id)) {
       const tokens = state.tokens;
       if (ask === item.id) {
         bt.appendChild(node('span', 'ask', t('shop.ask', { n: t('shop.count', { n: item.price }) })));
@@ -170,7 +180,20 @@ var Shop = (function () {
     return e;
   }
 
-  async function buyPack(n, draw) {
+  // The server is asked at once so the purchase does not wait for the webhook; if that fails it arrives on its own.
+  async function reconcile() {
+    try {
+      state = await Account.call('POST', '/api/shop/sync');
+    } catch (e) {
+      // the open sheet may have just asked: one sync at a time, so try again after the gap
+      if (e.status !== 429) throw e;
+      await new Promise(r => setTimeout(r, 10500));
+      state = await Account.call('POST', '/api/shop/sync');
+    }
+    await Account.refresh();
+  }
+
+  async function buy(product, draw, said) {
     busy = true;
     msg = '';
     draw();
@@ -181,7 +204,7 @@ var Shop = (function () {
       return draw();
     }
     try {
-      await plug().purchaseStoreProduct({ product: prices[Catalog.product(n)] });
+      await plug().purchaseStoreProduct({ product: product });
     } catch (e) {
       busy = false;
       // Ask to Buy: the parent has to approve, and the webhook credits the tokens then
@@ -189,24 +212,88 @@ var Shop = (function () {
       else if (!cancelled(e)) msg = t('shop.failed');
       return draw();
     }
-    // the tokens are asked for now so they do not wait for the webhook; if that fails they arrive on their own
     try {
-      try {
-        state = await Account.call('POST', '/api/shop/sync');
-      } catch (e) {
-        // the open sheet may have just asked: one sync at a time, so try again after the gap
-        if (e.status !== 429) throw e;
-        await new Promise(r => setTimeout(r, 10500));
-        state = await Account.call('POST', '/api/shop/sync');
-      }
-      await Account.refresh();
-      Live.say(t('shop.added', { n: n }));
+      await reconcile();
+      Live.say(said());
     } catch (e) {
       msg = t('shop.late');
     }
     busy = false;
     UI.redraw();
     draw();
+  }
+
+  const buyPack = (n, draw) => buy(prices[Catalog.product(n)], draw, () => t('shop.added', { n: n }));
+
+  async function restore(draw) {
+    busy = true;
+    msg = '';
+    draw();
+    try {
+      if (!await link()) throw new Error('rc');
+      await plug().restorePurchases();
+      await reconcile();
+      msg = t('shop.vip.restored');
+    } catch (e) {
+      msg = t('shop.failed');
+    }
+    busy = false;
+    UI.redraw();
+    draw();
+  }
+
+  function ext(href, label, cls) {
+    const a = node('a', cls || 'quiet', label);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    return a;
+  }
+
+  // what the subscription is, what it costs and how it ends, as the store's rules for subscriptions ask
+  function vipCard(draw) {
+    const card = node('div', 'vipc');
+    const left = node('div', 'vipl');
+    const head = node('h3', '', t('shop.vip.name'));
+    head.prepend(node('span', 'vipb', 'VIP'));
+    left.appendChild(head);
+    const list = node('ul', 'vipp');
+    for (const k of ['badge', 'frame', 'items']) list.appendChild(node('li', '', t('shop.vip.' + k)));
+    list.appendChild(node('li', '', t('shop.vip.monthly', { n: Catalog.VIP_TOKENS })));
+    list.appendChild(node('li', 'soon', t('shop.vip.pass')));
+    left.appendChild(list);
+    card.appendChild(left);
+
+    const right = node('div', 'vipr');
+    const active = !!state.vipUntil;
+    const p = vipProduct;
+    if (active) right.appendChild(node('b', 'vipu', t('shop.vip.until', { date: new Date(state.vipUntil).toLocaleDateString(I18n.loc(), { dateStyle: 'medium' }) })));
+    else if (p) {
+      right.appendChild(node('b', 'vipu', t('shop.vip.per', { price: p.priceString })));
+      right.appendChild(node('span', 'vipn', t('shop.vip.length')));
+    }
+    const row = node('div', 'ibt');
+    if (!live()) right.appendChild(note(t(platform() === 'android' ? 'shop.android' : 'shop.vip.web')));
+    else {
+      if (!active) {
+        const b = button('primary', t('shop.vip.subscribe'), () => buy(p, draw, () => t('shop.vip.on')));
+        b.disabled = !p || busy;
+        row.appendChild(b);
+      } else row.appendChild(ext('https://apps.apple.com/account/subscriptions', t('shop.vip.manage'), 'btn quiet'));
+      const r = button('quiet', t('shop.vip.restore'), () => restore(draw));
+      r.disabled = busy;
+      row.appendChild(r);
+    }
+    right.appendChild(row);
+    if (live() && !active) right.appendChild(node('p', 'viplg', t('shop.vip.renew')));
+    if (live()) {
+      const lk = node('div', 'viplk');
+      lk.appendChild(ext('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/', t('shop.vip.terms')));
+      lk.appendChild(ext('https://amerikano.pages.dev/privacy', t('set.privacy')));
+      right.appendChild(lk);
+    }
+    card.appendChild(right);
+    return card;
   }
 
   function note(text) {
@@ -249,7 +336,11 @@ var Shop = (function () {
       }
       if (!state) return body.appendChild(note(t('shop.loading')));
       const grid = node('div', 'sgrid');
-      if (tab === 'tokens') {
+      if (tab === 'vip') {
+        body.appendChild(vipCard(draw));
+        for (const item of Catalog.ITEMS) if (item.vip) grid.appendChild(itemTile(item, draw));
+        body.appendChild(grid);
+      } else if (tab === 'tokens') {
         Catalog.PACKS.forEach((n, i) => grid.appendChild(packTile(n, i, draw)));
         body.appendChild(grid);
         if (!live()) body.appendChild(note(t(platform() === 'android' ? 'shop.android' : 'shop.web')));
@@ -274,9 +365,10 @@ var Shop = (function () {
     });
     if (live()) {
       packs().then(draw, () => {});
+      subscription().then(draw, () => {});
       // purchases made earlier that never reached the server are picked up here
       Account.call('POST', '/api/shop/sync').then(s => {
-        if (state && s.tokens === state.tokens) return;
+        if (state && s.tokens === state.tokens && s.vipUntil === state.vipUntil) return;
         state = s;
         Account.refresh().then(() => { UI.redraw(); draw(); }, () => {});
       }, () => {});
