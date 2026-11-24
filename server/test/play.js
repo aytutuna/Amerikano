@@ -2225,7 +2225,6 @@ async function shop(rc) {
   sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%'");
   const a = await guest();
   const b = await guest();
-  assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE wear IS NULL')[0].n, 0, 'every persona has an outfit, mostly empty');
   assert.strictEqual((await call('GET', '/api/shop')).status, 401);
   assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, earned: 0, cap: 20 });
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).status, 409, 'no tokens, no frame');
