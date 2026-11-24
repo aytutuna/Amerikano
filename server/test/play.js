@@ -6,6 +6,7 @@
 // endpoint on 8794, and need throwaway keys in the same file:
 //   APNS_KEY (base64 pkcs8 P-256 like APPLE_KEY), APNS_KEY_ID=testkid, APNS_BASE=http://localhost:8792, APNS_SANDBOX=http://localhost:8793,
 //   FCM_BASE=http://localhost:8794, FCM_TOKEN_URL=http://localhost:8794/token,
+// The shop tests play RevenueCat on 8797 and need RC_WEBHOOK_AUTH=test-hook-auth, RC_SECRET_KEY=sk_test and RC_API=http://localhost:8797.
 // The voice tests play the Realtime SFU on 8796 and need REALTIME_APP_ID=testapp, REALTIME_APP_TOKEN=testtoken and RTC_BASE=http://localhost:8796.
 //   FCM_KEY='{"client_email":"push-test@example.iam.gserviceaccount.com","private_key":"<a PEM pkcs8 RSA key, newlines as backslash n>"}'
 const assert = require('assert');
@@ -35,7 +36,7 @@ const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
-const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand']);
+const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand', 'wear']);
 
 let ips = 0;
 
@@ -271,6 +272,7 @@ async function friends() {
     const bonus = acc === accA ? 2000 : 0;
     assert.strictEqual(p.chips, 5000 - 100 + back + bonus, who + ' chips after escrow and payout');
     assert.strictEqual(view.res.net, back - 100, who + ' result in the view');
+    assert.deepStrictEqual([p.tokens, view.res.tok], [2, 2], who + ' earned tokens for the match');
     if (acc === accA) {
       assert.strictEqual(p.level, 2, 'level up');
       assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE reason = 'level' AND player = '" + acc.id + "'")[0].n, 1);
@@ -513,7 +515,7 @@ async function solo() {
   await c.next(m => m.t === 'state' && m.phase === 'matchend');
   await new Promise(r => setTimeout(r, 500));
   const p = (await call('GET', '/api/me', acc)).body;
-  assert.strictEqual(p.games + p.xp, 0, 'a player who never moved earns nothing');
+  assert.strictEqual(p.games + p.xp + p.tokens, 0, 'a player who never moved earns nothing');
   assert.strictEqual(sql("SELECT week_won AS n FROM players WHERE id = '" + acc.id + "'")[0].n, 0, 'nor weekly chips');
   assert(rooms.some(m => m.finding === 1), 'the waiting view says one seat is being filled');
   c.ws.close();
@@ -766,9 +768,9 @@ const WEEK = () => Math.floor((Date.now() - 4 * 86400000) / (7 * 86400000));
 const who = acc => "'" + acc.id + "'";
 
 // two humans in a private room; begin() starts it
-async function pair(n, games) {
-  const accA = await guest();
-  const accB = await guest();
+async function pair(n, games, accs) {
+  const accA = accs ? accs[0] : await guest();
+  const accB = accs ? accs[1] : await guest();
   const a = client('/ws/new');
   await a.ready;
   a.send({ t: 'create', auth: accA.auth, players: n, games: games, level: 'relaxed' });
@@ -2187,6 +2189,184 @@ async function metrics() {
   assert.strictEqual(sql('SELECT count(*) AS n FROM stats WHERE day = ' + day)[0].n, 1);
 }
 
+// Plays RevenueCat's REST API on 8797: whatever a test puts in subs for a player id comes back as that player's purchases.
+function fakeRc() {
+  const f = { subs: {}, seen: [], down: false };
+  f.server = httpServer.createServer((req, res) => {
+    f.seen.push({ url: req.url, auth: req.headers.authorization });
+    if (f.down) {
+      res.writeHead(500);
+      return res.end('{}');
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ subscriber: { non_subscriptions: f.subs[req.url.split('/').pop()] || {} } }));
+  }).listen(8797);
+  return f;
+}
+
+const PACK = n => 'com.aytutuna.amerikano.tokens.' + n;
+const event = (type, acc, product, tx, more) => ({ api_version: '1.0', event: Object.assign({ type: type, app_user_id: acc.id, product_id: product, transaction_id: tx, environment: 'SANDBOX' }, more) });
+const hook = (body, auth) => call('POST', '/api/rc', null, body, undefined, auth === null ? {} : { Authorization: auth === undefined ? 'test-hook-auth' : auth });
+const shopOf = async acc => (await call('GET', '/api/shop', acc)).body;
+
+async function shop(rc) {
+  // the transaction ids below are fixed, so a rerun on the same local database starts without the last run's
+  sql('DELETE FROM purchases');
+  sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%'");
+  const a = await guest();
+  const b = await guest();
+  assert.strictEqual((await call('GET', '/api/shop')).status, 401);
+  assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, earned: 0, cap: 20 });
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).status, 409, 'no tokens, no frame');
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).body.error, 'broke');
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'chips' })).status, 400);
+
+  // the webhook
+  const ev = event('NON_RENEWING_PURCHASE', a, PACK(500), 'tx-1');
+  assert.strictEqual((await hook(ev, null)).status, 401, 'no header');
+  assert.strictEqual((await hook(ev, 'wrong')).status, 401, 'wrong header');
+  assert.strictEqual((await hook(ev, 'test-hook-auth2')).status, 401, 'close is not equal');
+  assert.strictEqual((await shopOf(a)).tokens, 0);
+  assert.strictEqual((await hook(ev)).status, 200);
+  assert.strictEqual((await shopOf(a)).tokens, 500);
+  assert.strictEqual((await hook(ev)).status, 200);
+  assert.strictEqual((await shopOf(a)).tokens, 500, 'the same transaction is credited once');
+  assert.strictEqual((await hook(event('INITIAL_PURCHASE', a, PACK(80), 'tx-2'))).status, 200);
+  assert.strictEqual((await shopOf(a)).tokens, 580, 'INITIAL_PURCHASE counts too');
+  const ignored = [event('NON_RENEWING_PURCHASE', a, PACK(81), 'tx-3'), event('NON_RENEWING_PURCHASE', a, 'com.aytutuna.amerikano.vip.monthly', 'tx-4'),
+    event('RENEWAL', a, PACK(500), 'tx-5'), event('NON_RENEWING_PURCHASE', { id: '0'.repeat(32) }, PACK(500), 'tx-6'), event('NON_RENEWING_PURCHASE', { id: 'not-an-id' }, PACK(500), 'tx-7')];
+  for (const bad of ignored) assert.strictEqual((await hook(bad)).status, 200, 'ignored events are still answered');
+  assert.strictEqual((await shopOf(a)).tokens, 580, 'unknown products, other events and unknown players change nothing');
+  assert.strictEqual((await call('POST', '/api/rc', null, { nothing: 1 }, undefined, { Authorization: 'test-hook-auth' })).status, 400);
+  console.log('shop: webhook needs its header, credits a pack once, ignores the rest');
+
+  // buying and wearing
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'nothing' })).status, 400);
+  let r = await call('POST', '/api/shop/buy', a, { item: 'frame-brass' });
+  assert.deepStrictEqual([r.status, r.body.tokens, r.body.owned], [200, 330, ['frame-brass']]);
+  r = await call('POST', '/api/shop/buy', a, { item: 'frame-brass' });
+  assert.deepStrictEqual([r.status, r.body.error], [409, 'owned']);
+  assert.strictEqual((await shopOf(a)).tokens, 330, 'an owned item is not charged again');
+  const wear = (acc, slot, item) => call('POST', '/api/shop/wear', acc, { slot: slot, item: item });
+  assert.strictEqual((await wear(a, 'frame', 'frame-laurel')).status, 403, 'not owned');
+  assert.strictEqual((await wear(a, 'plate', 'frame-brass')).status, 400, 'wrong slot');
+  assert.strictEqual((await wear(a, 'emote', 'emo-cafe')).status, 400, 'packs are not worn');
+  assert.strictEqual((await wear(a, 'hat', null)).status, 400);
+  assert.strictEqual((await wear(a, 'frame', undefined)).status, 400);
+  assert.strictEqual((await wear(b, 'frame', 'frame-brass')).status, 403, 'nobody wears what another owns');
+  assert.deepStrictEqual((await wear(a, 'frame', 'frame-brass')).body.worn, { frame: 'frame-brass' });
+  assert.deepStrictEqual((await call('GET', '/api/me', a)).body.wear, { frame: 'frame-brass' });
+  assert.deepStrictEqual((await wear(a, 'frame', null)).body.worn, {});
+  await wear(a, 'frame', 'frame-brass');
+  console.log('shop: buy charges once, wear needs the right slot and an owned item');
+
+  // tokens are not chips
+  assert.strictEqual((await call('GET', '/api/me', a)).body.chips, 5000, 'buying never touches chips');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM chip_log WHERE player = ' + who(a))[0].n, 1, 'only the start grant is in the chip log');
+  assert.deepStrictEqual(sql('SELECT delta, reason FROM token_log WHERE player = ' + who(a) + ' ORDER BY id').map(x => [x.delta, x.reason]), [[500, 'purchase'], [80, 'purchase'], [-250, 'buy']]);
+  assert.strictEqual((await call('POST', '/api/bailout', a)).status, 409);
+  assert.strictEqual((await call('POST', '/api/shop/convert', a, { tokens: 10 })).status, 404, 'there is no way to change tokens into chips');
+
+  // refunds
+  const cancel = (acc, tx, why) => hook(event('CANCELLATION', acc, PACK(500), tx, { cancel_reason: why }));
+  assert.strictEqual((await cancel(a, 'tx-1', 'UNSUBSCRIBE')).status, 200);
+  assert.strictEqual((await shopOf(a)).tokens, 330, 'only a support refund takes tokens back');
+  await cancel(a, 'tx-1', 'CUSTOMER_SUPPORT');
+  assert.strictEqual((await shopOf(a)).tokens, 0, 'a refund takes what is left, not below zero');
+  assert.strictEqual(sql("SELECT refunded FROM purchases WHERE tx = 'tx-1'")[0].refunded, 1);
+  await cancel(a, 'tx-1', 'CUSTOMER_SUPPORT');
+  await hook(ev);
+  assert.strictEqual((await shopOf(a)).tokens, 0, 'a repeat refund and a repeat purchase change nothing');
+  await cancel(a, 'tx-unknown', 'CUSTOMER_SUPPORT');
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-laurel' })).body.error, 'broke');
+  assert(sql('SELECT min(tokens) AS n FROM players')[0].n >= 0);
+  console.log('shop: refunds take tokens back down to zero, once');
+
+  // the app's own sync against RevenueCat's REST API
+  const c = await guest();
+  rc.subs[c.id] = {
+    [PACK(500)]: [{ id: 'rc-a', store_transaction_id: 'tx-sync-1', is_sandbox: true }, { id: 'rc-b', store_transaction_id: 'tx-sync-2', is_sandbox: false }],
+    [PACK(81)]: [{ id: 'x', store_transaction_id: 'tx-sync-3' }],
+    other: []
+  };
+  assert.strictEqual((await call('POST', '/api/shop/sync')).status, 401);
+  rc.down = true;
+  assert.strictEqual((await call('POST', '/api/shop/sync', c)).status, 502);
+  assert.strictEqual((await shopOf(c)).tokens, 0);
+  rc.down = false;
+  r = await call('POST', '/api/shop/sync', c);
+  assert.deepStrictEqual([r.status, r.body.tokens], [200, 1000], 'both transactions are credited, the unknown product is not');
+  assert.deepStrictEqual(rc.seen[rc.seen.length - 1], { url: '/v1/subscribers/' + c.id, auth: 'Bearer sk_test' });
+  assert.strictEqual((await call('POST', '/api/shop/sync', c)).body.tokens, 1000, 'sync twice credits once');
+  await hook(event('NON_RENEWING_PURCHASE', c, PACK(500), 'tx-sync-1'));
+  assert.strictEqual((await shopOf(c)).tokens, 1000, 'the webhook after a sync credits nothing more');
+  rc.subs[c.id][PACK(80)] = [{ id: 'rc-c', store_transaction_id: 'tx-sync-9' }];
+  assert.strictEqual((await call('POST', '/api/shop/sync', c)).body.tokens, 1080, 'a new transaction is picked up');
+  assert.deepStrictEqual(sql("SELECT env FROM purchases WHERE tx IN ('tx-sync-1', 'tx-sync-2') ORDER BY tx").map(x => x.env), ['SANDBOX', 'PRODUCTION']);
+  console.log('shop: sync credits transactions the webhook has not delivered, once');
+
+  // emotes and what others see
+  const [x, y] = [await guest(), await guest()];
+  await hook(event('NON_RENEWING_PURCHASE', x, PACK(6500), 'tx-x'));
+  for (const item of ['emo-cafe', 'frame-royal', 'back-sultan', 'felt-kilim', 'plate-gilt']) assert.strictEqual((await call('POST', '/api/shop/buy', x, { item: item })).status, 200, item);
+  for (const [slot, item] of [['frame', 'frame-royal'], ['back', 'back-sultan'], ['felt', 'felt-kilim'], ['plate', 'plate-gilt']]) await wear(x, slot, item);
+  const g = await pair(2, 2, [x, y]);
+  const [sx, sy] = await begin(g);
+  const seen = { a: [], b: [] };
+  g.a.handlers.push(m => { if (m.t === 'said') seen.a.push(m.k); });
+  g.b.handlers.push(m => { if (m.t === 'said') seen.b.push(m.k); });
+  assert.deepStrictEqual(sx.players[0].wear, { frame: 'frame-royal', plate: 'plate-gilt', back: 'back-sultan' }, 'worn items travel in the seat, the felt stays private');
+  assert.deepStrictEqual(sy.players[1].wear, sx.players[0].wear);
+  assert.deepStrictEqual(sy.players[0].wear, {});
+  assert.deepStrictEqual((await call('GET', '/api/player/' + x.id, y)).body.wear, { frame: 'frame-royal', plate: 'plate-gilt', back: 'back-sultan' }, 'and the profile card');
+  g.b.send({ t: 'say', k: 'tea' });
+  g.a.send({ t: 'say', k: 'smile' });
+  await sleep(500);
+  assert.deepStrictEqual([seen.a, seen.b], [['smile'], ['smile']], 'an emote from a pack nobody bought is dropped');
+  g.a.send({ t: 'say', k: 'tea' });
+  g.a.send({ t: 'say', k: 'lamp' });
+  g.a.send({ t: 'say', k: 'eye' });
+  await sleep(500);
+  assert.deepStrictEqual([seen.a, seen.b], [['smile', 'tea', 'lamp'], ['smile', 'tea', 'lamp']], 'the owner can use the pack, and only that pack');
+  g.a.ws.close();
+  g.b.ws.close();
+  console.log('shop: emotes need their pack, worn items reach other seats and the card');
+
+  // deleting an account takes its shop records along
+  assert.strictEqual((await call('DELETE', '/api/me', x)).status, 200);
+  for (const t of ['owned', 'token_log', 'purchases']) assert.strictEqual(sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(x))[0].n, 0, t);
+  console.log('shop: account deletion removes owned items, token log and purchases');
+}
+
+// the day's earnings stop at the cap, and a new UTC day starts again
+async function cap() {
+  const acc = await guest();
+  const day = Math.floor(Date.now() / DAY);
+  const match = async () => {
+    const c = client('/ws/new');
+    await c.ready;
+    c.send({ t: 'create', auth: acc.auth, players: 2, games: 2, level: 'relaxed' });
+    const done = new Promise(res => play(c, { finish: res }));
+    await c.next(m => m.t === 'joined');
+    c.send({ t: 'start' });
+    await within(done, 120000, 'match');
+    await sleep(500);
+    const end = c.st;
+    c.ws.close();
+    return end;
+  };
+  sql('UPDATE players SET earn_day = ' + day + ', earned = 20 WHERE id = ' + who(acc));
+  let end = await match();
+  assert.strictEqual((await shopOf(acc)).tokens, 0, 'nothing more after 20 a day');
+  assert.strictEqual(end.res.tok, undefined);
+  sql('UPDATE players SET earn_day = ' + (day - 1) + ', earned = 20 WHERE id = ' + who(acc));
+  end = await match();
+  const s = await shopOf(acc);
+  assert.deepStrictEqual([s.tokens, s.earned, end.res.tok], [2, 2, 2], 'a new day starts from zero');
+  assert.deepStrictEqual(sql('SELECT delta, reason FROM token_log WHERE player = ' + who(acc)), [{ delta: 2, reason: 'match' }]);
+  console.log('shop: 2 tokens a finished match, 20 a day');
+}
+
 async function dms() {
   const [a, b, c] = [await guest(), await guest(), await guest()];
   const dm = (from, to, text) => call('POST', '/api/dm', from, { to: to.id, text: text });
@@ -3124,7 +3304,7 @@ async function calls(f) {
   dial(ha, b);
   const rb = await r;
   assert.strictEqual(rb.id, (await mine).id);
-  assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed']);
+  assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed', 'wear']);
   await gap();
   await refuse(he, b, 'busy');
   await refuse(ha, e, 'busy');
@@ -3258,6 +3438,10 @@ async function calls(f) {
   await cupRun(2);
   await cupRun(6);
   await metrics();
+  const rc = fakeRc();
+  await shop(rc);
+  await cap();
+  rc.server.close();
   console.log('ok');
   reached = true;
   process.exit(0);

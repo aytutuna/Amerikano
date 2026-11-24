@@ -2,7 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
-import { verify, player, award, seat, credit, payout, prizes, STAKES, ENTRY } from './account.js';
+import Catalog from '../../www/js/catalog.js';
+import { verify, player, award, seat, credit, grantTokens, payout, prizes, STAKES, ENTRY } from './account.js';
+import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
 import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
@@ -42,7 +44,7 @@ export async function freeCode(ns, region) {
 }
 
 function human(p, gone) {
-  return { pid: p.pid, name: Names.text(p.seed, 'en'), seed: p.seed, av: p.av, level: p.level, token: crypto.randomUUID(), gone: gone };
+  return { pid: p.pid, name: Names.text(p.seed, 'en'), seed: p.seed, av: p.av, level: p.level, wear: p.wear, token: crypto.randomUUID(), gone: gone };
 }
 
 const between = (lo, hi) => Math.round(lo + Math.random() * (hi - lo));
@@ -125,7 +127,7 @@ export class Room extends DurableObject {
   // the same ones again if the Hub asks twice for the same tournament.
   openCup(code, cup, seats) {
     if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
-    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, bot: true }, more);
+    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, bot: true }, more);
     this.r = {
       code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, fast: false, host: -1, cup: cup,
       seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
@@ -416,7 +418,7 @@ export class Room extends DurableObject {
         this.save();
         continue;
       }
-      r.seats[i] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, bot: true };
+      r.seats[i] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, bot: true };
       for (const w of this.socks()) {
         if (w.deserializeAttachment().seat !== i) continue;
         this.fail(w, 'poor');
@@ -439,7 +441,7 @@ export class Room extends DurableObject {
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
       const s = r.seats[a.seat];
-      r.seats[a.seat] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, bot: true };
+      r.seats[a.seat] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, bot: true };
       if (this.st) this.st.players[a.seat].bot = true;
     } else {
       r.seats[a.seat] = null;
@@ -511,8 +513,14 @@ export class Room extends DurableObject {
     }
   }
 
-  say(i, m) {
-    if (!this.st || !(Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k)) || !this.allow(i)) return;
+  async say(i, m) {
+    const pack = Catalog.pack(m.k);
+    if (!this.st || !(Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k) || pack) || !this.allow(i)) return;
+    // an extra emote is for whoever bought its pack
+    if (pack) {
+      const s = this.r.seats[i];
+      if (!s.pid || s.fake || !await owns(this.env.DB, s.pid, pack.id) || !this.r) return;
+    }
     this.cast(rot => ({ t: 'said', p: rot(i), k: m.k }));
     if (!this.r.seats[i].fake) this.chirp(this.other(i), REPLY[m.k] || ['smile', 'wink', 'cheer'], 0.25);
   }
@@ -791,6 +799,8 @@ export class Room extends DurableObject {
       x.done = true;
       this.save();
       if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });
+      // a finished match pays tokens up to the day's cap; a seat taken over by a bot did not finish it
+      if (x.xp && !r.seats[i].bot && await grantTokens(this.env.DB, x.pid, Catalog.MATCH, 'match', r.id + ':' + x.pid + ':tok', Catalog.DAILY)) x.tok = Catalog.MATCH;
       if (x.won) await won(this.env.DB, x.pid, x.won);
       const p = await player(this.env.DB, x.pid);
       if (p) r.seats[i].bank = p.chips;
@@ -1053,7 +1063,7 @@ export class Room extends DurableObject {
       players: per(st.players).map((p, k) => {
         const i = (k + me) % n;
         const o = {
-          name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level,
+          name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level, wear: r.seats[i].wear,
           bank: r.seats[i].bank, away: !r.seats[i].bot && !here.has(i), n: p.hand.length,
           opened: p.opened, claims: p.claims, chips: p.chips, score: p.score
         };
@@ -1062,7 +1072,7 @@ export class Room extends DurableObject {
       }),
       cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy), place: place || undefined, through: r.cup.round === 'first' && place ? place <= 2 : undefined },
       rm: r.rm && { left: Math.max(0, r.rm.end - Date.now()), want: this.wanting().length, mine: r.rm.want.includes(me) },
-      res: r.res && r.res[me] ? { net: r.res[me].net, xp: r.res[me].xp, from: r.res[me].from } : undefined,
+      res: r.res && r.res[me] ? { net: r.res[me].net, xp: r.res[me].xp, tok: r.res[me].tok, from: r.res[me].from } : undefined,
       result: res && { rows: per(res.rows), finisher: rot(res.finisher) },
       stats: st.stats.map(x => ({ fin: rot(x.fin), turns: x.turns, task: x.task })),
       lastFin: st.lastFin === undefined ? undefined : rot(st.lastFin),

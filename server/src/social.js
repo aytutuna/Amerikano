@@ -1,4 +1,4 @@
-import { verify, who, json, fail } from './account.js';
+import { verify, who, worn, json, fail } from './account.js';
 
 const DAY = 86400000;
 const CAP = 200;
@@ -121,7 +121,7 @@ async function profile(db, p, id) {
   const row = ID.test(id) && await who(db, id);
   if (!row) return fail('nobody', 404);
   return json(Object.assign(mark(row), await rank(db, row), {
-    games: row.games, wins: row.wins, rel: row.id === p.id ? 'you' : await shown(db, p.id, row.id)
+    games: row.games, wins: row.wins, wear: worn(row, ['frame', 'plate', 'back']), rel: row.id === p.id ? 'you' : await shown(db, p.id, row.id)
   }));
 }
 

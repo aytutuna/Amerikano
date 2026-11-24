@@ -1,5 +1,6 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
+import Catalog from '../../www/js/catalog.js';
 import { identity, refresh, revoke } from './apple.js';
 import { REGIONS, DEFAULT, regionOf } from './region.js';
 import { LANGS } from './text.js';
@@ -62,6 +63,25 @@ export async function credit(db, id, delta, reason, ref) {
   }
 }
 
+// The only way tokens change, with the same ref rule as credit(). A cap makes it an earning: the day's total may not pass it.
+export async function grantTokens(db, id, delta, reason, ref, cap) {
+  if (!delta) return true;
+  if (ref && await db.prepare('SELECT 1 FROM token_log WHERE ref = ?').bind(ref).first()) return true;
+  const day = today();
+  try {
+    const r = await db.batch([
+      cap
+        ? db.prepare('UPDATE players SET tokens = tokens + ?1, earn_day = ?3, earned = CASE WHEN earn_day = ?3 THEN earned + ?1 ELSE ?1 END WHERE id = ?2 AND (earn_day <> ?3 OR earned + ?1 <= ?4)').bind(delta, id, day, cap)
+        : db.prepare('UPDATE players SET tokens = tokens + ?1 WHERE id = ?2 AND tokens + ?1 >= 0').bind(delta, id),
+      db.prepare('INSERT INTO token_log (player, delta, reason, ref, at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, ref || null, Date.now())
+    ]);
+    return r[0].meta.changes === 1;
+  } catch (e) {
+    if (ref && /UNIQUE/.test(e.message)) return true;
+    throw e;
+  }
+}
+
 export async function verify(db, token) {
   const m = TOKEN.exec(token || '');
   if (!m) return null;
@@ -86,8 +106,13 @@ export async function who(db, id) {
   return q && Object.assign(q, { persona: true });
 }
 
+// the items a player wears, by slot; the felt is only for their own table
+export function worn(p, slots = Catalog.WORN) {
+  return Object.fromEntries(slots.filter(k => p['wear_' + k]).map(k => [k, p['wear_' + k]]));
+}
+
 export function seat(p) {
-  return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level };
+  return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, wear: worn(p, ['frame', 'plate', 'back']) };
 }
 
 // xp, games and wins for one finished match; a level-up pays 1,000 chips times the new level
@@ -112,7 +137,7 @@ function profile(p) {
   const last = Math.floor(p.daily_at / DAY);
   const now = today();
   return {
-    seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, xp: p.xp, level: p.level,
+    seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, tokens: p.tokens, wear: worn(p), xp: p.xp, level: p.level,
     from: 50 * p.level * (p.level - 1), to: 50 * p.level * (p.level + 1), games: p.games, wins: p.wins,
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
@@ -348,6 +373,9 @@ export async function api(request, env) {
       db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM token_log WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM owned WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM purchases WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
       db.prepare('DELETE FROM reports WHERE reporter = ?').bind(p.id),

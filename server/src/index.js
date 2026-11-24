@@ -4,6 +4,7 @@ import { api } from './account.js';
 import { social } from './social.js';
 import { chat } from './chat.js';
 import { voice } from './voice.js';
+import { shop } from './shop.js';
 import { cron } from './push.js';
 
 export { Room, Hub };
@@ -12,6 +13,7 @@ const ORIGIN = /^(https:\/\/([a-z0-9-]+\.)?amerikano\.pages\.dev|https?:\/\/loca
 const SOCIAL = /^\/api\/(friends?|block|player|top)(\/|$)/;
 const VOICE = /^\/api\/voice\//;
 const CHAT = /^\/api\/(dm|report)(\/|$)/;
+const SHOP = /^\/api\/(shop|rc)(\/|$)/;
 
 async function account(request, env, ctx, origin) {
   const cors = {
@@ -22,7 +24,7 @@ async function account(request, env, ctx, origin) {
   };
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   const path = new URL(request.url).pathname;
-  const res = await (SOCIAL.test(path) ? social : CHAT.test(path) ? chat : VOICE.test(path) ? voice : api)(request, env, ctx);
+  const res = await (SOCIAL.test(path) ? social : CHAT.test(path) ? chat : VOICE.test(path) ? voice : SHOP.test(path) ? shop : api)(request, env, ctx);
   for (const k in cors) res.headers.set(k, cors[k]);
   return res;
 }
