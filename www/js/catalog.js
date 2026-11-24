@@ -6,10 +6,12 @@ var Catalog = (function () {
   // the dollar prices of the packs, for the bonus shown when the store gives none
   const USD = { 80: 0.99, 500: 4.99, 1200: 9.99, 2500: 19.99, 6500: 49.99, 14000: 99.99, 30000: 199.99 };
   const PREFIX = 'com.aytutuna.amerikano.tokens.';
+  const VIP = 'com.aytutuna.amerikano.vip.monthly';
+  const VIP_TOKENS = 500;
   const DAILY = 20;
   const MATCH = 2;
 
-  // vip: true would keep an item for subscribers only
+  // vip: true keeps an item for subscribers: free while the subscription runs, never sold
   const ITEMS = [
     { id: 'frame-brass', slot: 'frame', price: 250 },
     { id: 'frame-laurel', slot: 'frame', price: 400 },
@@ -32,6 +34,9 @@ var Catalog = (function () {
     { id: 'felt-copper', slot: 'felt', price: 500 },
     { id: 'felt-teal', slot: 'felt', price: 600 },
     { id: 'felt-kilim', slot: 'felt', price: 800 },
+    { id: 'frame-gold', slot: 'frame', vip: true },
+    { id: 'plate-vip', slot: 'plate', vip: true },
+    { id: 'back-vip', slot: 'back', vip: true },
     { id: 'emo-cafe', slot: 'emote', price: 400, emotes: ['tea', 'cezve', 'baklava', 'lamp'] },
     { id: 'emo-luck', slot: 'emote', price: 500, emotes: ['eye', 'clover', 'shoe', 'dice'] },
     { id: 'emo-cheek', slot: 'emote', price: 600, emotes: ['shades', 'flame', 'zzz', 'clap'] }
@@ -47,7 +52,7 @@ var Catalog = (function () {
     return PACKS.includes(n) ? n : 0;
   };
 
-  return { SLOTS: SLOTS, WORN: WORN, ITEMS: ITEMS, PACKS: PACKS, USD: USD, DAILY: DAILY, MATCH: MATCH, item: id => byId[id], pack: pack, product: product, amount: amount };
+  return { SLOTS: SLOTS, WORN: WORN, ITEMS: ITEMS, PACKS: PACKS, VIP: VIP, VIP_TOKENS: VIP_TOKENS, USD: USD, DAILY: DAILY, MATCH: MATCH, item: id => byId[id], pack: pack, product: product, amount: amount };
 })();
 
 if (typeof module !== 'undefined') module.exports = Catalog;

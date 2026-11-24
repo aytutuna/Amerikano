@@ -106,13 +106,16 @@ export async function who(db, id) {
   return q && Object.assign(q, { persona: true });
 }
 
-// the items a player wears, by slot; the felt is only for their own table
-export function worn(p, slots = Catalog.WORN) {
-  return Object.fromEntries(slots.filter(k => p['wear_' + k]).map(k => [k, p['wear_' + k]]));
+export const isVip = (p, now = Date.now()) => p.vip_until > now;
+
+// the items a player wears, by slot; the felt is only for their own table. VIP items come off when the subscription ends.
+export function worn(p, slots = Catalog.WORN, now = Date.now()) {
+  const vip = isVip(p, now);
+  return Object.fromEntries(slots.filter(k => p['wear_' + k] && (vip || !(Catalog.item(p['wear_' + k]) || {}).vip)).map(k => [k, p['wear_' + k]]));
 }
 
 export function seat(p) {
-  return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, wear: worn(p, ['frame', 'plate', 'back']) };
+  return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, wear: worn(p, ['frame', 'plate', 'back']), vip: isVip(p) };
 }
 
 // xp, games and wins for one finished match; a level-up pays 1,000 chips times the new level
@@ -137,7 +140,7 @@ function profile(p) {
   const last = Math.floor(p.daily_at / DAY);
   const now = today();
   return {
-    seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, tokens: p.tokens, wear: worn(p), xp: p.xp, level: p.level,
+    seed: p.name_seed, avatar: p.avatar.split(',').map(Number), chips: p.chips, tokens: p.tokens, vipUntil: isVip(p) ? p.vip_until : 0, wear: worn(p), xp: p.xp, level: p.level,
     from: 50 * p.level * (p.level - 1), to: 50 * p.level * (p.level + 1), games: p.games, wins: p.wins,
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
