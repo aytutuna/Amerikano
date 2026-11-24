@@ -114,6 +114,7 @@ export class Hub extends DurableObject {
       if (a.pid) return;
       const p = await verify(this.env.DB, m.auth);
       if (!p) return this.refuse(ws, 'auth');
+      await this.env.DB.prepare('INSERT OR IGNORE INTO active (player, day) VALUES (?, ?)').bind(p.id, Math.floor(Date.now() / 86400000)).run();
       // the newest socket of an account wins
       for (const w of this.ctx.getWebSockets()) {
         if (w === ws || w.readyState !== 1 || w.deserializeAttachment().pid !== p.id) continue;

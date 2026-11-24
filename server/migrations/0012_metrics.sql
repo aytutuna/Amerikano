@@ -1,0 +1,15 @@
+CREATE TABLE active (
+  player TEXT NOT NULL,
+  day INTEGER NOT NULL,
+  PRIMARY KEY (player, day)
+);
+
+CREATE TABLE stats (
+  day INTEGER PRIMARY KEY,
+  new INTEGER NOT NULL,
+  dau INTEGER NOT NULL,
+  d1 REAL,
+  d7 REAL,
+  d30 REAL,
+  matches INTEGER NOT NULL
+);
