@@ -555,6 +555,10 @@
       earn: (v, t) => 'Jede abgeschlossene Online-Partie bringt ' + t('shop.count', { n: v.n }) + ', maximal ' + v.cap + ' pro Tag. Heute: ' + v.got + ' von ' + v.cap + '.',
       rule: 'Mit Token kaufst du nur Kosmetik. Sie werden nie zu Chips, und Chips werden nie verkauft.',
       emoNote: 'Jedes Paket fügt dem Tischchat vier Emotes hinzu, die alle am Tisch sehen.',
+      pending: 'Warten auf Freigabe. Die Token kommen, sobald sie erteilt ist.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Beliebt',
+      best: 'Bestes Angebot',
       item: {
         'frame-brass': 'Messingring', 'frame-laurel': 'Lorbeerkranz', 'frame-kilim': 'Kilim-Rand', 'frame-moon': 'Mondsichel', 'frame-ember': 'Glutschein', 'frame-royal': 'Königsgold',
         'plate-oak': 'Eiche', 'plate-copper': 'Kupfer', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Vergoldet',

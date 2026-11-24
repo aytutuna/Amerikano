@@ -40,6 +40,8 @@ var Account = (function () {
     acc = me = null;
     keep(KEY, null);
     keep(ME, null);
+    // the old account's bought back and felt leave the table
+    if (typeof Settings !== 'undefined') Settings.apply();
   }
 
   function set(p) {

@@ -68,7 +68,7 @@ ul { padding-left: 1.2em; }
 <li><b>Cloudflare</b> runs the game's servers and database, carries live voice and serves the web version.</li>
 <li><b>Apple</b> handles Sign in with Apple and delivers notifications to iPhones.</li>
 <li><b>Google</b> delivers notifications to Android devices through Firebase Cloud Messaging.</li>
-<li><b>Apple</b> (and later Google) takes the payment for token purchases, and <b>RevenueCat</b> relays the purchase to the game. They get your account id, which is how the tokens reach you, and never your chips or messages.</li>
+<li><b>Apple</b> (and later Google) takes the payment for token purchases, and <b>RevenueCat</b> relays the purchase to the game. They process the purchase receipt and the device and network details needed to complete it, linked to your account id, which is how the tokens reach you. They never get your chips or messages, and your purchase history at RevenueCat is deleted with your account.</li>
 </ul>
 <p>Each of them handles the data only to provide that service. Their servers may be outside your country, including in the United States.</p>
 
@@ -131,7 +131,7 @@ ul { padding-left: 1.2em; }
 <li><b>Cloudflare</b> oyunun sunucularını ve veritabanını çalıştırır, canlı sesi taşır ve web sürümünü sunar.</li>
 <li><b>Apple</b> Apple ile girişi yürütür ve iPhone'lara bildirim iletir.</li>
 <li><b>Google</b> Firebase Cloud Messaging ile Android cihazlara bildirim iletir.</li>
-<li><b>Apple</b> (ileride Google) jeton alımlarının ödemesini alır, <b>RevenueCat</b> alımı oyuna iletir. Jetonların sana ulaşması için hesap kimliğini alırlar; çiplerini ya da mesajlarını asla almazlar.</li>
+<li><b>Apple</b> (ileride Google) jeton alımlarının ödemesini alır, <b>RevenueCat</b> alımı oyuna iletir. Satın alma makbuzunu ve işlemi tamamlamak için gereken cihaz ve ağ bilgilerini, jetonların sana ulaşması için hesap kimliğine bağlı olarak işlerler. Çiplerini ya da mesajlarını asla almazlar; RevenueCat'deki satın alma geçmişin hesabınla birlikte silinir.</li>
 </ul>
 <p>Her biri verileri yalnızca bu hizmeti sağlamak için işler. Sunucuları, Amerika Birleşik Devletleri de dahil olmak üzere, senin ülkenin dışında olabilir.</p>
 

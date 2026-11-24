@@ -557,6 +557,10 @@
       earn: (v, t) => 'Elke online partij die je afmaakt levert ' + t('shop.count', { n: v.n }) + ' op, tot ' + v.cap + ' per dag. Vandaag: ' + v.got + ' van ' + v.cap + '.',
       rule: 'Met tokens koop je alleen cosmetica. Ze worden nooit fiches, en fiches worden nooit verkocht.',
       emoNote: 'Elk pakket voegt vier emotes toe aan de tafelchat, zichtbaar voor iedereen aan tafel.',
+      pending: 'Wacht op goedkeuring. De tokens komen zodra het is goedgekeurd.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Populair',
+      best: 'Beste waarde',
       item: {
         'frame-brass': 'Messingring', 'frame-laurel': 'Lauwerkrans', 'frame-kilim': 'Kilimrand', 'frame-moon': 'Maansikkel', 'frame-ember': 'Gloeiende kolen', 'frame-royal': 'Koningsgoud',
         'plate-oak': 'Eiken', 'plate-copper': 'Koper', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Verguld',

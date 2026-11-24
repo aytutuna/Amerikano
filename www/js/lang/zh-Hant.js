@@ -555,6 +555,10 @@
       earn: (v, t) => '每完成一場線上對局可獲得' + t('shop.count', { n: v.n }) + '，每天最多可得' + v.cap + '鑽石。今日：' + v.got + '/' + v.cap + '。',
       rule: '鑽石只能購買外觀道具，不能兌換成籌碼，籌碼也從不販售。',
       emoNote: '每個禮包會為牌桌聊天增加四個表情，同桌所有人都看得到。',
+      pending: '等待核准。核准後鑽石會入帳。',
+      bonus: v => '+' + v.n + '%',
+      popular: '熱門',
+      best: '最超值',
       item: {
         'frame-brass': '黃銅環', 'frame-laurel': '月桂冠', 'frame-kilim': '基里姆邊框', 'frame-moon': '彎月', 'frame-ember': '餘燼', 'frame-royal': '皇家金',
         'plate-oak': '橡木', 'plate-copper': '銅色', 'plate-kilim': '基里姆', 'plate-night': '夜色', 'plate-gilt': '鍍金',

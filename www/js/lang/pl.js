@@ -557,6 +557,10 @@
       earn: (v, t) => 'Każda ukończona gra online daje ' + t('shop.count', { n: v.n }) + ', maksymalnie ' + v.cap + ' dziennie. Dziś: ' + v.got + ' z ' + v.cap + '.',
       rule: 'Klejnoty służą tylko do kupowania ozdób. Nigdy nie zamieniają się w żetony, a żetony nigdy nie są sprzedawane.',
       emoNote: 'Każdy pakiet dodaje cztery emotki do czatu przy stole, widoczne dla wszystkich przy stole.',
+      pending: 'Czekamy na zatwierdzenie. Klejnoty pojawią się po zatwierdzeniu.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popularne',
+      best: 'Najlepsza cena',
       item: {
         'frame-brass': 'Mosiężny pierścień', 'frame-laurel': 'Wieniec laurowy', 'frame-kilim': 'Obramowanie kilim', 'frame-moon': 'Półksiężyc', 'frame-ember': 'Żar', 'frame-royal': 'Królewskie złoto',
         'plate-oak': 'Dąb', 'plate-copper': 'Miedź', 'plate-kilim': 'Kilim', 'plate-night': 'Noc', 'plate-gilt': 'Złocenie',

@@ -556,6 +556,10 @@
       earn: (v, t) => '온라인 대국을 끝까지 마칠 때마다 ' + t('shop.count', { n: v.n }) + '를 받아요. 하루 최대 ' + v.cap + '개예요. 오늘: ' + v.got + '/' + v.cap + '.',
       rule: '토큰으로는 꾸미기 아이템만 살 수 있어요. 칩으로 바뀌는 일은 없고, 칩도 판매하지 않아요.',
       emoNote: '팩마다 테이블 채팅에 쓸 수 있는 이모트가 네 개 늘어나고, 테이블 모두에게 보여요.',
+      pending: '승인을 기다리는 중입니다. 승인되면 토큰이 도착합니다.',
+      bonus: v => '+' + v.n + '%',
+      popular: '인기',
+      best: '최고 가성비',
       item: {
         'frame-brass': '놋쇠 고리', 'frame-laurel': '월계관', 'frame-kilim': '킬림 테두리', 'frame-moon': '초승달', 'frame-ember': '불씨', 'frame-royal': '로열 골드',
         'plate-oak': '참나무', 'plate-copper': '구리', 'plate-kilim': '킬림', 'plate-night': '밤', 'plate-gilt': '금박',

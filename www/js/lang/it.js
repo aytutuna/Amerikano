@@ -556,6 +556,10 @@
       earn: (v, t) => 'Ogni partita online che finisci ti dà ' + t('shop.count', { n: v.n }) + ', fino a ' + v.cap + ' al giorno. Oggi: ' + v.got + ' su ' + v.cap + '.',
       rule: 'Le gemme servono solo per gli oggetti estetici. Non diventano mai fiches, e le fiches non si vendono mai.',
       emoNote: 'Ogni pacchetto aggiunge quattro emote alla chat del tavolo, visibili a tutti al tavolo.',
+      pending: 'In attesa di approvazione. Le gemme arrivano appena approvato.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popolare',
+      best: 'Più conveniente',
       item: {
         'frame-brass': 'Anello d\'ottone', 'frame-laurel': 'Corona d\'alloro', 'frame-kilim': 'Bordo kilim', 'frame-moon': 'Luna crescente', 'frame-ember': 'Bagliore di brace', 'frame-royal': 'Oro reale',
         'plate-oak': 'Quercia', 'plate-copper': 'Rame', 'plate-kilim': 'Kilim', 'plate-night': 'Notte', 'plate-gilt': 'Dorato',

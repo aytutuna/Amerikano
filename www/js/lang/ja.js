@@ -553,6 +553,10 @@
       earn: (v, t) => 'オンライン対戦を最後まで終えるたびに' + t('shop.count', { n: v.n }) + 'を獲得できます（1日最大' + v.cap + '）。今日：' + v.got + '/' + v.cap + '。',
       rule: 'トークンで買えるのは見た目のアイテムだけです。チップに変わることはなく、チップが販売されることもありません。',
       emoNote: '各パックでテーブルチャットに使えるエモートが4つ増えます。テーブルの全員に表示されます。',
+      pending: '承認待ちです。承認されるとトークンが届きます。',
+      bonus: v => '+' + v.n + '%',
+      popular: '人気',
+      best: 'お得',
       item: {
         'frame-brass': '真鍮の輪', 'frame-laurel': '月桂冠', 'frame-kilim': 'キリムの縁', 'frame-moon': '三日月', 'frame-ember': '燃えさし', 'frame-royal': 'ロイヤルゴールド',
         'plate-oak': 'オーク', 'plate-copper': '銅', 'plate-kilim': 'キリム', 'plate-night': '夜', 'plate-gilt': '金箔',

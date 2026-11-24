@@ -556,6 +556,10 @@
       earn: (v, t) => 'Cada partida en línea que termines te da ' + t('shop.count', { n: v.n }) + ', hasta ' + v.cap + ' al día. Hoy: ' + v.got + ' de ' + v.cap + '.',
       rule: 'Las gemas solo sirven para comprar artículos cosméticos. Nunca se convierten en fichas, y las fichas no se venden.',
       emoNote: 'Cada paquete añade cuatro emotes al chat de la mesa, visibles para todos en la mesa.',
+      pending: 'Esperando aprobación. Las gemas llegarán cuando se apruebe.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popular',
+      best: 'Mejor valor',
       item: {
         'frame-brass': 'Aro de latón', 'frame-laurel': 'Corona de laurel', 'frame-kilim': 'Borde kilim', 'frame-moon': 'Luna creciente', 'frame-ember': 'Brasa', 'frame-royal': 'Oro real',
         'plate-oak': 'Roble', 'plate-copper': 'Cobre', 'plate-kilim': 'Kilim', 'plate-night': 'Noche', 'plate-gilt': 'Dorado',

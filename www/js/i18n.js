@@ -546,6 +546,10 @@ var I18n = (function () {
       earn: (v, t) => 'Every online match you finish earns ' + t('shop.count', { n: v.n }) + ', up to ' + v.cap + ' a day. Today: ' + v.got + ' of ' + v.cap + '.',
       rule: 'Tokens only buy cosmetics. They never turn into chips, and chips are never sold.',
       emoNote: 'Each pack adds four emotes to the table chat, visible to everyone at the table.',
+      pending: 'Waiting for approval. The tokens arrive once it is approved.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popular',
+      best: 'Best value',
       item: {
         'frame-brass': 'Brass ring', 'frame-laurel': 'Laurel wreath', 'frame-kilim': 'Kilim border', 'frame-moon': 'Crescent moon', 'frame-ember': 'Ember glow', 'frame-royal': 'Royal gold',
         'plate-oak': 'Oak', 'plate-copper': 'Copper', 'plate-kilim': 'Kilim', 'plate-night': 'Night', 'plate-gilt': 'Gilded',
@@ -1193,6 +1197,10 @@ var I18n = (function () {
       earn: (v, t) => 'Bitirdiğin her çevrimiçi maç ' + t('shop.count', { n: v.n }) + ' kazandırır, günde en çok ' + v.cap + '. Bugün: ' + v.got + '/' + v.cap + '.',
       rule: 'Jetonla yalnızca görünüm eşyaları alınır. Jeton asla çipe dönüşmez, çip de hiçbir zaman satılmaz.',
       emoNote: 'Her paket masa sohbetine dört ifade ekler, masadaki herkes görür.',
+      pending: 'Onay bekleniyor. Onaylanınca jetonlar gelir.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popüler',
+      best: 'En avantajlı',
       item: {
         'frame-brass': 'Pirinç halka', 'frame-laurel': 'Defne çelengi', 'frame-kilim': 'Kilim kenar', 'frame-moon': 'Hilal', 'frame-ember': 'Kor', 'frame-royal': 'Sultan altını',
         'plate-oak': 'Meşe', 'plate-copper': 'Bakır', 'plate-kilim': 'Kilim', 'plate-night': 'Gece', 'plate-gilt': 'Yaldız',

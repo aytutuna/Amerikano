@@ -556,6 +556,10 @@
       earn: (v, t) => 'Chaque partie en ligne terminée te rapporte ' + t('shop.count', { n: v.n }) + ', jusqu\'à ' + v.cap + ' par jour. Aujourd\'hui : ' + v.got + ' sur ' + v.cap + '.',
       rule: 'Les gemmes servent uniquement à acheter des cosmétiques. Elles ne se changent jamais en jetons, et les jetons ne sont jamais vendus.',
       emoNote: 'Chaque pack ajoute quatre émotes au chat de la table, visibles par tout le monde à la table.',
+      pending: 'En attente d’approbation. Les gemmes arrivent dès qu’elle est donnée.',
+      bonus: v => '+' + v.n + ' %',
+      popular: 'Populaire',
+      best: 'Meilleure offre',
       item: {
         'frame-brass': 'Anneau en laiton', 'frame-laurel': 'Couronne de laurier', 'frame-kilim': 'Bordure kilim', 'frame-moon': 'Croissant de lune', 'frame-ember': 'Lueur de braise', 'frame-royal': 'Or royal',
         'plate-oak': 'Chêne', 'plate-copper': 'Cuivre', 'plate-kilim': 'Kilim', 'plate-night': 'Nuit', 'plate-gilt': 'Doré',

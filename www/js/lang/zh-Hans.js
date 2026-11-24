@@ -555,6 +555,10 @@
       earn: (v, t) => '每完成一场在线对局可获得' + t('shop.count', { n: v.n }) + '，每天最多可得' + v.cap + '钻石。今日：' + v.got + '/' + v.cap + '。',
       rule: '钻石只能购买外观道具，不能兑换成金币，金币也从不出售。',
       emoNote: '每个礼包会为牌桌聊天增加四个表情，同桌所有人都能看到。',
+      pending: '等待批准。批准后钻石会到账。',
+      bonus: v => '+' + v.n + '%',
+      popular: '热门',
+      best: '最超值',
       item: {
         'frame-brass': '黄铜环', 'frame-laurel': '月桂冠', 'frame-kilim': '基里姆边框', 'frame-moon': '弯月', 'frame-ember': '余烬', 'frame-royal': '皇家金',
         'plate-oak': '橡木', 'plate-copper': '铜色', 'plate-kilim': '基里姆', 'plate-night': '夜色', 'plate-gilt': '鎏金',

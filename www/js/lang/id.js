@@ -553,6 +553,10 @@
       earn: (v, t) => 'Setiap pertandingan online yang kamu selesaikan memberi ' + t('shop.count', { n: v.n }) + ', maksimal ' + v.cap + ' per hari. Hari ini: ' + v.got + ' dari ' + v.cap + '.',
       rule: 'Token hanya untuk membeli item tampilan. Token tidak pernah berubah menjadi chip, dan chip tidak pernah dijual.',
       emoNote: 'Setiap paket menambah empat emote ke obrolan meja, terlihat oleh semua orang di meja.',
+      pending: 'Menunggu persetujuan. Token akan masuk setelah disetujui.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Populer',
+      best: 'Paling hemat',
       item: {
         'frame-brass': 'Cincin kuningan', 'frame-laurel': 'Karangan laurel', 'frame-kilim': 'Tepi kilim', 'frame-moon': 'Bulan sabit', 'frame-ember': 'Bara api', 'frame-royal': 'Emas kerajaan',
         'plate-oak': 'Kayu ek', 'plate-copper': 'Tembaga', 'plate-kilim': 'Kilim', 'plate-night': 'Malam', 'plate-gilt': 'Berlapis emas',

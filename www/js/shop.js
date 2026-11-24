@@ -51,6 +51,9 @@ var Shop = (function () {
 
   function start() {
     if (!Account.has()) return;
+    // whatever the last account had is gone
+    state = null;
+    ask = '';
     load().catch(() => {});
     link();
   }
@@ -106,7 +109,8 @@ var Shop = (function () {
       state = await Account.call('POST', path, body);
       await Account.refresh();
     } catch (e) {
-      msg = t(e.status === 409 ? 'shop.broke' : 'shop.failed');
+      // an item that is already owned needs no message, only the state as it is
+      msg = e.message === 'owned' ? '' : t(e.message === 'broke' ? 'shop.broke' : 'shop.failed');
       await load().catch(() => {});
     }
   }
@@ -141,10 +145,20 @@ var Shop = (function () {
     return e;
   }
 
+  // how many more tokens a unit of money buys than in the smallest pack, from the store's amounts when it gave all of them
+  function bonus(n) {
+    const store = prices && Catalog.PACKS.every(k => prices[Catalog.product(k)] && prices[Catalog.product(k)].price > 0);
+    const cost = k => (store ? prices[Catalog.product(k)].price : Catalog.USD[k]);
+    return Math.round(n / cost(n) / (80 / cost(80)) * 100 - 100);
+  }
+
   // the card shows the price the store gives, in the player's own currency
   function packTile(n, i, draw) {
     const e = node('div', 'itile' + (live() ? '' : ' off'));
     e.appendChild(preview('pack', i));
+    if (n > Catalog.PACKS[0]) e.appendChild(node('span', 'bon', t('shop.bonus', { n: bonus(n) })));
+    const rib = n === 1200 ? 'popular' : n === 14000 ? 'best' : '';
+    if (rib) e.appendChild(node('span', 'rbn', t('shop.' + rib)));
     e.appendChild(node('b', 'inm', t('shop.count', { n: n })));
     const bt = node('div', 'ibt');
     const p = prices && prices[Catalog.product(n)];
@@ -160,16 +174,31 @@ var Shop = (function () {
     busy = true;
     msg = '';
     draw();
+    // never buy under a RevenueCat user that is not this account
+    if (!await link()) {
+      busy = false;
+      msg = t('shop.failed');
+      return draw();
+    }
     try {
       await plug().purchaseStoreProduct({ product: prices[Catalog.product(n)] });
     } catch (e) {
       busy = false;
-      if (!cancelled(e)) msg = t('shop.failed');
+      // Ask to Buy: the parent has to approve, and the webhook credits the tokens then
+      if (String(e && (e.code || (e.data && e.data.code))) === '20') msg = t('shop.pending');
+      else if (!cancelled(e)) msg = t('shop.failed');
       return draw();
     }
     // the tokens are asked for now so they do not wait for the webhook; if that fails they arrive on their own
     try {
-      state = await Account.call('POST', '/api/shop/sync');
+      try {
+        state = await Account.call('POST', '/api/shop/sync');
+      } catch (e) {
+        // the open sheet may have just asked: one sync at a time, so try again after the gap
+        if (e.status !== 429) throw e;
+        await new Promise(r => setTimeout(r, 10500));
+        state = await Account.call('POST', '/api/shop/sync');
+      }
       await Account.refresh();
       Live.say(t('shop.added', { n: n }));
     } catch (e) {

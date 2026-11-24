@@ -813,6 +813,9 @@ html[lang=ja] body { line-break: strict; word-break: auto-phrase; }
 .shop .note { margin: 0; }
 .sgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(8 * var(--u)); }
 .itile { display: grid; grid-template-rows: auto auto 1fr; justify-items: center; align-content: start; gap: calc(4 * var(--u)); min-width: 0; padding: calc(8 * var(--u)) calc(6 * var(--u)) calc(10 * var(--u)); border-radius: calc(12 * var(--u)); background: linear-gradient(var(--cream-hi), #e3cf9f); box-shadow: 0 calc(3 * var(--u)) 0 var(--edge); text-align: center; }
+.itile { position: relative; }
+.bon { position: absolute; top: calc(6 * var(--u)); inset-inline-end: calc(6 * var(--u)); padding: calc(2 * var(--u)) calc(7 * var(--u)); border-radius: calc(9 * var(--u)); background: #2f7d5c; color: #fff; font-weight: 800; font-size: calc(12 * var(--r)); box-shadow: 0 calc(2 * var(--u)) 0 #1e5a43; }
+.rbn { position: absolute; top: calc(6 * var(--u)); inset-inline-start: calc(6 * var(--u)); max-width: 56%; padding: calc(2 * var(--u)) calc(7 * var(--u)); border-radius: calc(4 * var(--u)); background: var(--madder); color: var(--cream-hi); font-weight: 800; font-size: calc(11 * var(--r)); line-height: 1.15; box-shadow: 0 calc(2 * var(--u)) 0 #6e1d14; }
 .itile.worn { background: linear-gradient(var(--gold-hi), var(--gold)); box-shadow: 0 calc(3 * var(--u)) 0 var(--gold-edge); }
 .itile.off { opacity: .55; }
 .ipv { display: grid; place-items: center; width: 100%; height: calc(62 * var(--u)); }

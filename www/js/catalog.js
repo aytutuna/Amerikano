@@ -3,6 +3,8 @@ var Catalog = (function () {
   // a worn slot, as opposed to emote packs that work as soon as they are owned
   const WORN = ['frame', 'plate', 'back', 'felt'];
   const PACKS = [80, 500, 1200, 2500, 6500, 14000, 30000];
+  // the dollar prices of the packs, for the bonus shown when the store gives none
+  const USD = { 80: 0.99, 500: 4.99, 1200: 9.99, 2500: 19.99, 6500: 49.99, 14000: 99.99, 30000: 199.99 };
   const PREFIX = 'com.aytutuna.amerikano.tokens.';
   const DAILY = 20;
   const MATCH = 2;
@@ -45,7 +47,7 @@ var Catalog = (function () {
     return PACKS.includes(n) ? n : 0;
   };
 
-  return { SLOTS: SLOTS, WORN: WORN, ITEMS: ITEMS, PACKS: PACKS, DAILY: DAILY, MATCH: MATCH, item: id => byId[id], pack: pack, product: product, amount: amount };
+  return { SLOTS: SLOTS, WORN: WORN, ITEMS: ITEMS, PACKS: PACKS, USD: USD, DAILY: DAILY, MATCH: MATCH, item: id => byId[id], pack: pack, product: product, amount: amount };
 })();
 
 if (typeof module !== 'undefined') module.exports = Catalog;

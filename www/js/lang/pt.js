@@ -556,6 +556,10 @@
       earn: (v, t) => 'Cada partida online que você termina rende ' + t('shop.count', { n: v.n }) + ', até ' + v.cap + ' por dia. Hoje: ' + v.got + ' de ' + v.cap + '.',
       rule: 'As gemas só compram itens visuais. Elas nunca viram fichas, e as fichas nunca são vendidas.',
       emoNote: 'Cada pacote adiciona quatro emotes ao chat da mesa, visíveis para todos na mesa.',
+      pending: 'Aguardando aprovação. As gemas chegam assim que for aprovada.',
+      bonus: v => '+' + v.n + '%',
+      popular: 'Popular',
+      best: 'Melhor custo-benefício',
       item: {
         'frame-brass': 'Aro de latão', 'frame-laurel': 'Coroa de louros', 'frame-kilim': 'Borda kilim', 'frame-moon': 'Lua crescente', 'frame-ember': 'Brilho de brasa', 'frame-royal': 'Ouro real',
         'plate-oak': 'Carvalho', 'plate-copper': 'Cobre', 'plate-kilim': 'Kilim', 'plate-night': 'Noite', 'plate-gilt': 'Dourado',
