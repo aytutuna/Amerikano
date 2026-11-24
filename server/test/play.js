@@ -2173,6 +2173,7 @@ async function metrics() {
   const a = await guest();
   const day = Math.floor(Date.now() / DAY);
   await hub(a);
+  await sleep(300);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = '" + a.id + "' AND day = " + day)[0].n, 1);
   const bad = client('/ws/hub');
   await bad.ready;
@@ -2180,13 +2181,21 @@ async function metrics() {
   await sleep(500);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'nobody'")[0].n, 0);
   sql("INSERT INTO active (player, day) VALUES ('old', " + (day - 100) + ")");
-  // the first run after midnight UTC writes the row for the day that just ended
+  // a match whose human was paid nothing writes an escrow row and no payout row, and still counts
+  const played = "SELECT count(DISTINCT substr(ref, 1, length(ref) - 3)) AS n FROM chip_log WHERE reason = 'escrow' AND at >= " + day * DAY + ' AND at < ' + (day + 1) * DAY;
+  sql("INSERT INTO chip_log (player, delta, reason, at, ref) VALUES ('" + a.id + "', -100, 'escrow', " + (day * DAY + 1000) + ", 'zeropay:in')");
+  const before = sql(played)[0].n;
+  assert(before >= 1);
+  // the first run after midnight UTC writes the row for the day that just ended; a second one leaves it alone
   await tick((day + 1) * DAY + 30 * 60000);
   const [row] = sql('SELECT * FROM stats WHERE day = ' + day);
   assert(row && row.new >= 1 && row.dau >= 1, 'stats row ' + JSON.stringify(row));
+  assert.strictEqual(row.matches, before);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'old'")[0].n, 0);
-  await tick((day + 1) * DAY + 90 * 60000);
-  assert.strictEqual(sql('SELECT count(*) AS n FROM stats WHERE day = ' + day)[0].n, 1);
+  await tick((day + 1) * DAY + 40 * 60000);
+  assert.deepStrictEqual(sql('SELECT * FROM stats WHERE day = ' + day), [row]);
+  assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = '" + a.id + "'")[0].n, 0);
 }
 
 // Plays RevenueCat's REST API on 8797: whatever a test puts in subs for a player id comes back as that player's purchases.
