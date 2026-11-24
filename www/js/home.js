@@ -191,6 +191,13 @@ var UI = (function () {
     return e;
   }
 
+  // one of the free backs or felts takes off a bought one, which would otherwise hide the choice
+  function free(k, v) {
+    const me = Account.me();
+    if (me && me.wear && me.wear[k]) Account.call('POST', '/api/shop/wear', { slot: k, item: null }).then(Account.refresh).catch(() => {});
+    Settings.set(k, v);
+  }
+
   function settings() {
     const form = node('div', 'form');
     let h = null;
@@ -234,8 +241,8 @@ var UI = (function () {
       for (const s of ['s', 'h', 'd', 'c']) sw.appendChild(Cards.icon('su-' + s, 'su sx-' + s));
       form.appendChild(toggle('fourc', t('set.fourc'), t('set.fourcNote'), sw));
       form.appendChild(choice('speed', t('set.speed'), ['slow', 'normal', 'fast'].map(v => ({ v: v, label: t('set.' + v) })), Settings.get('speed'), v => Settings.set('speed', v), 'seg'));
-      form.appendChild(choice('back', t('set.back'), ['red', 'blue', 'green', 'graphite'].map(v => ({ v: v, label: t('set.' + v), pic: () => backSwatch(v) })), Settings.get('back'), v => Settings.set('back', v), 'seg pics'));
-      form.appendChild(choice('felt', t('set.felt'), ['green', 'blue', 'wine', 'walnut'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => Settings.set('felt', v), 'seg pics'));
+      form.appendChild(choice('back', t('set.back'), ['red', 'blue', 'green', 'graphite'].map(v => ({ v: v, label: t('set.' + v), pic: () => backSwatch(v) })), Settings.get('back'), v => free('back', v), 'seg pics'));
+      form.appendChild(choice('felt', t('set.felt'), ['green', 'blue', 'wine', 'walnut'].map(v => ({ v: v, label: t('set.' + v), pic: () => feltSwatch(v) })), Settings.get('felt'), v => free('felt', v), 'seg pics'));
       if (Push.can() && Account.me()) form.appendChild(notes());
       const acct = Account.has() && Account.me() && !App.active() ? Account.me() : null;
       const ex = node('div', 'exit');
@@ -339,7 +346,7 @@ var UI = (function () {
     b.dataset.k = 'me';
     b.setAttribute('aria-label', who(me.seed) + ', ' + t('pf.level', { n: me.level }));
     const pic = node('span', 'mypic');
-    pic.appendChild(face(me.avatar, 36));
+    pic.appendChild(face(me.avatar, 36, me.wear && me.wear.frame));
     pic.appendChild(node('em', 'lv', me.level));
     pic.setAttribute('aria-hidden', 'true');
     b.appendChild(pic);
@@ -358,6 +365,16 @@ var UI = (function () {
     b.appendChild(Cards.icon('i-chip', 'chip'));
     b.appendChild(node('b', '', fmt(me.chips)));
     b.appendChild(node('i', 'add', '+'));
+    return b;
+  }
+
+  // the tokens, with the shop behind it
+  function tokens(me) {
+    const b = raw('pq tk', () => Shop.open(redraw));
+    b.dataset.k = 'tokens';
+    b.setAttribute('aria-label', t('shop.title') + ', ' + t('shop.count', { n: me.tokens }));
+    b.appendChild(Cards.icon('i-token', 'chip'));
+    b.appendChild(node('b', '', fmt(me.tokens)));
     return b;
   }
 
@@ -849,6 +866,7 @@ var UI = (function () {
     Account.ensure().then(() => Account.refresh()).then(() => {
       Net.up();
       Push.start();
+      Shop.start();
       redraw();
     }, down);
   }
@@ -1299,7 +1317,10 @@ var UI = (function () {
     if (me) bar.appendChild(capsule(me));
     if (at.net === 'up') tabs(bar);
     const end = node('div', 'hl-end');
-    if (me) end.appendChild(purse(me));
+    if (me) {
+      end.appendChild(tokens(me));
+      end.appendChild(purse(me));
+    }
     const gear = raw('ib', settings);
     gear.dataset.k = 'set';
     gear.setAttribute('aria-label', t('start.settings'));
@@ -1317,6 +1338,7 @@ var UI = (function () {
         at.gate = '';
         Net.up();
         Push.start();
+        Shop.start();
       }
       return r;
     });

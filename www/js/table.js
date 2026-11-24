@@ -118,6 +118,8 @@ var Table = (function () {
 
   const short = n => n >= 1e6 ? +(n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? +(n / 1e3).toFixed(1) + 'K' : n.toLocaleString(I18n.loc());
 
+  const set = (el, k, v) => { if (v) el.dataset[k] = v; else delete el.dataset[k]; };
+
   function seatEl(i) {
     const e = Cards.node('div', 'seat');
     e.setAttribute('role', 'group');
@@ -155,6 +157,12 @@ var Table = (function () {
       e.classList.toggle('turn', turn);
       e.classList.toggle('ring', turn && (!!st.clock || mine));
       e.classList.toggle('open', p.opened);
+      const wear = App.wear(p, i);
+      const ring = e.querySelector('.av');
+      ring.classList.toggle('fr', !!wear.frame);
+      set(ring, 'frame', wear.frame);
+      set(e.querySelector('.si'), 'plate', wear.plate);
+      set(e, 'back', wear.back);
       const av = e.querySelector('.pf');
       const parts = App.look(p, i);
       const box = Math.round(62 * Stage.u);

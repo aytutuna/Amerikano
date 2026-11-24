@@ -60,11 +60,12 @@ var Avatar = (function () {
     return f;
   }
 
-  // a pic for n stage units at the current stage size
-  function sized(parts, n) {
+  // a pic for n stage units at the current stage size; frame is the id of a ring item worn round it
+  function sized(parts, n, frame) {
     const box = Math.round(n * Stage.u);
     const w = document.createElement('span');
-    w.className = 'apic';
+    w.className = 'apic' + (frame ? ' fr' : '');
+    if (frame) w.dataset.frame = frame;
     w.style.width = w.style.height = box + 'px';
     w.appendChild(pic(parts, box));
     return w;

@@ -292,7 +292,7 @@ var Social = (function () {
       const left = node('div', 'pcol');
       body.appendChild(left);
       const top = node('div', 'pf-top');
-      top.appendChild(Avatar.sized(face(hint), 100));
+      top.appendChild(Avatar.sized(face(hint), 100, ((data || hint).wear || {}).frame));
       const tx = node('div', 'tx');
       tx.appendChild(node('h3', '', hint.seed === undefined ? hint.name : who(hint.seed)));
       if (hint.level) tx.appendChild(node('p', '', t('pf.level', { n: hint.level })));
@@ -350,7 +350,7 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[i];
     if (!p) return;
-    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level };
+    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level, wear: App.wear(p, i) };
     S.profile(p.pid, hint, i || 0);
   };
 
@@ -436,6 +436,9 @@ var Social = (function () {
     return fs;
   }
 
+  // the free emotes are named under chat, the bought ones under the shop
+  const emoName = k => t((Chat.EMO.includes(k) ? 'chat.emo.' : 'shop.emo.') + k);
+
   S.chat = () => {
     const body = node('div', 'form tray');
     const h = Sheet.open({ kind: 'bottom', tall: true, title: t('chat.title'), body: body, onClose: () => { tlog = null; }, actions: [{ label: t('close'), kind: 'quiet' }] });
@@ -453,10 +456,10 @@ var Social = (function () {
     const es = node('fieldset', 'fld');
     es.appendChild(node('legend', '', t('chat.emotes')));
     const emo = node('div', 'emos');
-    for (const k of Chat.EMO) {
+    for (const k of Chat.EMO.concat(Shop.emotes())) {
       const b = node('button', 'emo');
       b.type = 'button';
-      b.setAttribute('aria-label', t('chat.emo.' + k));
+      b.setAttribute('aria-label', emoName(k));
       b.appendChild(Cards.icon('e-' + k, 'em'));
       b.addEventListener('click', send(k));
       emo.appendChild(b);
@@ -479,8 +482,8 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[m.p];
     if (!p || S.blocked(p.pid)) return;
-    const emo = Chat.EMO.includes(m.k);
-    const what = t(emo ? 'chat.emo.' + m.k : 'chat.say.' + m.k);
+    const emo = Chat.EMO.includes(m.k) || !!Catalog.pack(m.k);
+    const what = emo ? emoName(m.k) : t('chat.say.' + m.k);
     const b = node('span', 'bub' + (emo ? ' emo' : ''));
     if (emo) b.appendChild(Cards.icon('e-' + m.k, 'em'));
     else b.textContent = what;

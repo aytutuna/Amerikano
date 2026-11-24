@@ -13,8 +13,10 @@ var Settings = (function () {
     Sfx.set(s.sound);
     Haptic.set(s.haptics);
     document.body.classList.toggle('fourc', !!s.fourc);
-    document.body.dataset.back = s.back;
-    document.body.dataset.felt = s.felt;
+    // a bought back or felt that is worn wins over the free choice
+    const wear = (Account.me() || {}).wear || {};
+    document.body.dataset.back = wear.back || s.back;
+    document.body.dataset.felt = wear.felt || s.felt;
     return w;
   }
 
@@ -729,6 +731,9 @@ var App = (function () {
     if (i === 0 && !p.bot && me) return me.avatar;
     return Avatar.at(Names.hash(i === 0 && !p.bot ? 'you' : p.name));
   };
+
+  // the items a seat wears; my own seat in training has no seat data, so it uses the account's
+  A.wear = (p, i) => p.wear || (i === 0 && !p.bot && (Account.me() || {}).wear) || {};
 
   A.flash = flash;
   A.online = () => on;

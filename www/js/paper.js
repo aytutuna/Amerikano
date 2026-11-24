@@ -291,7 +291,7 @@
     if (cup ? prize || (r && r.xp) : r) {
       const me = Account.me();
       const res = node('div', 'hres');
-      if (!cup) res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : ''));
+      if (!cup) res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : '') + (r.tok ? ' ' + t('end.tokens', { n: r.tok }) : ''));
       if (!cup || prize) {
         const to = cup ? prize : r.net;
         const row = node('div', 'hwin' + (to < 0 ? ' lose' : ''));
@@ -319,6 +319,12 @@
         res.appendChild(bonus);
         xpRun(bar, label, bonus, start, r.xp);
       } else if (r && r.xp) res.appendChild(node('p', 'hlbl', t('end.xp', { n: r.xp })));
+      if (r && r.tok) {
+        const tk = node('p', 'htok');
+        tk.appendChild(Cards.icon('i-token', 'chip'));
+        tk.appendChild(node('b', '', t('end.tokens', { n: r.tok })));
+        res.appendChild(tk);
+      }
       box.appendChild(res);
     }
     box.appendChild(kilim());

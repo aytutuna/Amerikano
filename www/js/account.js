@@ -45,6 +45,8 @@ var Account = (function () {
   function set(p) {
     me = p;
     keep(ME, p);
+    // a worn back or felt is drawn from the body
+    if (typeof Settings !== 'undefined') Settings.apply();
     return p;
   }
 
