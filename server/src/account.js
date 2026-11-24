@@ -375,6 +375,7 @@ export async function api(request, env) {
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM token_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM owned WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM active WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM purchases WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
