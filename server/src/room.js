@@ -7,7 +7,7 @@ import { verify, player, award, seat, credit, grantTokens, payout, prizes, STAKE
 import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
-import { claim, release, giveBack, keep, spend, payoff } from './persona.js';
+import { look, claim, release, giveBack, keep, spend, payoff } from './persona.js';
 import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -127,7 +127,7 @@ export class Room extends DurableObject {
   // the same ones again if the Hub asks twice for the same tournament.
   openCup(code, cup, seats) {
     if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
-    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, bot: true }, more);
+    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, owns: s.owns, bot: true }, more);
     this.r = {
       code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, fast: false, host: -1, cup: cup,
       seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
@@ -357,7 +357,7 @@ export class Room extends DurableObject {
     const hs = r.seats.filter(s => s && !s.fake);
     const avg = hs.length ? Math.round(hs.reduce((n, s) => n + s.level, 0) / hs.length) : 1;
     const p = await claim(this.env.DB, r.code, avg, r.stake, r.seats.filter(Boolean).map(s => s.seed));
-    return { pid: p.id, name: Names.text(p.name_seed, 'en'), seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, bank: p.chips, bot: true, fake: true, gone: 0 };
+    return { pid: p.id, name: Names.text(p.name_seed, 'en'), seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, bank: p.chips, bot: true, fake: true, gone: 0, ...look(p) };
   }
 
   // The room may be gone or full again after the wait, and a player may have taken the seat meanwhile.
@@ -519,7 +519,8 @@ export class Room extends DurableObject {
     // an extra emote is for whoever bought its pack
     if (pack) {
       const s = this.r.seats[i];
-      if (!s.pid || s.fake || !await owns(this.env.DB, s.pid, pack.id) || !this.r) return;
+      if (s.fake ? !(s.owns || []).includes(pack.id) : !s.pid || !await owns(this.env.DB, s.pid, pack.id)) return;
+      if (!this.st || this.r.seats[i] !== s) return;
     }
     this.cast(rot => ({ t: 'said', p: rot(i), k: m.k }));
     if (!this.r.seats[i].fake) this.chirp(this.other(i), REPLY[m.k] || ['smile', 'wink', 'cheer'], 0.25);
@@ -573,7 +574,10 @@ export class Room extends DurableObject {
     if (!s || !s.fake || (r.talk || 0) >= TALK || (s.talked || 0) >= 2 || Math.random() > odds) return;
     r.talk = (r.talk || 0) + 1;
     s.talked = (s.talked || 0) + 1;
-    const k = keys[Math.floor(Math.random() * keys.length)];
+    let k = keys[Math.floor(Math.random() * keys.length)];
+    // a persona with an emote pack uses it now and then in place of a plain emote
+    const pack = Chat.EMO.includes(k) && (s.owns || []).length && Math.random() < 0.25 && Catalog.item(s.owns[0]);
+    if (pack) k = pack.emotes[Math.floor(Math.random() * pack.emotes.length)];
     setTimeout(() => this.r === r && this.say(i, { k: k }), between(800, 2500) * this.k);
   }
 
@@ -1063,7 +1067,7 @@ export class Room extends DurableObject {
       players: per(st.players).map((p, k) => {
         const i = (k + me) % n;
         const o = {
-          name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level, wear: r.seats[i].wear,
+          name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level, wear: r.seats[i].wear || {},
           bank: r.seats[i].bank, away: !r.seats[i].bot && !here.has(i), n: p.hand.length,
           opened: p.opened, claims: p.claims, chips: p.chips, score: p.score
         };

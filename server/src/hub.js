@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { freeCode, stub } from './room.js';
 import { verify, player, seat, credit, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
-import { claim, release, keep, giveBack, spend, grant } from './persona.js';
+import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
 import { DEFAULT } from './region.js';
 import { on, act, slow, may, shut } from './voice.js';
@@ -542,7 +542,7 @@ export class Hub extends DurableObject {
     const hs = mem.filter(x => !x.fake);
     const avg = hs.length ? Math.round(hs.reduce((n, x) => n + x.level, 0) / hs.length) : 1;
     const p = await claim(this.env.DB, f.id, avg, f.buy / ENTRY, mem.map(x => x.seed));
-    return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, fake: true };
+    return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, fake: true, ...look(p) };
   }
 
   // Personas join one at a time at uneven moments, a little quicker once the wait is over.

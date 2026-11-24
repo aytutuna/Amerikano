@@ -1,5 +1,6 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
+import Catalog from '../../www/js/catalog.js';
 import { levelAt, ENTRY } from './account.js';
 
 const DAY = 86400000;
@@ -29,6 +30,28 @@ function history(level) {
   return h;
 }
 
+// About a third of the personas wear one or two things, cheaper ones more often, and a few own an emote pack; chosen once, so a face looks the same each time
+function outfit() {
+  const wear = {};
+  let owns = [];
+  if (Math.random() < 0.35) {
+    const slots = ['frame', 'plate', 'back'].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.4 ? 2 : 1);
+    for (const slot of slots) {
+      const items = Catalog.ITEMS.filter(i => i.slot === slot);
+      let u = Math.random() * items.reduce((n, i) => n + 1 / i.price, 0);
+      wear[slot] = (items.find(i => (u -= 1 / i.price) <= 0) || items[0]).id;
+    }
+  }
+  if (Math.random() < 0.15) {
+    const packs = Catalog.ITEMS.filter(i => i.emotes);
+    owns = [packs[Math.floor(Math.random() * packs.length)].id];
+  }
+  return { wear: JSON.stringify(wear), owns: JSON.stringify(owns) };
+}
+
+// what a persona wears and owns, for the seat
+export const look = p => ({ wear: JSON.parse(p.wear || '{}'), owns: JSON.parse(p.owns || '[]') });
+
 async function make(db, code, level, stake, avoid, now) {
   let seed;
   do seed = Names.pick(); while (avoid.includes(seed));
@@ -36,9 +59,9 @@ async function make(db, code, level, stake, avoid, now) {
   const lv = levelAt(h.xp);
   // what a player of that level would plausibly hold, and enough to sit at this stake
   const chips = Math.round(Math.max(rnd(0.4, 1.6) * (4000 + 500 * lv * (lv + 1)), rnd(1.2, 3.5) * ENTRY * stake) / 10) * 10;
-  const p = { id: hex(), name_seed: seed, avatar: Avatar.random().join(','), level: lv, xp: h.xp, games: h.games, wins: h.wins, chips: chips, topup: now, busy: code, busy_at: now, created: now };
-  await db.prepare('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(p.id, p.name_seed, p.avatar, p.level, p.xp, p.games, p.wins, p.chips, p.topup, p.busy, p.busy_at, p.created).run();
+  const p = Object.assign({ id: hex(), name_seed: seed, avatar: Avatar.random().join(','), level: lv, xp: h.xp, games: h.games, wins: h.wins, chips: chips, topup: now, busy: code, busy_at: now, created: now }, outfit());
+  await db.prepare('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created, wear, owns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(p.id, p.name_seed, p.avatar, p.level, p.xp, p.games, p.wins, p.chips, p.topup, p.busy, p.busy_at, p.created, p.wear, p.owns).run();
   return p;
 }
 
@@ -57,7 +80,14 @@ export async function claim(db, code, level, stake, avoid) {
       `UPDATE personas SET busy = ?${args.length + 1}, busy_at = ?1, chips = chips + ${days} * ${BONUS}, topup = topup + ${days} * ${DAY} ` +
       `WHERE id = (SELECT id FROM personas WHERE ${where} ORDER BY random() LIMIT 1) RETURNING *`
     ).bind(...args, code).first();
-    if (row) return row;
+    if (row) {
+      // a persona made before the shop gets its outfit now
+      if (row.wear === null) {
+        Object.assign(row, outfit());
+        await db.prepare('UPDATE personas SET wear = ?, owns = ? WHERE id = ?').bind(row.wear, row.owns, row.id).run();
+      }
+      return row;
+    }
   }
   return make(db, code, level, stake, avoid, now);
 }
