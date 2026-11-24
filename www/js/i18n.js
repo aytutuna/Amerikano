@@ -302,6 +302,7 @@ var I18n = (function () {
       change: v => v.n > 0 ? 'You won ' + v.abs + ' chips.' : v.n < 0 ? 'You lost ' + v.abs + ' chips.' : 'You got your stake back.',
       xp: v => '+' + v.n + ' XP',
       level: v => 'Level ' + v.n + '!',
+      tokens: v => '+' + v.n + ' tokens',
       bonus: v => '+' + v.n + ' chips',
       winnings: 'Your chips this match',
       scores: 'Score sheet',
@@ -519,6 +520,40 @@ var I18n = (function () {
       send: 'Send anyway',
       edit: 'Edit',
       note: 'Be careful with links and contact details from other players. Chips are never sold.'
+    },
+
+    shop: {
+      title: 'Shop',
+      count: v => pl(v.n, { one: '# token', other: '# tokens' }),
+      tab: { tokens: 'Tokens', frame: 'Frames', plate: 'Name plates', back: 'Card backs', felt: 'Felts', emote: 'Emotes' },
+      loading: 'Loading the shop.',
+      buyFor: v => 'Buy ' + v.name + ' for ' + v.n,
+      ask: v => 'Buy for ' + v.n + '?',
+      yes: 'Buy',
+      no: 'Cancel',
+      wear: 'Wear',
+      off: 'Take off',
+      worn: 'Worn',
+      owned: 'Owned',
+      bought: v => 'You bought ' + v.name + '.',
+      added: (v, t) => t('shop.count', v) + ' added.',
+      failed: 'That did not work. Try again in a moment.',
+      broke: 'You do not have enough tokens.',
+      late: 'Your purchase went through, but the tokens are taking a moment to arrive.',
+      android: 'Coming soon on Android',
+      web: 'Buy tokens in the iPhone app',
+      guest: 'Link your Apple account in your profile to keep your purchases after a reinstall.',
+      earn: (v, t) => 'Every online match you finish earns ' + t('shop.count', { n: v.n }) + ', up to ' + v.cap + ' a day. Today: ' + v.got + ' of ' + v.cap + '.',
+      rule: 'Tokens only buy cosmetics. They never turn into chips, and chips are never sold.',
+      emoNote: 'Each pack adds four emotes to the table chat, visible to everyone at the table.',
+      item: {
+        'frame-brass': 'Brass ring', 'frame-laurel': 'Laurel wreath', 'frame-kilim': 'Kilim border', 'frame-moon': 'Crescent moon', 'frame-ember': 'Ember glow', 'frame-royal': 'Royal gold',
+        'plate-oak': 'Oak', 'plate-copper': 'Copper', 'plate-kilim': 'Kilim', 'plate-night': 'Night', 'plate-gilt': 'Gilded',
+        'back-lattice': 'Lattice', 'back-emerald': 'Emerald', 'back-amber': 'Amber', 'back-star': 'Star', 'back-sultan': 'Sultan',
+        'felt-plum': 'Plum', 'felt-ink': 'Midnight', 'felt-copper': 'Copper', 'felt-teal': 'Teal', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Coffeehouse', 'emo-luck': 'Good luck', 'emo-cheek': 'Cheeky'
+      },
+      emo: { tea: 'Tea', cezve: 'Coffee pot', baklava: 'Baklava', lamp: 'Lamp', eye: 'Evil eye', clover: 'Clover', shoe: 'Horseshoe', dice: 'Dice', shades: 'Cool', flame: 'Fire', zzz: 'Sleepy', clap: 'Applause' }
     },
 
     gift: {
@@ -913,6 +948,7 @@ var I18n = (function () {
       lobby: 'Lobiye dön',
       change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Bahsin geri döndü.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + v.n + ' jeton',
       level: v => v.n + '. seviye!',
       bonus: v => '+' + v.n + ' çip',
       winnings: 'Bu maçtaki çipin',
@@ -1131,6 +1167,40 @@ var I18n = (function () {
       send: 'Yine de gönder',
       edit: 'Düzenle',
       note: 'Diğer oyuncuların gönderdiği bağlantılara ve iletişim bilgilerine dikkat et. Çipler asla satılmaz.'
+    },
+
+    shop: {
+      title: 'Mağaza',
+      count: v => pl(v.n, { other: '# jeton' }),
+      tab: { tokens: 'Jetonlar', frame: 'Çerçeveler', plate: 'İsim levhaları', back: 'Kağıt sırtları', felt: 'Masa çuhaları', emote: 'İfadeler' },
+      loading: 'Mağaza yükleniyor.',
+      buyFor: v => 'Satın al: ' + v.name + ', ' + v.n,
+      ask: v => v.n + ' karşılığında alınsın mı?',
+      yes: 'Satın al',
+      no: 'Vazgeç',
+      wear: 'Kullan',
+      off: 'Çıkar',
+      worn: 'Kullanımda',
+      owned: 'Sende',
+      bought: v => v.name + ' artık senin.',
+      added: (v, t) => t('shop.count', v) + ' hesabına eklendi.',
+      failed: 'Olmadı. Biraz sonra tekrar dene.',
+      broke: 'Yeterli jetonun yok.',
+      late: 'Alışveriş tamamlandı, jetonların birazdan gelir.',
+      android: 'Android için yakında',
+      web: 'Jeton almak için iPhone uygulamasını kullan',
+      guest: 'Aldıkların uygulamayı silip yeniden kursan da kalsın diye profilinden Apple hesabını bağla.',
+      earn: (v, t) => 'Bitirdiğin her çevrimiçi maç ' + t('shop.count', { n: v.n }) + ' kazandırır, günde en çok ' + v.cap + '. Bugün: ' + v.got + '/' + v.cap + '.',
+      rule: 'Jetonla yalnızca görünüm eşyaları alınır. Jeton asla çipe dönüşmez, çip de hiçbir zaman satılmaz.',
+      emoNote: 'Her paket masa sohbetine dört ifade ekler, masadaki herkes görür.',
+      item: {
+        'frame-brass': 'Pirinç halka', 'frame-laurel': 'Defne çelengi', 'frame-kilim': 'Kilim kenar', 'frame-moon': 'Hilal', 'frame-ember': 'Kor', 'frame-royal': 'Sultan altını',
+        'plate-oak': 'Meşe', 'plate-copper': 'Bakır', 'plate-kilim': 'Kilim', 'plate-night': 'Gece', 'plate-gilt': 'Yaldız',
+        'back-lattice': 'Kafes', 'back-emerald': 'Zümrüt', 'back-amber': 'Kehribar', 'back-star': 'Yıldız', 'back-sultan': 'Sultan',
+        'felt-plum': 'Erik', 'felt-ink': 'Gece mavisi', 'felt-copper': 'Bakır', 'felt-teal': 'Petrol', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Kahvehane', 'emo-luck': 'Şans', 'emo-cheek': 'Cilveli'
+      },
+      emo: { tea: 'Çay', cezve: 'Cezve', baklava: 'Baklava', lamp: 'Lamba', eye: 'Nazar', clover: 'Yonca', shoe: 'Nal', dice: 'Zar', shades: 'Havalı', flame: 'Ateş', zzz: 'Uykulu', clap: 'Alkış' }
     },
 
     gift: {

@@ -310,6 +310,7 @@
       lobby: 'Zurück zur Lobby',
       change: v => v.n > 0 ? 'Du hast ' + chips(digits(v.abs)) + ' gewonnen.' : v.n < 0 ? 'Du hast ' + chips(digits(v.abs)) + ' verloren.' : 'Du hast deinen Einsatz zurück.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { one: '# Token', other: '# Token' }),
       level: v => 'Level ' + v.n + '!',
       bonus: v => '+' + v.n + ' Chips',
       winnings: 'Deine Chips in dieser Partie',
@@ -528,6 +529,40 @@
       send: 'Trotzdem senden',
       edit: 'Bearbeiten',
       note: 'Sei vorsichtig mit Links und Kontaktdaten von anderen Spielern. Chips werden nie verkauft.'
+    },
+
+    shop: {
+      title: 'Shop',
+      count: v => pl(v.n, { one: '# Token', other: '# Token' }),
+      tab: { tokens: 'Token', frame: 'Rahmen', plate: 'Namensschilder', back: 'Kartenrücken', felt: 'Filz', emote: 'Emotes' },
+      loading: 'Shop wird geladen.',
+      buyFor: v => v.name + ' kaufen für ' + v.n,
+      ask: v => 'Für ' + v.n + ' kaufen?',
+      yes: 'Kaufen',
+      no: 'Abbrechen',
+      wear: 'Nutzen',
+      off: 'Ablegen',
+      worn: 'Aktiv',
+      owned: 'Gekauft',
+      bought: v => 'Du hast ' + v.name + ' gekauft.',
+      added: (v, t) => t('shop.count', v) + ' gutgeschrieben.',
+      failed: 'Das hat nicht geklappt. Versuch es gleich noch mal.',
+      broke: 'Du hast nicht genug Token.',
+      late: 'Dein Kauf ist durch, aber die Token brauchen einen Moment.',
+      android: 'Bald auf Android',
+      web: 'Token gibt es in der iPhone-App',
+      guest: 'Verknüpfe in deinem Profil dein Apple-Konto, damit deine Käufe nach einer Neuinstallation erhalten bleiben.',
+      earn: (v, t) => 'Jede abgeschlossene Online-Partie bringt ' + t('shop.count', { n: v.n }) + ', maximal ' + v.cap + ' pro Tag. Heute: ' + v.got + ' von ' + v.cap + '.',
+      rule: 'Mit Token kaufst du nur Kosmetik. Sie werden nie zu Chips, und Chips werden nie verkauft.',
+      emoNote: 'Jedes Paket fügt dem Tischchat vier Emotes hinzu, die alle am Tisch sehen.',
+      item: {
+        'frame-brass': 'Messingring', 'frame-laurel': 'Lorbeerkranz', 'frame-kilim': 'Kilim-Rand', 'frame-moon': 'Mondsichel', 'frame-ember': 'Glutschein', 'frame-royal': 'Königsgold',
+        'plate-oak': 'Eiche', 'plate-copper': 'Kupfer', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Vergoldet',
+        'back-lattice': 'Gitter', 'back-emerald': 'Smaragd', 'back-amber': 'Bernstein', 'back-star': 'Stern', 'back-sultan': 'Sultan',
+        'felt-plum': 'Pflaume', 'felt-ink': 'Mitternacht', 'felt-copper': 'Kupfer', 'felt-teal': 'Petrol', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Kaffeehaus', 'emo-luck': 'Viel Glück', 'emo-cheek': 'Frech'
+      },
+      emo: { tea: 'Tee', cezve: 'Kaffeekanne', baklava: 'Baklava', lamp: 'Lampe', eye: 'Böser Blick', clover: 'Kleeblatt', shoe: 'Hufeisen', dice: 'Würfel', shades: 'Cool', flame: 'Feuer', zzz: 'Müde', clap: 'Applaus' }
     },
 
     gift: {

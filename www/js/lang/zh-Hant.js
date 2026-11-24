@@ -309,6 +309,7 @@
       lobby: '回到大廳',
       change: v => v.n > 0 ? '贏得' + v.abs + '籌碼。' : v.n < 0 ? '輸掉' + v.abs + '籌碼。' : '拿回了參加費。',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { other: '#鑽石' }),
       level: v => '升到' + v.n + '級囉！',
       bonus: v => '+' + v.n + '籌碼',
       winnings: '這場的籌碼變化',
@@ -528,6 +529,40 @@
       send: '仍要傳送',
       edit: '修改',
       note: '請小心其他玩家傳來的連結和聯絡方式。籌碼絕不出售。'
+    },
+
+    shop: {
+      title: '商店',
+      count: v => pl(v.n, { other: '#鑽石' }),
+      tab: { tokens: '鑽石', frame: '頭像框', plate: '名牌', back: '牌背', felt: '桌布', emote: '表情' },
+      loading: '正在載入商店。',
+      buyFor: v => '購買' + v.name + '，' + v.n + '鑽石',
+      ask: v => '花費' + v.n + '鑽石購買？',
+      yes: '購買',
+      no: '取消',
+      wear: '使用',
+      off: '取下',
+      worn: '使用中',
+      owned: '已擁有',
+      bought: v => '已購買' + v.name + '。',
+      added: (v, t) => '已入帳' + t('shop.count', v) + '。',
+      failed: '沒有成功，請稍後再試。',
+      broke: '鑽石不足。',
+      late: '購買已完成，鑽石稍後入帳。',
+      android: 'Android 版即將推出',
+      web: '請在 iPhone 應用程式中購買鑽石',
+      guest: '在個人檔案中綁定 Apple 帳號，重新安裝後也能保留你的購買紀錄。',
+      earn: (v, t) => '每完成一場線上對局可獲得' + t('shop.count', { n: v.n }) + '，每天最多可得' + v.cap + '鑽石。今日：' + v.got + '/' + v.cap + '。',
+      rule: '鑽石只能購買外觀道具，不能兌換成籌碼，籌碼也從不販售。',
+      emoNote: '每個禮包會為牌桌聊天增加四個表情，同桌所有人都看得到。',
+      item: {
+        'frame-brass': '黃銅環', 'frame-laurel': '月桂冠', 'frame-kilim': '基里姆邊框', 'frame-moon': '彎月', 'frame-ember': '餘燼', 'frame-royal': '皇家金',
+        'plate-oak': '橡木', 'plate-copper': '銅色', 'plate-kilim': '基里姆', 'plate-night': '夜色', 'plate-gilt': '鍍金',
+        'back-lattice': '格紋', 'back-emerald': '祖母綠', 'back-amber': '琥珀', 'back-star': '星辰', 'back-sultan': '蘇丹',
+        'felt-plum': '李紫', 'felt-ink': '午夜', 'felt-copper': '銅色', 'felt-teal': '青綠', 'felt-kilim': '基里姆',
+        'emo-cafe': '咖啡館', 'emo-luck': '好運', 'emo-cheek': '調皮'
+      },
+      emo: { tea: '茶', cezve: '咖啡壺', baklava: '果仁蜜餅', lamp: '神燈', eye: '藍眼睛', clover: '三葉草', shoe: '馬蹄鐵', dice: '骰子', shades: '酷', flame: '火焰', zzz: '睏了', clap: '鼓掌' }
     },
 
     gift: {

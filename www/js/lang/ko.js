@@ -310,6 +310,7 @@
       lobby: '로비로 돌아가기',
       change: v => v.n > 0 ? '칩 ' + v.abs + '개를 얻었어요.' : v.n < 0 ? '칩 ' + v.abs + '개를 잃었어요.' : '참가비를 돌려받았어요.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { other: '토큰 #개' }),
       level: v => '레벨 ' + v.n + ' 달성!',
       bonus: v => '+칩 ' + v.n + '개',
       winnings: '이번 대전의 칩',
@@ -529,6 +530,40 @@
       send: '그래도 보내기',
       edit: '수정',
       note: '다른 플레이어가 보낸 링크나 연락처를 조심하세요. 칩은 절대 판매되지 않아요.'
+    },
+
+    shop: {
+      title: '상점',
+      count: v => pl(v.n, { other: '토큰 #개' }),
+      tab: { tokens: '토큰', frame: '프레임', plate: '이름판', back: '카드 뒷면', felt: '펠트', emote: '이모트' },
+      loading: '상점을 불러오는 중이에요.',
+      buyFor: v => v.name + ' ' + v.n + '에 구매',
+      ask: v => v.n + '에 구매할까요?',
+      yes: '구매',
+      no: '취소',
+      wear: '착용',
+      off: '해제',
+      worn: '착용 중',
+      owned: '보유 중',
+      bought: v => v.name + '을(를) 구매했어요.',
+      added: (v, t) => t('shop.count', v) + '가 추가됐어요.',
+      failed: '잘 안 됐어요. 잠시 뒤에 다시 해 보세요.',
+      broke: '토큰이 부족해요.',
+      late: '결제는 끝났는데 토큰이 들어오기까지 잠시 걸려요.',
+      android: '안드로이드는 곧 나와요',
+      web: '토큰은 iPhone 앱에서 구매해요',
+      guest: '프로필에서 Apple 계정을 연결하면 앱을 다시 설치해도 구매 내역이 유지돼요.',
+      earn: (v, t) => '온라인 대국을 끝까지 마칠 때마다 ' + t('shop.count', { n: v.n }) + '를 받아요. 하루 최대 ' + v.cap + '개예요. 오늘: ' + v.got + '/' + v.cap + '.',
+      rule: '토큰으로는 꾸미기 아이템만 살 수 있어요. 칩으로 바뀌는 일은 없고, 칩도 판매하지 않아요.',
+      emoNote: '팩마다 테이블 채팅에 쓸 수 있는 이모트가 네 개 늘어나고, 테이블 모두에게 보여요.',
+      item: {
+        'frame-brass': '놋쇠 고리', 'frame-laurel': '월계관', 'frame-kilim': '킬림 테두리', 'frame-moon': '초승달', 'frame-ember': '불씨', 'frame-royal': '로열 골드',
+        'plate-oak': '참나무', 'plate-copper': '구리', 'plate-kilim': '킬림', 'plate-night': '밤', 'plate-gilt': '금박',
+        'back-lattice': '격자', 'back-emerald': '에메랄드', 'back-amber': '호박색', 'back-star': '별', 'back-sultan': '술탄',
+        'felt-plum': '자두', 'felt-ink': '한밤', 'felt-copper': '구리', 'felt-teal': '청록', 'felt-kilim': '킬림',
+        'emo-cafe': '찻집', 'emo-luck': '행운', 'emo-cheek': '장난꾸러기'
+      },
+      emo: { tea: '차', cezve: '체즈베', baklava: '바클라바', lamp: '램프', eye: '악마의 눈', clover: '클로버', shoe: '말굽', dice: '주사위', shades: '쿨', flame: '불꽃', zzz: '졸림', clap: '박수' }
     },
 
     gift: {

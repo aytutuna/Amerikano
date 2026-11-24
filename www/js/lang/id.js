@@ -308,6 +308,7 @@
       lobby: 'Kembali ke lobi',
       change: v => v.n > 0 ? 'Kamu menang ' + chips(v.abs) + '.' : v.n < 0 ? 'Kamu kalah ' + chips(v.abs) + '.' : 'Modalmu kembali.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { other: '# token' }),
       level: v => 'Level ' + v.n + '!',
       bonus: v => '+' + v.n + ' chip',
       winnings: 'Chip-mu di pertandingan ini',
@@ -526,6 +527,40 @@
       send: 'Tetap kirim',
       edit: 'Ubah',
       note: 'Hati-hati dengan tautan dan kontak dari pemain lain. Chip tidak pernah dijual.'
+    },
+
+    shop: {
+      title: 'Toko',
+      count: v => pl(v.n, { other: '# token' }),
+      tab: { tokens: 'Token', frame: 'Bingkai', plate: 'Papan nama', back: 'Punggung kartu', felt: 'Alas meja', emote: 'Emote' },
+      loading: 'Memuat toko.',
+      buyFor: v => 'Beli ' + v.name + ' seharga ' + v.n,
+      ask: v => 'Beli seharga ' + v.n + '?',
+      yes: 'Beli',
+      no: 'Batal',
+      wear: 'Pakai',
+      off: 'Lepas',
+      worn: 'Dipakai',
+      owned: 'Dimiliki',
+      bought: v => 'Kamu membeli ' + v.name + '.',
+      added: (v, t) => t('shop.count', v) + ' ditambahkan.',
+      failed: 'Gagal. Coba lagi sebentar lagi.',
+      broke: 'Token kamu tidak cukup.',
+      late: 'Pembelianmu berhasil, tetapi token butuh waktu sebentar untuk masuk.',
+      android: 'Segera hadir di Android',
+      web: 'Beli token di aplikasi iPhone',
+      guest: 'Tautkan akun Apple di profilmu agar pembelianmu tetap ada setelah instal ulang.',
+      earn: (v, t) => 'Setiap pertandingan online yang kamu selesaikan memberi ' + t('shop.count', { n: v.n }) + ', maksimal ' + v.cap + ' per hari. Hari ini: ' + v.got + ' dari ' + v.cap + '.',
+      rule: 'Token hanya untuk membeli item tampilan. Token tidak pernah berubah menjadi chip, dan chip tidak pernah dijual.',
+      emoNote: 'Setiap paket menambah empat emote ke obrolan meja, terlihat oleh semua orang di meja.',
+      item: {
+        'frame-brass': 'Cincin kuningan', 'frame-laurel': 'Karangan laurel', 'frame-kilim': 'Tepi kilim', 'frame-moon': 'Bulan sabit', 'frame-ember': 'Bara api', 'frame-royal': 'Emas kerajaan',
+        'plate-oak': 'Kayu ek', 'plate-copper': 'Tembaga', 'plate-kilim': 'Kilim', 'plate-night': 'Malam', 'plate-gilt': 'Berlapis emas',
+        'back-lattice': 'Kisi-kisi', 'back-emerald': 'Zamrud', 'back-amber': 'Amber', 'back-star': 'Bintang', 'back-sultan': 'Sultan',
+        'felt-plum': 'Prem', 'felt-ink': 'Tengah malam', 'felt-copper': 'Tembaga', 'felt-teal': 'Hijau kebiruan', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Kedai kopi', 'emo-luck': 'Semoga beruntung', 'emo-cheek': 'Jail'
+      },
+      emo: { tea: 'Teh', cezve: 'Teko kopi', baklava: 'Baklava', lamp: 'Lampu', eye: 'Mata jahat', clover: 'Semanggi', shoe: 'Tapal kuda', dice: 'Dadu', shades: 'Keren', flame: 'Api', zzz: 'Ngantuk', clap: 'Tepuk tangan' }
     },
 
     gift: {

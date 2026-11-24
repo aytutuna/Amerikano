@@ -311,6 +311,7 @@
       lobby: 'Torna alla lobby',
       change: v => v.n > 0 ? 'Hai vinto ' + v.abs + ' fiches.' : v.n < 0 ? 'Hai perso ' + v.abs + ' fiches.' : 'Hai riavuto il tuo ingresso.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { one: '# gemma', other: '# gemme' }),
       level: v => 'Livello ' + v.n + '!',
       bonus: v => '+' + v.n + ' fiches',
       winnings: 'Le tue fiches in questa partita',
@@ -529,6 +530,40 @@
       send: 'Invia comunque',
       edit: 'Modifica',
       note: 'Fai attenzione a link e contatti inviati da altri giocatori. Le fiches non si vendono mai.'
+    },
+
+    shop: {
+      title: 'Negozio',
+      count: v => pl(v.n, { one: '# gemma', other: '# gemme' }),
+      tab: { tokens: 'Gemme', frame: 'Cornici', plate: 'Targhette', back: 'Dorsi', felt: 'Panni', emote: 'Emote' },
+      loading: 'Caricamento del negozio.',
+      buyFor: v => 'Acquista ' + v.name + ' a ' + v.n,
+      ask: v => 'Acquistare per ' + v.n + '?',
+      yes: 'Acquista',
+      no: 'Annulla',
+      wear: 'Usa',
+      off: 'Togli',
+      worn: 'In uso',
+      owned: 'Posseduto',
+      bought: v => 'Hai acquistato ' + v.name + '.',
+      added: (v, t) => 'Aggiunto: ' + t('shop.count', v) + '.',
+      failed: 'Non ha funzionato. Riprova tra un momento.',
+      broke: 'Non hai abbastanza gemme.',
+      late: 'L\'acquisto è andato a buon fine, ma le gemme arrivano tra un momento.',
+      android: 'Presto su Android',
+      web: 'Compra gemme nell\'app per iPhone',
+      guest: 'Collega il tuo account Apple nel profilo per tenere gli acquisti dopo una reinstallazione.',
+      earn: (v, t) => 'Ogni partita online che finisci ti dà ' + t('shop.count', { n: v.n }) + ', fino a ' + v.cap + ' al giorno. Oggi: ' + v.got + ' su ' + v.cap + '.',
+      rule: 'Le gemme servono solo per gli oggetti estetici. Non diventano mai fiches, e le fiches non si vendono mai.',
+      emoNote: 'Ogni pacchetto aggiunge quattro emote alla chat del tavolo, visibili a tutti al tavolo.',
+      item: {
+        'frame-brass': 'Anello d\'ottone', 'frame-laurel': 'Corona d\'alloro', 'frame-kilim': 'Bordo kilim', 'frame-moon': 'Luna crescente', 'frame-ember': 'Bagliore di brace', 'frame-royal': 'Oro reale',
+        'plate-oak': 'Quercia', 'plate-copper': 'Rame', 'plate-kilim': 'Kilim', 'plate-night': 'Notte', 'plate-gilt': 'Dorato',
+        'back-lattice': 'Traliccio', 'back-emerald': 'Smeraldo', 'back-amber': 'Ambra', 'back-star': 'Stella', 'back-sultan': 'Sultano',
+        'felt-plum': 'Prugna', 'felt-ink': 'Mezzanotte', 'felt-copper': 'Rame', 'felt-teal': 'Verde acqua', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Caffè turco', 'emo-luck': 'Buona fortuna', 'emo-cheek': 'Birichino'
+      },
+      emo: { tea: 'Tè', cezve: 'Caffettiera', baklava: 'Baklava', lamp: 'Lampada', eye: 'Malocchio', clover: 'Quadrifoglio', shoe: 'Ferro di cavallo', dice: 'Dado', shades: 'Cool', flame: 'Fuoco', zzz: 'Sonno', clap: 'Applausi' }
     },
 
     gift: {

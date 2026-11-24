@@ -308,6 +308,7 @@
       lobby: 'ロビーへ戻る',
       change: v => v.n > 0 ? v.abs + 'チップを獲得しました。' : v.n < 0 ? v.abs + 'チップを失いました。' : '参加費が戻りました。',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { other: '#トークン' }),
       level: v => 'レベル' + v.n + 'に到達！',
       bonus: v => '+' + v.n + 'チップ',
       winnings: 'この対戦のチップ',
@@ -526,6 +527,40 @@
       send: 'このまま送信',
       edit: '編集',
       note: '他のプレイヤーから届くリンクや連絡先には注意してください。チップが売られることはありません。'
+    },
+
+    shop: {
+      title: 'ショップ',
+      count: v => pl(v.n, { other: '#トークン' }),
+      tab: { tokens: 'トークン', frame: 'フレーム', plate: 'ネームプレート', back: 'カード裏', felt: 'フェルト', emote: 'エモート' },
+      loading: 'ショップを読み込み中です。',
+      buyFor: v => v.name + 'を' + v.n + 'で購入',
+      ask: v => v.n + 'で購入しますか？',
+      yes: '購入',
+      no: 'キャンセル',
+      wear: '使う',
+      off: '外す',
+      worn: '使用中',
+      owned: '所持済み',
+      bought: v => v.name + 'を購入しました。',
+      added: (v, t) => t('shop.count', v) + 'を追加しました。',
+      failed: 'うまくいきませんでした。少し待ってからもう一度お試しください。',
+      broke: 'トークンが足りません。',
+      late: '購入は完了しましたが、トークンの反映に少し時間がかかっています。',
+      android: 'Android版は近日公開',
+      web: 'トークンはiPhoneアプリで購入できます',
+      guest: 'プロフィールでApple IDを連携すると、再インストール後も購入内容が残ります。',
+      earn: (v, t) => 'オンライン対戦を最後まで終えるたびに' + t('shop.count', { n: v.n }) + 'を獲得できます（1日最大' + v.cap + '）。今日：' + v.got + '/' + v.cap + '。',
+      rule: 'トークンで買えるのは見た目のアイテムだけです。チップに変わることはなく、チップが販売されることもありません。',
+      emoNote: '各パックでテーブルチャットに使えるエモートが4つ増えます。テーブルの全員に表示されます。',
+      item: {
+        'frame-brass': '真鍮の輪', 'frame-laurel': '月桂冠', 'frame-kilim': 'キリムの縁', 'frame-moon': '三日月', 'frame-ember': '燃えさし', 'frame-royal': 'ロイヤルゴールド',
+        'plate-oak': 'オーク', 'plate-copper': '銅', 'plate-kilim': 'キリム', 'plate-night': '夜', 'plate-gilt': '金箔',
+        'back-lattice': '格子', 'back-emerald': 'エメラルド', 'back-amber': '琥珀', 'back-star': '星', 'back-sultan': 'スルタン',
+        'felt-plum': 'プラム', 'felt-ink': '真夜中', 'felt-copper': '銅', 'felt-teal': 'ティール', 'felt-kilim': 'キリム',
+        'emo-cafe': 'カフェ', 'emo-luck': '幸運', 'emo-cheek': 'お茶目'
+      },
+      emo: { tea: 'お茶', cezve: 'コーヒーポット', baklava: 'バクラヴァ', lamp: 'ランプ', eye: '邪視', clover: 'クローバー', shoe: '蹄鉄', dice: 'サイコロ', shades: 'クール', flame: '炎', zzz: '眠い', clap: '拍手' }
     },
 
     gift: {

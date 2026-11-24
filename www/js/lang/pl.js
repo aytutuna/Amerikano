@@ -312,6 +312,7 @@
       lobby: 'Wróć do lobby',
       change: v => v.n > 0 ? 'Zyskujesz ' + chips(digits(v.abs)) + '.' : v.n < 0 ? 'Tracisz ' + chips(digits(v.abs)) + '.' : 'Odzyskujesz stawkę.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { one: '# klejnot', few: '# klejnoty', many: '# klejnotów', other: '# klejnotu' }),
       level: v => 'Poziom ' + v.n + '!',
       bonus: v => '+' + v.n + ' żetonów',
       winnings: 'Twoje żetony w tej partii',
@@ -530,6 +531,40 @@
       send: 'Wyślij mimo to',
       edit: 'Edytuj',
       note: 'Uważaj na linki i dane kontaktowe od innych graczy. Żetony nigdy nie są sprzedawane.'
+    },
+
+    shop: {
+      title: 'Sklep',
+      count: v => pl(v.n, { one: '# klejnot', few: '# klejnoty', many: '# klejnotów', other: '# klejnotu' }),
+      tab: { tokens: 'Klejnoty', frame: 'Ramki', plate: 'Tabliczki', back: 'Rewersy', felt: 'Sukna', emote: 'Emotki' },
+      loading: 'Wczytywanie sklepu.',
+      buyFor: v => 'Kup: ' + v.name + ' za ' + v.n,
+      ask: v => 'Kupić za ' + v.n + '?',
+      yes: 'Kup',
+      no: 'Anuluj',
+      wear: 'Załóż',
+      off: 'Zdejmij',
+      worn: 'Założone',
+      owned: 'Posiadasz',
+      bought: v => 'Kupiono: ' + v.name + '.',
+      added: (v, t) => 'Dodano: ' + t('shop.count', v) + '.',
+      failed: 'Nie udało się. Spróbuj za chwilę.',
+      broke: 'Masz za mało klejnotów.',
+      late: 'Zakup przeszedł, ale klejnoty pojawią się za chwilę.',
+      android: 'Wkrótce na Androidzie',
+      web: 'Klejnoty kupisz w aplikacji na iPhone\'a',
+      guest: 'Połącz konto Apple w profilu, aby zachować zakupy po ponownej instalacji.',
+      earn: (v, t) => 'Każda ukończona gra online daje ' + t('shop.count', { n: v.n }) + ', maksymalnie ' + v.cap + ' dziennie. Dziś: ' + v.got + ' z ' + v.cap + '.',
+      rule: 'Klejnoty służą tylko do kupowania ozdób. Nigdy nie zamieniają się w żetony, a żetony nigdy nie są sprzedawane.',
+      emoNote: 'Każdy pakiet dodaje cztery emotki do czatu przy stole, widoczne dla wszystkich przy stole.',
+      item: {
+        'frame-brass': 'Mosiężny pierścień', 'frame-laurel': 'Wieniec laurowy', 'frame-kilim': 'Obramowanie kilim', 'frame-moon': 'Półksiężyc', 'frame-ember': 'Żar', 'frame-royal': 'Królewskie złoto',
+        'plate-oak': 'Dąb', 'plate-copper': 'Miedź', 'plate-kilim': 'Kilim', 'plate-night': 'Noc', 'plate-gilt': 'Złocenie',
+        'back-lattice': 'Kratka', 'back-emerald': 'Szmaragd', 'back-amber': 'Bursztyn', 'back-star': 'Gwiazda', 'back-sultan': 'Sułtan',
+        'felt-plum': 'Śliwka', 'felt-ink': 'Północ', 'felt-copper': 'Miedź', 'felt-teal': 'Morski', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Kawiarnia', 'emo-luck': 'Powodzenia', 'emo-cheek': 'Filuterny'
+      },
+      emo: { tea: 'Herbata', cezve: 'Dzbanek', baklava: 'Baklawa', lamp: 'Lampa', eye: 'Złe oko', clover: 'Koniczyna', shoe: 'Podkowa', dice: 'Kostka', shades: 'Cool', flame: 'Ogień', zzz: 'Śpiący', clap: 'Brawa' }
     },
 
     gift: {

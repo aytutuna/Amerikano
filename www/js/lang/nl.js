@@ -312,6 +312,7 @@
       lobby: 'Terug naar de lobby',
       change: v => v.n > 0 ? 'Je hebt ' + chips(digits(v.abs)) + ' gewonnen.' : v.n < 0 ? 'Je hebt ' + chips(digits(v.abs)) + ' verloren.' : 'Je inzet is terug.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { one: '# token', other: '# tokens' }),
       level: v => 'Level ' + v.n + '!',
       bonus: v => '+' + v.n + ' fiches',
       winnings: 'Jouw fiches in deze partij',
@@ -530,6 +531,40 @@
       send: 'Toch versturen',
       edit: 'Aanpassen',
       note: 'Wees voorzichtig met links en contactgegevens van andere spelers. Fiches worden nooit verkocht.'
+    },
+
+    shop: {
+      title: 'Winkel',
+      count: v => pl(v.n, { one: '# token', other: '# tokens' }),
+      tab: { tokens: 'Tokens', frame: 'Lijsten', plate: 'Naamplaten', back: 'Kaartruggen', felt: 'Vilt', emote: 'Emotes' },
+      loading: 'De winkel laden.',
+      buyFor: v => 'Koop ' + v.name + ' voor ' + v.n,
+      ask: v => 'Kopen voor ' + v.n + '?',
+      yes: 'Kopen',
+      no: 'Annuleren',
+      wear: 'Gebruiken',
+      off: 'Uitdoen',
+      worn: 'In gebruik',
+      owned: 'Van jou',
+      bought: v => 'Je hebt ' + v.name + ' gekocht.',
+      added: (v, t) => t('shop.count', v) + ' toegevoegd.',
+      failed: 'Dat is niet gelukt. Probeer het zo opnieuw.',
+      broke: 'Je hebt niet genoeg tokens.',
+      late: 'Je aankoop is gelukt, maar de tokens komen zo binnen.',
+      android: 'Binnenkort op Android',
+      web: 'Koop tokens in de iPhone-app',
+      guest: 'Koppel je Apple-account in je profiel om je aankopen na een herinstallatie te houden.',
+      earn: (v, t) => 'Elke online partij die je afmaakt levert ' + t('shop.count', { n: v.n }) + ' op, tot ' + v.cap + ' per dag. Vandaag: ' + v.got + ' van ' + v.cap + '.',
+      rule: 'Met tokens koop je alleen cosmetica. Ze worden nooit fiches, en fiches worden nooit verkocht.',
+      emoNote: 'Elk pakket voegt vier emotes toe aan de tafelchat, zichtbaar voor iedereen aan tafel.',
+      item: {
+        'frame-brass': 'Messingring', 'frame-laurel': 'Lauwerkrans', 'frame-kilim': 'Kilimrand', 'frame-moon': 'Maansikkel', 'frame-ember': 'Gloeiende kolen', 'frame-royal': 'Koningsgoud',
+        'plate-oak': 'Eiken', 'plate-copper': 'Koper', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Verguld',
+        'back-lattice': 'Latwerk', 'back-emerald': 'Smaragd', 'back-amber': 'Amber', 'back-star': 'Ster', 'back-sultan': 'Sultan',
+        'felt-plum': 'Pruim', 'felt-ink': 'Middernacht', 'felt-copper': 'Koper', 'felt-teal': 'Blauwgroen', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Koffiehuis', 'emo-luck': 'Veel geluk', 'emo-cheek': 'Brutaal'
+      },
+      emo: { tea: 'Thee', cezve: 'Koffiepot', baklava: 'Baklava', lamp: 'Lamp', eye: 'Boze oog', clover: 'Klaver', shoe: 'Hoefijzer', dice: 'Dobbelsteen', shades: 'Cool', flame: 'Vuur', zzz: 'Slaperig', clap: 'Applaus' }
     },
 
     gift: {

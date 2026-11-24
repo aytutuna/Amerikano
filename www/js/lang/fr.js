@@ -311,6 +311,7 @@
       lobby: 'Retour au salon',
       change: v => v.n > 0 ? 'Tu as gagné ' + v.abs + ' jetons.' : v.n < 0 ? 'Tu as perdu ' + v.abs + ' jetons.' : 'Tu as récupéré ton entrée.',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { one: '# gemme', many: '# de gemmes', other: '# gemmes' }),
       level: v => 'Niveau ' + v.n + ' !',
       bonus: v => '+' + v.n + ' jetons',
       winnings: 'Tes jetons sur cette partie',
@@ -529,6 +530,40 @@
       send: 'Envoyer quand même',
       edit: 'Modifier',
       note: 'Fais attention aux liens et aux coordonnées venant d’autres joueurs. Les jetons ne sont jamais vendus.'
+    },
+
+    shop: {
+      title: 'Boutique',
+      count: v => pl(v.n, { one: '# gemme', many: '# de gemmes', other: '# gemmes' }),
+      tab: { tokens: 'Gemmes', frame: 'Cadres', plate: 'Plaques', back: 'Dos', felt: 'Tapis', emote: 'Émotes' },
+      loading: 'Chargement de la boutique.',
+      buyFor: v => 'Acheter ' + v.name + ' pour ' + v.n,
+      ask: v => 'Acheter pour ' + v.n + ' ?',
+      yes: 'Acheter',
+      no: 'Annuler',
+      wear: 'Équiper',
+      off: 'Retirer',
+      worn: 'Équipé',
+      owned: 'Possédé',
+      bought: v => 'Tu as acheté ' + v.name + '.',
+      added: (v, t) => 'Ajout de ' + t('shop.count', v) + '.',
+      failed: 'Échec. Réessaie dans un instant.',
+      broke: 'Tu n\'as pas assez de gemmes.',
+      late: 'Ton achat est passé, mais les gemmes mettent un instant à arriver.',
+      android: 'Bientôt sur Android',
+      web: 'Achète des gemmes dans l\'app iPhone',
+      guest: 'Lie ton compte Apple dans ton profil pour garder tes achats après une réinstallation.',
+      earn: (v, t) => 'Chaque partie en ligne terminée te rapporte ' + t('shop.count', { n: v.n }) + ', jusqu\'à ' + v.cap + ' par jour. Aujourd\'hui : ' + v.got + ' sur ' + v.cap + '.',
+      rule: 'Les gemmes servent uniquement à acheter des cosmétiques. Elles ne se changent jamais en jetons, et les jetons ne sont jamais vendus.',
+      emoNote: 'Chaque pack ajoute quatre émotes au chat de la table, visibles par tout le monde à la table.',
+      item: {
+        'frame-brass': 'Anneau en laiton', 'frame-laurel': 'Couronne de laurier', 'frame-kilim': 'Bordure kilim', 'frame-moon': 'Croissant de lune', 'frame-ember': 'Lueur de braise', 'frame-royal': 'Or royal',
+        'plate-oak': 'Chêne', 'plate-copper': 'Cuivre', 'plate-kilim': 'Kilim', 'plate-night': 'Nuit', 'plate-gilt': 'Doré',
+        'back-lattice': 'Treillis', 'back-emerald': 'Émeraude', 'back-amber': 'Ambre', 'back-star': 'Étoile', 'back-sultan': 'Sultan',
+        'felt-plum': 'Prune', 'felt-ink': 'Minuit', 'felt-copper': 'Cuivre', 'felt-teal': 'Sarcelle', 'felt-kilim': 'Kilim',
+        'emo-cafe': 'Café', 'emo-luck': 'Bonne chance', 'emo-cheek': 'Coquin'
+      },
+      emo: { tea: 'Thé', cezve: 'Cafetière', baklava: 'Baklava', lamp: 'Lampe', eye: 'Mauvais œil', clover: 'Trèfle', shoe: 'Fer à cheval', dice: 'Dé', shades: 'Cool', flame: 'Feu', zzz: 'Sommeil', clap: 'Bravo' }
     },
 
     gift: {

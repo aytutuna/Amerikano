@@ -309,6 +309,7 @@
       lobby: '回到大厅',
       change: v => v.n > 0 ? '赢得' + v.abs + '金币。' : v.n < 0 ? '输掉' + v.abs + '金币。' : '拿回了入场费。',
       xp: v => '+' + v.n + ' XP',
+      tokens: v => '+' + pl(v.n, { other: '#钻石' }),
       level: v => '升到' + v.n + '级了！',
       bonus: v => '+' + v.n + '金币',
       winnings: '本场金币变化',
@@ -528,6 +529,40 @@
       send: '仍然发送',
       edit: '修改',
       note: '请小心其他玩家发来的链接和联系方式。金币从不出售。'
+    },
+
+    shop: {
+      title: '商店',
+      count: v => pl(v.n, { other: '#钻石' }),
+      tab: { tokens: '钻石', frame: '头像框', plate: '名牌', back: '牌背', felt: '桌布', emote: '表情' },
+      loading: '正在加载商店。',
+      buyFor: v => '购买' + v.name + '，' + v.n + '钻石',
+      ask: v => '花费' + v.n + '钻石购买？',
+      yes: '购买',
+      no: '取消',
+      wear: '使用',
+      off: '取下',
+      worn: '使用中',
+      owned: '已拥有',
+      bought: v => '已购买' + v.name + '。',
+      added: (v, t) => '已到账' + t('shop.count', v) + '。',
+      failed: '没成功，请稍后再试。',
+      broke: '钻石不足。',
+      late: '购买已完成，钻石稍后到账。',
+      android: 'Android 版即将推出',
+      web: '请在 iPhone 应用中购买钻石',
+      guest: '在个人资料中绑定 Apple 账号，重装后也能保留你的购买记录。',
+      earn: (v, t) => '每完成一场在线对局可获得' + t('shop.count', { n: v.n }) + '，每天最多可得' + v.cap + '钻石。今日：' + v.got + '/' + v.cap + '。',
+      rule: '钻石只能购买外观道具，不能兑换成金币，金币也从不出售。',
+      emoNote: '每个礼包会为牌桌聊天增加四个表情，同桌所有人都能看到。',
+      item: {
+        'frame-brass': '黄铜环', 'frame-laurel': '月桂冠', 'frame-kilim': '基里姆边框', 'frame-moon': '弯月', 'frame-ember': '余烬', 'frame-royal': '皇家金',
+        'plate-oak': '橡木', 'plate-copper': '铜色', 'plate-kilim': '基里姆', 'plate-night': '夜色', 'plate-gilt': '鎏金',
+        'back-lattice': '格纹', 'back-emerald': '祖母绿', 'back-amber': '琥珀', 'back-star': '星辰', 'back-sultan': '苏丹',
+        'felt-plum': '李紫', 'felt-ink': '午夜', 'felt-copper': '铜色', 'felt-teal': '青绿', 'felt-kilim': '基里姆',
+        'emo-cafe': '咖啡馆', 'emo-luck': '好运', 'emo-cheek': '调皮'
+      },
+      emo: { tea: '茶', cezve: '咖啡壶', baklava: '果仁蜜饼', lamp: '神灯', eye: '蓝眼睛', clover: '三叶草', shoe: '马蹄铁', dice: '骰子', shades: '酷', flame: '火焰', zzz: '困了', clap: '鼓掌' }
     },
 
     gift: {
