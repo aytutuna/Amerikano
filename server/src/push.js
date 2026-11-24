@@ -2,6 +2,7 @@ import Names from '../../www/js/names.js';
 import { unb64, b64 } from './apple.js';
 import { reward } from './account.js';
 import { week } from './social.js';
+import { rollup } from './stats.js';
 import more from './text.js';
 
 const DAY = 86400000;
@@ -263,7 +264,7 @@ export async function cron(env, now) {
   const run = Object.assign({}, env, { bud: { left: BUDGET } });
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
   // weeklies first, as they only have work on Mondays; one failing job does not stop the others
-  for (const job of keys ? [cleanup, weeklies, dailies] : [cleanup]) {
+  for (const job of keys ? [rollup, cleanup, weeklies, dailies] : [rollup, cleanup]) {
     try {
       await job(run, now);
     } catch (e) {

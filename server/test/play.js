@@ -2167,6 +2167,26 @@ function jwtOk(jwt, key, alg, kind) {
   return { head: head, claims: JSON.parse(Buffer.from(c, 'base64url')) };
 }
 
+async function metrics() {
+  const a = await guest();
+  const day = Math.floor(Date.now() / DAY);
+  await hub(a);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = '" + a.id + "' AND day = " + day)[0].n, 1);
+  const bad = client('/ws/hub');
+  await bad.ready;
+  bad.send({ t: 'hello', auth: 'nobody.nothing' });
+  await sleep(500);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'nobody'")[0].n, 0);
+  sql("INSERT INTO active (player, day) VALUES ('old', " + (day - 100) + ")");
+  // the first run after midnight UTC writes the row for the day that just ended
+  await tick((day + 1) * DAY + 30 * 60000);
+  const [row] = sql('SELECT * FROM stats WHERE day = ' + day);
+  assert(row && row.new >= 1 && row.dau >= 1, 'stats row ' + JSON.stringify(row));
+  assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'old'")[0].n, 0);
+  await tick((day + 1) * DAY + 90 * 60000);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM stats WHERE day = ' + day)[0].n, 1);
+}
+
 async function dms() {
   const [a, b, c] = [await guest(), await guest(), await guest()];
   const dm = (from, to, text) => call('POST', '/api/dm', from, { to: to.id, text: text });
@@ -3237,6 +3257,7 @@ async function calls(f) {
   await cupRetry();
   await cupRun(2);
   await cupRun(6);
+  await metrics();
   console.log('ok');
   reached = true;
   process.exit(0);
