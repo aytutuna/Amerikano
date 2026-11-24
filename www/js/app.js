@@ -111,6 +111,7 @@ var App = (function () {
   let note = null;
   let dragIds = null;
   let askKey = '';
+  let reviewDue = false;
   let endKey = '';
   let claimKey = '';
   let alertKey = '';
@@ -356,8 +357,8 @@ var App = (function () {
       if (!st || k !== st.gameNo + ':' + st.phase) return;
       Sheet.closeAll();
       over = st.phase === 'gameend' ? UI.roundEnd(st, A.nextGame) : UI.matchEnd(st);
-      // once the flourish has settled
-      if (on && st.phase === 'matchend' && !st.cup && !st.players[st.final.low].bot) setTimeout(Review.won, 2500);
+      // asked once the player is back in the lobby
+      if (on && st.phase === 'matchend' && !st.cup && !st.players[st.final.low].bot) reviewDue = true;
     }, 900);
   }
 
@@ -681,7 +682,10 @@ var App = (function () {
     st = hydrate(m, log);
     // a rematch deals a new match into the same table, with a new log
     const next = !!prev && prev.phase === 'matchend' && st.phase !== 'matchend';
-    if (next) Net.keep([]);
+    if (next) {
+      Net.keep([]);
+      reviewDue = false;
+    }
     const first = !prev || next;
     const deal = !first && prev.gameNo !== st.gameNo;
     if (first || deal) {
@@ -755,6 +759,8 @@ var App = (function () {
     $('game').hidden = true;
     Net.at('lobby');
     UI.show();
+    if (reviewDue) Review.won();
+    reviewDue = false;
     const b = document.querySelector('#home [data-k=cont], #home [data-k=go]');
     if (b) b.focus({ preventScroll: true });
   };
