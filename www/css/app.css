@@ -834,3 +834,34 @@ html[lang=ja] body { line-break: strict; word-break: auto-phrase; }
 .price { display: inline-flex; align-items: center; gap: calc(4 * var(--u)); font-weight: 800; }
 .price .chip { width: calc(16 * var(--u)); height: calc(16 * var(--u)); }
 .itile .tag { font-weight: 800; font-size: calc(12 * var(--r)); color: var(--brown); }
+
+/* VIP: the badge, the gold frame, plate and card back, and the subscription card in the shop */
+.vipb { display: inline-block; flex: none; padding: calc(1 * var(--u)) calc(5 * var(--u)); border-radius: calc(5 * var(--u)); background: linear-gradient(#ffe9a0, #d9a93a 55%, #b0791c); color: #3a2412; border: 1px solid #7a5320; font: 800 calc(9 * var(--r))/1.2 'Alegreya Sans', sans-serif; font-style: normal; letter-spacing: .06em; vertical-align: middle; margin-inline-end: calc(5 * var(--u)); box-shadow: 0 1px 0 rgba(255, 255, 255, .5) inset; }
+.vipb[hidden] { display: none; }
+.av .vipb { position: absolute; top: calc(-5 * var(--u)); inset-inline-end: calc(-8 * var(--u)); margin: 0; z-index: 3; }
+.pf-top h3 .vipb { font-size: calc(11 * var(--r)); }
+.mypic ~ .tx .vipb { font-size: calc(8 * var(--r)); }
+
+[data-frame=frame-gold] { --frb: conic-gradient(from 0deg, #fff1b8, #e4b43e 20%, #9c6a14 40%, #fff1b8 55%, #e4b43e 75%, #9c6a14 90%, #fff1b8); filter: drop-shadow(0 0 calc(3 * var(--u)) rgba(255, 210, 74, .75)); }
+[data-plate=plate-vip] { --pbg: repeating-linear-gradient(45deg, rgba(242, 207, 99, .13) 0 3px, transparent 3px 7px), linear-gradient(#5a1d2c, #2e0d18); --pc: #f6dc8a; --pe: #1a060d; --px: 0 0 calc(7 * var(--u)) rgba(242, 207, 99, .45); }
+[data-back=back-vip] { --bkbg: radial-gradient(circle at 50% 50%, #f6dc8a 0 11%, transparent 12%), repeating-conic-gradient(from 0deg at 50% 50%, rgba(242, 207, 99, .35) 0 10deg, transparent 10deg 20deg), linear-gradient(160deg, #5a1d2c, #240a14); }
+:is([data-back=back-vip]) :is(.cv.bk, .fc), body:is([data-back=back-vip]) .pile::before { background: var(--bkbg); filter: none; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-frame=frame-gold]::before { animation: ring 5s linear infinite; }
+}
+
+.vipc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: calc(14 * var(--u)); padding: calc(10 * var(--u)) calc(12 * var(--u)); border-radius: calc(12 * var(--u)); background: linear-gradient(#5a1d2c, #2e0d18); color: #f6e7c0; box-shadow: 0 calc(3 * var(--u)) 0 #1a060d, inset 0 0 0 calc(2 * var(--u)) rgba(242, 207, 99, .55); }
+.vipc h3 { margin: 0 0 calc(4 * var(--u)); font-size: calc(18 * var(--r)); color: #f6dc8a; }
+.vipc .vipb { font-size: calc(11 * var(--r)); }
+.vipp { margin: 0; padding: 0; list-style: none; display: grid; gap: calc(3 * var(--u)); font-size: calc(13 * var(--r)); }
+.vipp li::before { content: '\2022'; color: #f2cf63; margin-inline-end: calc(6 * var(--u)); }
+.vipp .soon { opacity: .7; }
+.vipr { display: grid; gap: calc(5 * var(--u)); align-content: center; justify-items: start; min-width: 0; }
+.vipu { font-size: calc(17 * var(--r)); color: #f6dc8a; }
+.vipn { font-size: calc(12 * var(--r)); opacity: .85; }
+.vipr .ibt { justify-content: flex-start; }
+.vipr .note, .viplg { margin: 0; font-size: calc(10.5 * var(--r)); line-height: 1.25; opacity: .85; color: inherit; }
+.viplk { display: flex; flex-wrap: wrap; gap: calc(4 * var(--u)) calc(12 * var(--u)); font-size: calc(11 * var(--r)); }
+.vipr a.quiet { color: #f6dc8a; text-decoration: underline; }
+.vipr a.quiet.btn { text-decoration: none; }
+.vipr .btn.quiet { color: #f6dc8a; }

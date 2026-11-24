@@ -351,7 +351,9 @@ var UI = (function () {
     pic.setAttribute('aria-hidden', 'true');
     b.appendChild(pic);
     const tx = node('span', 'tx');
-    tx.appendChild(node('b', '', who(me.seed)));
+    const nm = node('b', '', who(me.seed));
+    if (me.vipUntil) nm.prepend(node('span', 'vipb', 'VIP'));
+    tx.appendChild(nm);
     tx.appendChild(xpBar(me));
     b.appendChild(tx);
     return b;

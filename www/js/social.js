@@ -294,7 +294,9 @@ var Social = (function () {
       const top = node('div', 'pf-top');
       top.appendChild(Avatar.sized(face(hint), 100, ((data || hint).wear || {}).frame));
       const tx = node('div', 'tx');
-      tx.appendChild(node('h3', '', hint.seed === undefined ? hint.name : who(hint.seed)));
+      const nm = node('h3', '', hint.seed === undefined ? hint.name : who(hint.seed));
+      if ((data || hint).vip) nm.prepend(node('span', 'vipb', 'VIP'));
+      tx.appendChild(nm);
       if (hint.level) tx.appendChild(node('p', '', t('pf.level', { n: hint.level })));
       top.appendChild(tx);
       left.appendChild(top);
@@ -350,7 +352,7 @@ var Social = (function () {
     const st = App.state();
     const p = st && st.players[i];
     if (!p) return;
-    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level, wear: App.wear(p, i) };
+    const hint = { seed: p.seed, name: p.name, av: App.look(p, i), level: p.level, wear: App.wear(p, i), vip: !!p.vip };
     S.profile(p.pid, hint, i || 0);
   };
 

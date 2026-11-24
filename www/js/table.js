@@ -124,7 +124,7 @@ var Table = (function () {
     const e = Cards.node('div', 'seat');
     e.setAttribute('role', 'group');
     e.dataset.p = i;
-    e.innerHTML = '<span class="hf" aria-hidden="true"><i class="fc"></i><i class="fc"></i></span><span class="av" aria-hidden="true"><svg class="rg" viewBox="0 0 68 68"><circle class="rt" cx="34" cy="34" r="32.5"/><circle class="rf" cx="34" cy="34" r="32.5" transform="rotate(-90 34 34)"/></svg><span class="pf"></span><i class="cnt"></i><em class="lv"></em></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sb"><span class="sc"></span><span class="bk"></span></span><span class="tw"></span></span><button class="tap" type="button"></button>';
+    e.innerHTML = '<span class="hf" aria-hidden="true"><i class="fc"></i><i class="fc"></i></span><span class="av" aria-hidden="true"><svg class="rg" viewBox="0 0 68 68"><circle class="rt" cx="34" cy="34" r="32.5"/><circle class="rf" cx="34" cy="34" r="32.5" transform="rotate(-90 34 34)"/></svg><span class="pf"></span><i class="cnt"></i><em class="lv"></em><b class="vipb" hidden>VIP</b></span><span class="si" aria-hidden="true"><span class="nm"></span><span class="sb"><span class="sc"></span><span class="bk"></span></span><span class="tw"></span></span><button class="tap" type="button"></button>';
     e.querySelector('.av').appendChild(Cards.icon('i-check', 'ok'));
     e.querySelector('.bk').appendChild(Cards.icon('i-chip', 'chip'));
     e.querySelector('.bk').appendChild(document.createTextNode(''));
@@ -172,6 +172,7 @@ var Table = (function () {
         av.textContent = '';
         av.appendChild(Avatar.pic(parts, box));
       }
+      e.querySelector('.vipb').hidden = !p.vip;
       const lv = e.querySelector('.lv');
       lv.textContent = p.level || '';
       lv.hidden = !p.level;
