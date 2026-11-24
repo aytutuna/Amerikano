@@ -533,7 +533,7 @@
     shop: {
       title: 'المتجر',
       count: v => pl(v.n, { zero: 'لا جواهر', one: 'جوهرة واحدة', two: 'جوهرتان', few: '# جواهر', many: '# جوهرة', other: '# جوهرة' }),
-      tab: { tokens: 'الجواهر', frame: 'الإطارات', plate: 'اللوحات', back: 'ظهور الأوراق', felt: 'الأقمشة', emote: 'الإيموجي' },
+      tab: { tokens: 'الجواهر', frame: 'الإطارات', plate: 'اللوحات', back: 'ظهور الأوراق', felt: 'الأقمشة', emote: 'الإيموجي', vip: 'VIP' },
       loading: 'جارٍ تحميل المتجر.',
       buyFor: v => 'شراء ' + v.name + ' مقابل ' + v.n,
       ask: v => 'شراء مقابل ' + v.n + '؟',
@@ -558,12 +558,32 @@
       bonus: v => '‎+' + v.n + '%',
       popular: 'الأكثر شعبية',
       best: 'الأفضل قيمة',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'اشتراك شهري، شهر واحد',
+        per: v => v.price + ' شهريًا',
+        badge: 'شارة VIP على كل طاولة',
+        frame: 'إطار ذهبي متحرك',
+        items: 'لوحة اسم VIP وظهر أوراق خاص',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' كل شهر',
+        pass: 'تذكرة الموسم المميزة (قريبًا)',
+        subscribe: 'اشترك',
+        restore: 'استعادة المشتريات',
+        manage: 'إدارة الاشتراك',
+        until: v => 'VIP حتى ' + v.date,
+        renew: 'يُخصم المبلغ من حساب Apple عند التأكيد. يتجدد الاشتراك تلقائيًا كل شهر ما لم تُلغِه قبل انتهاء الفترة بـ 24 ساعة على الأقل. يمكنك إدارته أو إلغاؤه من إعدادات حسابك في App Store.',
+        terms: 'شروط الاستخدام',
+        only: 'لأعضاء VIP فقط',
+        web: 'اشترك من تطبيق آيفون',
+        on: 'أهلًا بك في VIP.',
+        restored: 'مشترياتك محدّثة.'
+      },
       item: {
         'frame-brass': 'حلقة نحاسية', 'frame-laurel': 'إكليل الغار', 'frame-kilim': 'حافة كليم', 'frame-moon': 'هلال', 'frame-ember': 'جمر متوهج', 'frame-royal': 'ذهب ملكي',
         'plate-oak': 'بلوط', 'plate-copper': 'نحاس', 'plate-kilim': 'كليم', 'plate-night': 'ليل', 'plate-gilt': 'مذهّب',
         'back-lattice': 'شبكة', 'back-emerald': 'زمرد', 'back-amber': 'عنبر', 'back-star': 'نجمة', 'back-sultan': 'سلطان',
         'felt-plum': 'برقوق', 'felt-ink': 'منتصف الليل', 'felt-copper': 'نحاس', 'felt-teal': 'تركوازي', 'felt-kilim': 'كليم',
-        'emo-cafe': 'مقهى', 'emo-luck': 'حظًا سعيدًا', 'emo-cheek': 'مشاغب'
+        'emo-cafe': 'مقهى', 'emo-luck': 'حظًا سعيدًا', 'emo-cheek': 'مشاغب', 'frame-gold': 'هالة ذهبية', 'plate-vip': 'مخمل', 'back-vip': 'ديباج'
       },
       emo: { tea: 'شاي', cezve: 'ركوة', baklava: 'بقلاوة', lamp: 'مصباح', eye: 'عين الحسد', clover: 'برسيم', shoe: 'حدوة', dice: 'نرد', shades: 'رائع', flame: 'نار', zzz: 'نعسان', clap: 'تصفيق' }
     },

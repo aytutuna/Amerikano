@@ -535,7 +535,7 @@
     shop: {
       title: 'Negozio',
       count: v => pl(v.n, { one: '# gemma', other: '# gemme' }),
-      tab: { tokens: 'Gemme', frame: 'Cornici', plate: 'Targhette', back: 'Dorsi', felt: 'Panni', emote: 'Emote' },
+      tab: { tokens: 'Gemme', frame: 'Cornici', plate: 'Targhette', back: 'Dorsi', felt: 'Panni', emote: 'Emote', vip: 'VIP' },
       loading: 'Caricamento del negozio.',
       buyFor: v => 'Acquista ' + v.name + ' a ' + v.n,
       ask: v => 'Acquistare per ' + v.n + '?',
@@ -560,12 +560,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Popolare',
       best: 'Più conveniente',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Abbonamento mensile, 1 mese',
+        per: v => v.price + ' al mese',
+        badge: 'Distintivo VIP a ogni tavolo',
+        frame: 'Cornice dorata animata',
+        items: 'Targhetta e dorso carte VIP',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' ogni mese',
+        pass: 'Pass stagionale premium (in arrivo)',
+        subscribe: 'Abbonati',
+        restore: 'Ripristina acquisti',
+        manage: 'Gestisci abbonamento',
+        until: v => 'VIP fino al ' + v.date,
+        renew: 'Il pagamento viene addebitato sul tuo ID Apple alla conferma. L’abbonamento si rinnova automaticamente ogni mese, a meno che non venga annullato almeno 24 ore prima della fine del periodo. Puoi gestirlo o annullarlo nelle impostazioni dell’account App Store.',
+        terms: 'Condizioni d’uso',
+        only: 'Solo VIP',
+        web: 'Abbonati nell’app per iPhone',
+        on: 'Benvenuto tra i VIP.',
+        restored: 'I tuoi acquisti sono aggiornati.'
+      },
       item: {
         'frame-brass': 'Anello d\'ottone', 'frame-laurel': 'Corona d\'alloro', 'frame-kilim': 'Bordo kilim', 'frame-moon': 'Luna crescente', 'frame-ember': 'Bagliore di brace', 'frame-royal': 'Oro reale',
         'plate-oak': 'Quercia', 'plate-copper': 'Rame', 'plate-kilim': 'Kilim', 'plate-night': 'Notte', 'plate-gilt': 'Dorato',
         'back-lattice': 'Traliccio', 'back-emerald': 'Smeraldo', 'back-amber': 'Ambra', 'back-star': 'Stella', 'back-sultan': 'Sultano',
         'felt-plum': 'Prugna', 'felt-ink': 'Mezzanotte', 'felt-copper': 'Rame', 'felt-teal': 'Verde acqua', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Caffè turco', 'emo-luck': 'Buona fortuna', 'emo-cheek': 'Birichino'
+        'emo-cafe': 'Caffè turco', 'emo-luck': 'Buona fortuna', 'emo-cheek': 'Birichino', 'frame-gold': 'Aureola dorata', 'plate-vip': 'Velluto', 'back-vip': 'Broccato'
       },
       emo: { tea: 'Tè', cezve: 'Caffettiera', baklava: 'Baklava', lamp: 'Lampada', eye: 'Malocchio', clover: 'Quadrifoglio', shoe: 'Ferro di cavallo', dice: 'Dado', shades: 'Cool', flame: 'Fuoco', zzz: 'Sonno', clap: 'Applausi' }
     },

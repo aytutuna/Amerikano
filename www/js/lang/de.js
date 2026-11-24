@@ -534,7 +534,7 @@
     shop: {
       title: 'Shop',
       count: v => pl(v.n, { one: '# Token', other: '# Token' }),
-      tab: { tokens: 'Token', frame: 'Rahmen', plate: 'Namensschilder', back: 'Kartenrücken', felt: 'Filz', emote: 'Emotes' },
+      tab: { tokens: 'Token', frame: 'Rahmen', plate: 'Namensschilder', back: 'Kartenrücken', felt: 'Filz', emote: 'Emotes', vip: 'VIP' },
       loading: 'Shop wird geladen.',
       buyFor: v => v.name + ' kaufen für ' + v.n,
       ask: v => 'Für ' + v.n + ' kaufen?',
@@ -559,12 +559,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Beliebt',
       best: 'Bestes Angebot',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Monatsabo, 1 Monat',
+        per: v => v.price + ' pro Monat',
+        badge: 'VIP-Abzeichen an jedem Tisch',
+        frame: 'Animierter Goldrahmen',
+        items: 'VIP-Namensschild und Kartenrücken',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' jeden Monat',
+        pass: 'Premium-Saisonpass (bald)',
+        subscribe: 'Abonnieren',
+        restore: 'Käufe wiederherstellen',
+        manage: 'Abo verwalten',
+        until: v => 'VIP bis ' + v.date,
+        renew: 'Die Zahlung wird bei Bestätigung deinem Apple-Account belastet. Das Abo verlängert sich jeden Monat automatisch, wenn du es nicht mindestens 24 Stunden vor Ablauf der Laufzeit kündigst. Verwalten oder kündigen kannst du es in den Account-Einstellungen im App Store.',
+        terms: 'Nutzungsbedingungen',
+        only: 'Nur für VIP',
+        web: 'Abonniere in der iPhone-App',
+        on: 'Willkommen bei VIP.',
+        restored: 'Deine Käufe sind auf dem neuesten Stand.'
+      },
       item: {
         'frame-brass': 'Messingring', 'frame-laurel': 'Lorbeerkranz', 'frame-kilim': 'Kilim-Rand', 'frame-moon': 'Mondsichel', 'frame-ember': 'Glutschein', 'frame-royal': 'Königsgold',
         'plate-oak': 'Eiche', 'plate-copper': 'Kupfer', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Vergoldet',
         'back-lattice': 'Gitter', 'back-emerald': 'Smaragd', 'back-amber': 'Bernstein', 'back-star': 'Stern', 'back-sultan': 'Sultan',
         'felt-plum': 'Pflaume', 'felt-ink': 'Mitternacht', 'felt-copper': 'Kupfer', 'felt-teal': 'Petrol', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Kaffeehaus', 'emo-luck': 'Viel Glück', 'emo-cheek': 'Frech'
+        'emo-cafe': 'Kaffeehaus', 'emo-luck': 'Viel Glück', 'emo-cheek': 'Frech', 'frame-gold': 'Goldglanz', 'plate-vip': 'Samt', 'back-vip': 'Brokat'
       },
       emo: { tea: 'Tee', cezve: 'Kaffeekanne', baklava: 'Baklava', lamp: 'Lampe', eye: 'Böser Blick', clover: 'Kleeblatt', shoe: 'Hufeisen', dice: 'Würfel', shades: 'Cool', flame: 'Feuer', zzz: 'Müde', clap: 'Applaus' }
     },

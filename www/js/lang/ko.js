@@ -535,7 +535,7 @@
     shop: {
       title: '상점',
       count: v => pl(v.n, { other: '토큰 #개' }),
-      tab: { tokens: '토큰', frame: '프레임', plate: '이름판', back: '카드 뒷면', felt: '펠트', emote: '이모트' },
+      tab: { tokens: '토큰', frame: '프레임', plate: '이름판', back: '카드 뒷면', felt: '펠트', emote: '이모트', vip: 'VIP' },
       loading: '상점을 불러오는 중이에요.',
       buyFor: v => v.name + ' ' + v.n + '에 구매',
       ask: v => v.n + '에 구매할까요?',
@@ -560,12 +560,32 @@
       bonus: v => '+' + v.n + '%',
       popular: '인기',
       best: '최고 가성비',
+      vip: {
+        name: 'Amerikano VIP',
+        length: '월간 구독, 1개월',
+        per: v => '월 ' + v.price,
+        badge: '모든 테이블에 VIP 배지',
+        frame: '움직이는 황금 프레임',
+        items: 'VIP 이름판과 카드 뒷면',
+        monthly: (v, t) => '매달 ' + t('shop.count', { n: v.n }),
+        pass: '프리미엄 시즌 패스 (곧 출시)',
+        subscribe: '구독하기',
+        restore: '구매 복원',
+        manage: '구독 관리',
+        until: v => v.date + '까지 VIP',
+        renew: '결제는 확인 시 Apple 계정으로 청구됩니다. 구독은 기간 종료 최소 24시간 전에 취소하지 않으면 매달 자동으로 갱신됩니다. App Store 계정 설정에서 구독을 관리하거나 취소할 수 있습니다.',
+        terms: '이용약관',
+        only: 'VIP 전용',
+        web: 'iPhone 앱에서 구독해요',
+        on: 'VIP가 된 걸 환영해요.',
+        restored: '구매 내역이 최신이에요.'
+      },
       item: {
         'frame-brass': '놋쇠 고리', 'frame-laurel': '월계관', 'frame-kilim': '킬림 테두리', 'frame-moon': '초승달', 'frame-ember': '불씨', 'frame-royal': '로열 골드',
         'plate-oak': '참나무', 'plate-copper': '구리', 'plate-kilim': '킬림', 'plate-night': '밤', 'plate-gilt': '금박',
         'back-lattice': '격자', 'back-emerald': '에메랄드', 'back-amber': '호박색', 'back-star': '별', 'back-sultan': '술탄',
         'felt-plum': '자두', 'felt-ink': '한밤', 'felt-copper': '구리', 'felt-teal': '청록', 'felt-kilim': '킬림',
-        'emo-cafe': '찻집', 'emo-luck': '행운', 'emo-cheek': '장난꾸러기'
+        'emo-cafe': '찻집', 'emo-luck': '행운', 'emo-cheek': '장난꾸러기', 'frame-gold': '황금 후광', 'plate-vip': '벨벳', 'back-vip': '비단 문양'
       },
       emo: { tea: '차', cezve: '체즈베', baklava: '바클라바', lamp: '램프', eye: '악마의 눈', clover: '클로버', shoe: '말굽', dice: '주사위', shades: '쿨', flame: '불꽃', zzz: '졸림', clap: '박수' }
     },

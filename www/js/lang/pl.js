@@ -536,7 +536,7 @@
     shop: {
       title: 'Sklep',
       count: v => pl(v.n, { one: '# klejnot', few: '# klejnoty', many: '# klejnotów', other: '# klejnotu' }),
-      tab: { tokens: 'Klejnoty', frame: 'Ramki', plate: 'Tabliczki', back: 'Rewersy', felt: 'Sukna', emote: 'Emotki' },
+      tab: { tokens: 'Klejnoty', frame: 'Ramki', plate: 'Tabliczki', back: 'Rewersy', felt: 'Sukna', emote: 'Emotki', vip: 'VIP' },
       loading: 'Wczytywanie sklepu.',
       buyFor: v => 'Kup: ' + v.name + ' za ' + v.n,
       ask: v => 'Kupić za ' + v.n + '?',
@@ -561,12 +561,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Popularne',
       best: 'Najlepsza cena',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Subskrypcja miesięczna, 1 miesiąc',
+        per: v => v.price + ' miesięcznie',
+        badge: 'Odznaka VIP przy każdym stole',
+        frame: 'Animowana złota ramka',
+        items: 'Tabliczka VIP i rewers kart',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' co miesiąc',
+        pass: 'Karnet sezonowy premium (wkrótce)',
+        subscribe: 'Subskrybuj',
+        restore: 'Przywróć zakupy',
+        manage: 'Zarządzaj subskrypcją',
+        until: v => 'VIP do ' + v.date,
+        renew: 'Płatność jest pobierana z Twojego konta Apple po potwierdzeniu. Subskrypcja odnawia się automatycznie co miesiąc, o ile nie anulujesz jej co najmniej 24 godziny przed końcem okresu. Możesz nią zarządzać lub ją anulować w ustawieniach konta App Store.',
+        terms: 'Warunki użytkowania',
+        only: 'Tylko VIP',
+        web: 'Subskrybuj w aplikacji na iPhone’a',
+        on: 'Witamy w VIP.',
+        restored: 'Twoje zakupy są aktualne.'
+      },
       item: {
         'frame-brass': 'Mosiężny pierścień', 'frame-laurel': 'Wieniec laurowy', 'frame-kilim': 'Obramowanie kilim', 'frame-moon': 'Półksiężyc', 'frame-ember': 'Żar', 'frame-royal': 'Królewskie złoto',
         'plate-oak': 'Dąb', 'plate-copper': 'Miedź', 'plate-kilim': 'Kilim', 'plate-night': 'Noc', 'plate-gilt': 'Złocenie',
         'back-lattice': 'Kratka', 'back-emerald': 'Szmaragd', 'back-amber': 'Bursztyn', 'back-star': 'Gwiazda', 'back-sultan': 'Sułtan',
         'felt-plum': 'Śliwka', 'felt-ink': 'Północ', 'felt-copper': 'Miedź', 'felt-teal': 'Morski', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Kawiarnia', 'emo-luck': 'Powodzenia', 'emo-cheek': 'Filuterny'
+        'emo-cafe': 'Kawiarnia', 'emo-luck': 'Powodzenia', 'emo-cheek': 'Filuterny', 'frame-gold': 'Złota aureola', 'plate-vip': 'Aksamit', 'back-vip': 'Brokat'
       },
       emo: { tea: 'Herbata', cezve: 'Dzbanek', baklava: 'Baklawa', lamp: 'Lampa', eye: 'Złe oko', clover: 'Koniczyna', shoe: 'Podkowa', dice: 'Kostka', shades: 'Cool', flame: 'Ogień', zzz: 'Śpiący', clap: 'Brawa' }
     },

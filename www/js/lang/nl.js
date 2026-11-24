@@ -536,7 +536,7 @@
     shop: {
       title: 'Winkel',
       count: v => pl(v.n, { one: '# token', other: '# tokens' }),
-      tab: { tokens: 'Tokens', frame: 'Lijsten', plate: 'Naamplaten', back: 'Kaartruggen', felt: 'Vilt', emote: 'Emotes' },
+      tab: { tokens: 'Tokens', frame: 'Lijsten', plate: 'Naamplaten', back: 'Kaartruggen', felt: 'Vilt', emote: 'Emotes', vip: 'VIP' },
       loading: 'De winkel laden.',
       buyFor: v => 'Koop ' + v.name + ' voor ' + v.n,
       ask: v => 'Kopen voor ' + v.n + '?',
@@ -561,12 +561,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Populair',
       best: 'Beste waarde',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Maandabonnement, 1 maand',
+        per: v => v.price + ' per maand',
+        badge: 'VIP-badge aan elke tafel',
+        frame: 'Geanimeerde gouden lijst',
+        items: 'VIP-naamplaat en kaartrug',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' elke maand',
+        pass: 'Premium-seizoenspas (binnenkort)',
+        subscribe: 'Abonneren',
+        restore: 'Aankopen herstellen',
+        manage: 'Abonnement beheren',
+        until: v => 'VIP tot ' + v.date,
+        renew: 'De betaling wordt bij bevestiging van je Apple-account afgeschreven. Het abonnement wordt elke maand automatisch verlengd, tenzij je het minstens 24 uur voor het einde van de periode opzegt. Beheer of zeg het op in de accountinstellingen van de App Store.',
+        terms: 'Gebruiksvoorwaarden',
+        only: 'Alleen VIP',
+        web: 'Abonneer in de iPhone-app',
+        on: 'Welkom bij VIP.',
+        restored: 'Je aankopen zijn up-to-date.'
+      },
       item: {
         'frame-brass': 'Messingring', 'frame-laurel': 'Lauwerkrans', 'frame-kilim': 'Kilimrand', 'frame-moon': 'Maansikkel', 'frame-ember': 'Gloeiende kolen', 'frame-royal': 'Koningsgoud',
         'plate-oak': 'Eiken', 'plate-copper': 'Koper', 'plate-kilim': 'Kilim', 'plate-night': 'Nacht', 'plate-gilt': 'Verguld',
         'back-lattice': 'Latwerk', 'back-emerald': 'Smaragd', 'back-amber': 'Amber', 'back-star': 'Ster', 'back-sultan': 'Sultan',
         'felt-plum': 'Pruim', 'felt-ink': 'Middernacht', 'felt-copper': 'Koper', 'felt-teal': 'Blauwgroen', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Koffiehuis', 'emo-luck': 'Veel geluk', 'emo-cheek': 'Brutaal'
+        'emo-cafe': 'Koffiehuis', 'emo-luck': 'Veel geluk', 'emo-cheek': 'Brutaal', 'frame-gold': 'Gouden halo', 'plate-vip': 'Fluweel', 'back-vip': 'Brokaat'
       },
       emo: { tea: 'Thee', cezve: 'Koffiepot', baklava: 'Baklava', lamp: 'Lamp', eye: 'Boze oog', clover: 'Klaver', shoe: 'Hoefijzer', dice: 'Dobbelsteen', shades: 'Cool', flame: 'Vuur', zzz: 'Slaperig', clap: 'Applaus' }
     },

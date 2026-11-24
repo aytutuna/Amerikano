@@ -532,7 +532,7 @@
     shop: {
       title: 'Toko',
       count: v => pl(v.n, { other: '# token' }),
-      tab: { tokens: 'Token', frame: 'Bingkai', plate: 'Papan nama', back: 'Punggung kartu', felt: 'Alas meja', emote: 'Emote' },
+      tab: { tokens: 'Token', frame: 'Bingkai', plate: 'Papan nama', back: 'Punggung kartu', felt: 'Alas meja', emote: 'Emote', vip: 'VIP' },
       loading: 'Memuat toko.',
       buyFor: v => 'Beli ' + v.name + ' seharga ' + v.n,
       ask: v => 'Beli seharga ' + v.n + '?',
@@ -557,12 +557,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Populer',
       best: 'Paling hemat',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Langganan bulanan, 1 bulan',
+        per: v => v.price + ' per bulan',
+        badge: 'Lencana VIP di setiap meja',
+        frame: 'Bingkai emas beranimasi',
+        items: 'Papan nama dan punggung kartu VIP',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' setiap bulan',
+        pass: 'Tiket musim premium (segera hadir)',
+        subscribe: 'Berlangganan',
+        restore: 'Pulihkan pembelian',
+        manage: 'Kelola langganan',
+        until: v => 'VIP sampai ' + v.date,
+        renew: 'Pembayaran dibebankan ke akun Apple saat dikonfirmasi. Langganan diperpanjang otomatis setiap bulan kecuali dibatalkan minimal 24 jam sebelum periode berakhir. Kelola atau batalkan di pengaturan akun App Store.',
+        terms: 'Ketentuan Penggunaan',
+        only: 'Khusus VIP',
+        web: 'Berlangganan di aplikasi iPhone',
+        on: 'Selamat datang di VIP.',
+        restored: 'Pembelianmu sudah terbaru.'
+      },
       item: {
         'frame-brass': 'Cincin kuningan', 'frame-laurel': 'Karangan laurel', 'frame-kilim': 'Tepi kilim', 'frame-moon': 'Bulan sabit', 'frame-ember': 'Bara api', 'frame-royal': 'Emas kerajaan',
         'plate-oak': 'Kayu ek', 'plate-copper': 'Tembaga', 'plate-kilim': 'Kilim', 'plate-night': 'Malam', 'plate-gilt': 'Berlapis emas',
         'back-lattice': 'Kisi-kisi', 'back-emerald': 'Zamrud', 'back-amber': 'Amber', 'back-star': 'Bintang', 'back-sultan': 'Sultan',
         'felt-plum': 'Prem', 'felt-ink': 'Tengah malam', 'felt-copper': 'Tembaga', 'felt-teal': 'Hijau kebiruan', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Kedai kopi', 'emo-luck': 'Semoga beruntung', 'emo-cheek': 'Jail'
+        'emo-cafe': 'Kedai kopi', 'emo-luck': 'Semoga beruntung', 'emo-cheek': 'Jail', 'frame-gold': 'Lingkar emas', 'plate-vip': 'Beludru', 'back-vip': 'Brokat'
       },
       emo: { tea: 'Teh', cezve: 'Teko kopi', baklava: 'Baklava', lamp: 'Lampu', eye: 'Mata jahat', clover: 'Semanggi', shoe: 'Tapal kuda', dice: 'Dadu', shades: 'Keren', flame: 'Api', zzz: 'Ngantuk', clap: 'Tepuk tangan' }
     },

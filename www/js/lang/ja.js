@@ -532,7 +532,7 @@
     shop: {
       title: 'ショップ',
       count: v => pl(v.n, { other: '#トークン' }),
-      tab: { tokens: 'トークン', frame: 'フレーム', plate: 'ネームプレート', back: 'カード裏', felt: 'フェルト', emote: 'エモート' },
+      tab: { tokens: 'トークン', frame: 'フレーム', plate: 'ネームプレート', back: 'カード裏', felt: 'フェルト', emote: 'エモート', vip: 'VIP' },
       loading: 'ショップを読み込み中です。',
       buyFor: v => v.name + 'を' + v.n + 'で購入',
       ask: v => v.n + 'で購入しますか？',
@@ -557,12 +557,32 @@
       bonus: v => '+' + v.n + '%',
       popular: '人気',
       best: 'お得',
+      vip: {
+        name: 'Amerikano VIP',
+        length: '月額サブスクリプション・1か月',
+        per: v => v.price + '／月',
+        badge: 'すべての卓にVIPバッジ',
+        frame: '動く金のフレーム',
+        items: 'VIP限定のネームプレートとカード裏',
+        monthly: (v, t) => '毎月' + t('shop.count', { n: v.n }),
+        pass: 'プレミアムシーズンパス（近日公開）',
+        subscribe: '登録する',
+        restore: '購入を復元',
+        manage: '登録を管理',
+        until: v => v.date + 'までVIP',
+        renew: '支払いは確認時にAppleアカウントへ請求されます。期間終了の24時間前までに解約しない限り、サブスクリプションは毎月自動的に更新されます。管理や解約はApp Storeのアカウント設定から行えます。',
+        terms: '利用規約',
+        only: 'VIP限定',
+        web: 'iPhoneアプリで登録できます',
+        on: 'VIPへようこそ。',
+        restored: '購入内容は最新です。'
+      },
       item: {
         'frame-brass': '真鍮の輪', 'frame-laurel': '月桂冠', 'frame-kilim': 'キリムの縁', 'frame-moon': '三日月', 'frame-ember': '燃えさし', 'frame-royal': 'ロイヤルゴールド',
         'plate-oak': 'オーク', 'plate-copper': '銅', 'plate-kilim': 'キリム', 'plate-night': '夜', 'plate-gilt': '金箔',
         'back-lattice': '格子', 'back-emerald': 'エメラルド', 'back-amber': '琥珀', 'back-star': '星', 'back-sultan': 'スルタン',
         'felt-plum': 'プラム', 'felt-ink': '真夜中', 'felt-copper': '銅', 'felt-teal': 'ティール', 'felt-kilim': 'キリム',
-        'emo-cafe': 'カフェ', 'emo-luck': '幸運', 'emo-cheek': 'お茶目'
+        'emo-cafe': 'カフェ', 'emo-luck': '幸運', 'emo-cheek': 'お茶目', 'frame-gold': '金の光輪', 'plate-vip': 'ベルベット', 'back-vip': '金襴'
       },
       emo: { tea: 'お茶', cezve: 'コーヒーポット', baklava: 'バクラヴァ', lamp: 'ランプ', eye: '邪視', clover: 'クローバー', shoe: '蹄鉄', dice: 'サイコロ', shades: 'クール', flame: '炎', zzz: '眠い', clap: '拍手' }
     },

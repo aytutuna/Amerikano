@@ -537,7 +537,7 @@
     shop: {
       title: 'Магазин',
       count: v => pl(v.n, { one: '# кристал', few: '# кристали', many: '# кристалів', other: '# кристала' }),
-      tab: { tokens: 'Кристали', frame: 'Рамки', plate: 'Таблички', back: 'Сорочки', felt: 'Сукно', emote: 'Емодзі' },
+      tab: { tokens: 'Кристали', frame: 'Рамки', plate: 'Таблички', back: 'Сорочки', felt: 'Сукно', emote: 'Емодзі', vip: 'VIP' },
       loading: 'Завантаження магазину.',
       buyFor: v => 'Купити ' + v.name + ' за ' + v.n,
       ask: v => 'Купити за ' + v.n + '?',
@@ -562,12 +562,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'Популярне',
       best: 'Найкраща ціна',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Підписка на місяць',
+        per: v => v.price + ' на місяць',
+        badge: 'Значок VIP за кожним столом',
+        frame: 'Анімована золота рамка',
+        items: 'Табличка VIP і сорочка карт',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' щомісяця',
+        pass: 'Преміум-перепустка сезону (незабаром)',
+        subscribe: 'Оформити',
+        restore: 'Відновити покупки',
+        manage: 'Керувати підпискою',
+        until: v => 'VIP до ' + v.date,
+        renew: 'Оплату буде списано з вашого облікового запису Apple після підтвердження. Підписка автоматично продовжується щомісяця, якщо не скасувати її щонайменше за 24 години до кінця періоду. Керувати підпискою та скасувати її можна в налаштуваннях облікового запису App Store.',
+        terms: 'Умови використання',
+        only: 'Лише для VIP',
+        web: 'Оформіть підписку в застосунку для iPhone',
+        on: 'Вітаємо у VIP.',
+        restored: 'Ваші покупки актуальні.'
+      },
       item: {
         'frame-brass': 'Латунне кільце', 'frame-laurel': 'Лавровий вінок', 'frame-kilim': 'Облямівка кілім', 'frame-moon': 'Півмісяць', 'frame-ember': 'Жар', 'frame-royal': 'Царське золото',
         'plate-oak': 'Дуб', 'plate-copper': 'Мідь', 'plate-kilim': 'Кілім', 'plate-night': 'Ніч', 'plate-gilt': 'Позолота',
         'back-lattice': 'Ґрати', 'back-emerald': 'Смарагд', 'back-amber': 'Бурштин', 'back-star': 'Зірка', 'back-sultan': 'Султан',
         'felt-plum': 'Слива', 'felt-ink': 'Північ', 'felt-copper': 'Мідь', 'felt-teal': 'Бірюза', 'felt-kilim': 'Кілім',
-        'emo-cafe': 'Кав\'ярня', 'emo-luck': 'Щасти', 'emo-cheek': 'Пустун'
+        'emo-cafe': 'Кав\'ярня', 'emo-luck': 'Щасти', 'emo-cheek': 'Пустун', 'frame-gold': 'Золотий німб', 'plate-vip': 'Оксамит', 'back-vip': 'Парча'
       },
       emo: { tea: 'Чай', cezve: 'Джезва', baklava: 'Пахлава', lamp: 'Лампа', eye: 'Лихе око', clover: 'Конюшина', shoe: 'Підкова', dice: 'Кості', shades: 'Круто', flame: 'Вогонь', zzz: 'Сонний', clap: 'Овації' }
     },

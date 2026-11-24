@@ -534,7 +534,7 @@
     shop: {
       title: '商店',
       count: v => pl(v.n, { other: '#鑽石' }),
-      tab: { tokens: '鑽石', frame: '頭像框', plate: '名牌', back: '牌背', felt: '桌布', emote: '表情' },
+      tab: { tokens: '鑽石', frame: '頭像框', plate: '名牌', back: '牌背', felt: '桌布', emote: '表情', vip: 'VIP' },
       loading: '正在載入商店。',
       buyFor: v => '購買' + v.name + '，' + v.n + '鑽石',
       ask: v => '花費' + v.n + '鑽石購買？',
@@ -559,12 +559,32 @@
       bonus: v => '+' + v.n + '%',
       popular: '熱門',
       best: '最超值',
+      vip: {
+        name: 'Amerikano VIP',
+        length: '包月訂閱，1 個月',
+        per: v => '每月 ' + v.price,
+        badge: '每張牌桌顯示 VIP 徽章',
+        frame: '動態金色頭像框',
+        items: 'VIP 專屬名牌和牌背',
+        monthly: (v, t) => '每月' + t('shop.count', { n: v.n }),
+        pass: '進階賽季通行證（即將推出）',
+        subscribe: '訂閱',
+        restore: '還原購買',
+        manage: '管理訂閱',
+        until: v => 'VIP 有效至 ' + v.date,
+        renew: '確認購買後，款項將從你的 Apple 帳號扣款。除非在目前訂閱期結束前至少 24 小時取消，否則訂閱會每月自動續訂。你可以在 App Store 帳號設定中管理或取消訂閱。',
+        terms: '使用條款',
+        only: '僅限 VIP',
+        web: '請在 iPhone 應用程式中訂閱',
+        on: '歡迎加入 VIP。',
+        restored: '你的購買已是最新。'
+      },
       item: {
         'frame-brass': '黃銅環', 'frame-laurel': '月桂冠', 'frame-kilim': '基里姆邊框', 'frame-moon': '彎月', 'frame-ember': '餘燼', 'frame-royal': '皇家金',
         'plate-oak': '橡木', 'plate-copper': '銅色', 'plate-kilim': '基里姆', 'plate-night': '夜色', 'plate-gilt': '鍍金',
         'back-lattice': '格紋', 'back-emerald': '祖母綠', 'back-amber': '琥珀', 'back-star': '星辰', 'back-sultan': '蘇丹',
         'felt-plum': '李紫', 'felt-ink': '午夜', 'felt-copper': '銅色', 'felt-teal': '青綠', 'felt-kilim': '基里姆',
-        'emo-cafe': '咖啡館', 'emo-luck': '好運', 'emo-cheek': '調皮'
+        'emo-cafe': '咖啡館', 'emo-luck': '好運', 'emo-cheek': '調皮', 'frame-gold': '金色光環', 'plate-vip': '天鵝絨', 'back-vip': '織錦'
       },
       emo: { tea: '茶', cezve: '咖啡壺', baklava: '果仁蜜餅', lamp: '神燈', eye: '藍眼睛', clover: '三葉草', shoe: '馬蹄鐵', dice: '骰子', shades: '酷', flame: '火焰', zzz: '睏了', clap: '鼓掌' }
     },

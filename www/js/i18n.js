@@ -525,7 +525,7 @@ var I18n = (function () {
     shop: {
       title: 'Shop',
       count: v => pl(v.n, { one: '# token', other: '# tokens' }),
-      tab: { tokens: 'Tokens', frame: 'Frames', plate: 'Name plates', back: 'Card backs', felt: 'Felts', emote: 'Emotes' },
+      tab: { tokens: 'Tokens', frame: 'Frames', plate: 'Name plates', back: 'Card backs', felt: 'Felts', emote: 'Emotes', vip: 'VIP' },
       loading: 'Loading the shop.',
       buyFor: v => 'Buy ' + v.name + ' for ' + v.n,
       ask: v => 'Buy for ' + v.n + '?',
@@ -550,12 +550,32 @@ var I18n = (function () {
       bonus: v => '+' + v.n + '%',
       popular: 'Popular',
       best: 'Best value',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Monthly subscription, 1 month',
+        per: v => v.price + ' per month',
+        badge: 'VIP badge at every table',
+        frame: 'Animated gold frame',
+        items: 'VIP name plate and card back',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' every month',
+        pass: 'Premium season pass (coming soon)',
+        subscribe: 'Subscribe',
+        restore: 'Restore purchases',
+        manage: 'Manage subscription',
+        until: v => 'VIP until ' + v.date,
+        renew: 'Payment is charged to your Apple Account at confirmation. The subscription renews automatically every month unless it is cancelled at least 24 hours before the period ends. Manage or cancel it in your App Store account settings.',
+        terms: 'Terms of Use',
+        only: 'VIP only',
+        web: 'Subscribe in the iPhone app',
+        on: 'Welcome to VIP.',
+        restored: 'Your purchases are up to date.'
+      },
       item: {
         'frame-brass': 'Brass ring', 'frame-laurel': 'Laurel wreath', 'frame-kilim': 'Kilim border', 'frame-moon': 'Crescent moon', 'frame-ember': 'Ember glow', 'frame-royal': 'Royal gold',
         'plate-oak': 'Oak', 'plate-copper': 'Copper', 'plate-kilim': 'Kilim', 'plate-night': 'Night', 'plate-gilt': 'Gilded',
         'back-lattice': 'Lattice', 'back-emerald': 'Emerald', 'back-amber': 'Amber', 'back-star': 'Star', 'back-sultan': 'Sultan',
         'felt-plum': 'Plum', 'felt-ink': 'Midnight', 'felt-copper': 'Copper', 'felt-teal': 'Teal', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Coffeehouse', 'emo-luck': 'Good luck', 'emo-cheek': 'Cheeky'
+        'emo-cafe': 'Coffeehouse', 'emo-luck': 'Good luck', 'emo-cheek': 'Cheeky', 'frame-gold': 'Golden halo', 'plate-vip': 'Velvet', 'back-vip': 'Brocade'
       },
       emo: { tea: 'Tea', cezve: 'Coffee pot', baklava: 'Baklava', lamp: 'Lamp', eye: 'Evil eye', clover: 'Clover', shoe: 'Horseshoe', dice: 'Dice', shades: 'Cool', flame: 'Fire', zzz: 'Sleepy', clap: 'Applause' }
     },
@@ -1176,7 +1196,7 @@ var I18n = (function () {
     shop: {
       title: 'Mağaza',
       count: v => pl(v.n, { other: '# jeton' }),
-      tab: { tokens: 'Jetonlar', frame: 'Çerçeveler', plate: 'İsim levhaları', back: 'Kağıt sırtları', felt: 'Masa çuhaları', emote: 'İfadeler' },
+      tab: { tokens: 'Jetonlar', frame: 'Çerçeveler', plate: 'İsim levhaları', back: 'Kağıt sırtları', felt: 'Masa çuhaları', emote: 'İfadeler', vip: 'VIP' },
       loading: 'Mağaza yükleniyor.',
       buyFor: v => 'Satın al: ' + v.name + ', ' + v.n,
       ask: v => v.n + ' karşılığında alınsın mı?',
@@ -1201,12 +1221,32 @@ var I18n = (function () {
       bonus: v => '+' + v.n + '%',
       popular: 'Popüler',
       best: 'En avantajlı',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'Aylık abonelik, 1 ay',
+        per: v => v.price + ' / ay',
+        badge: 'Her masada VIP rozeti',
+        frame: 'Hareketli altın çerçeve',
+        items: 'VIP isim levhası ve kağıt sırtı',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' her ay',
+        pass: 'Premium sezon bileti (yakında)',
+        subscribe: 'Abone ol',
+        restore: 'Satın alımları geri yükle',
+        manage: 'Aboneliği yönet',
+        until: v => 'VIP ' + v.date + ' tarihine kadar',
+        renew: 'Ödeme, onay anında Apple Hesabından alınır. Abonelik, dönem bitmeden en az 24 saat önce iptal edilmezse her ay kendiliğinden yenilenir. Aboneliği App Store hesap ayarlarından yönetebilir veya iptal edebilirsin.',
+        terms: 'Kullanım Koşulları',
+        only: 'Yalnızca VIP',
+        web: 'iPhone uygulamasından abone ol',
+        on: 'VIP’e hoş geldin.',
+        restored: 'Satın alımların güncel.'
+      },
       item: {
         'frame-brass': 'Pirinç halka', 'frame-laurel': 'Defne çelengi', 'frame-kilim': 'Kilim kenar', 'frame-moon': 'Hilal', 'frame-ember': 'Kor', 'frame-royal': 'Sultan altını',
         'plate-oak': 'Meşe', 'plate-copper': 'Bakır', 'plate-kilim': 'Kilim', 'plate-night': 'Gece', 'plate-gilt': 'Yaldız',
         'back-lattice': 'Kafes', 'back-emerald': 'Zümrüt', 'back-amber': 'Kehribar', 'back-star': 'Yıldız', 'back-sultan': 'Sultan',
         'felt-plum': 'Erik', 'felt-ink': 'Gece mavisi', 'felt-copper': 'Bakır', 'felt-teal': 'Petrol', 'felt-kilim': 'Kilim',
-        'emo-cafe': 'Kahvehane', 'emo-luck': 'Şans', 'emo-cheek': 'Cilveli'
+        'emo-cafe': 'Kahvehane', 'emo-luck': 'Şans', 'emo-cheek': 'Cilveli', 'frame-gold': 'Altın hale', 'plate-vip': 'Kadife', 'back-vip': 'Brokar'
       },
       emo: { tea: 'Çay', cezve: 'Cezve', baklava: 'Baklava', lamp: 'Lamba', eye: 'Nazar', clover: 'Yonca', shoe: 'Nal', dice: 'Zar', shades: 'Havalı', flame: 'Ateş', zzz: 'Uykulu', clap: 'Alkış' }
     },

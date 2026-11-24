@@ -533,7 +533,7 @@
     shop: {
       title: 'शॉप',
       count: v => pl(v.n, { one: '# टोकन', other: '# टोकन' }),
-      tab: { tokens: 'टोकन', frame: 'फ़्रेम', plate: 'नेमप्लेट', back: 'कार्ड बैक', felt: 'फ़ेल्ट', emote: 'इमोट' },
+      tab: { tokens: 'टोकन', frame: 'फ़्रेम', plate: 'नेमप्लेट', back: 'कार्ड बैक', felt: 'फ़ेल्ट', emote: 'इमोट', vip: 'VIP' },
       loading: 'शॉप लोड हो रही है।',
       buyFor: v => 'खरीदें: ' + v.name + ' (' + v.n + ')',
       ask: v => v.n + ' में खरीदें?',
@@ -558,12 +558,32 @@
       bonus: v => '+' + v.n + '%',
       popular: 'लोकप्रिय',
       best: 'सबसे बढ़िया वैल्यू',
+      vip: {
+        name: 'Amerikano VIP',
+        length: 'मासिक सदस्यता, 1 महीना',
+        per: v => v.price + ' प्रति माह',
+        badge: 'हर मेज़ पर VIP बैज',
+        frame: 'एनिमेटेड सुनहरा फ़्रेम',
+        items: 'VIP नेमप्लेट और कार्ड बैक',
+        monthly: (v, t) => t('shop.count', { n: v.n }) + ' हर महीने',
+        pass: 'प्रीमियम सीज़न पास (जल्द आ रहा है)',
+        subscribe: 'सदस्यता लें',
+        restore: 'खरीदारी बहाल करें',
+        manage: 'सदस्यता प्रबंधित करें',
+        until: v => v.date + ' तक VIP',
+        renew: 'पुष्टि होते ही भुगतान आपके Apple खाते से लिया जाता है। अवधि खत्म होने से कम से कम 24 घंटे पहले रद्द न करने पर सदस्यता हर महीने अपने आप नवीनीकृत होती है। इसे App Store के खाता सेटिंग में प्रबंधित या रद्द करें।',
+        terms: 'उपयोग की शर्तें',
+        only: 'केवल VIP के लिए',
+        web: 'iPhone ऐप में सदस्यता लें',
+        on: 'VIP में आपका स्वागत है।',
+        restored: 'आपकी खरीदारियाँ अद्यतन हैं।'
+      },
       item: {
         'frame-brass': 'पीतल का छल्ला', 'frame-laurel': 'लॉरेल माला', 'frame-kilim': 'किलिम किनारा', 'frame-moon': 'अर्धचंद्र', 'frame-ember': 'अंगारा', 'frame-royal': 'शाही सोना',
         'plate-oak': 'ओक', 'plate-copper': 'तांबा', 'plate-kilim': 'किलिम', 'plate-night': 'रात', 'plate-gilt': 'सुनहरा',
         'back-lattice': 'जाली', 'back-emerald': 'पन्ना', 'back-amber': 'अंबर', 'back-star': 'सितारा', 'back-sultan': 'सुल्तान',
         'felt-plum': 'बेर', 'felt-ink': 'आधी रात', 'felt-copper': 'तांबा', 'felt-teal': 'टील', 'felt-kilim': 'किलिम',
-        'emo-cafe': 'कॉफ़ीहाउस', 'emo-luck': 'शुभकामना', 'emo-cheek': 'शरारती'
+        'emo-cafe': 'कॉफ़ीहाउस', 'emo-luck': 'शुभकामना', 'emo-cheek': 'शरारती', 'frame-gold': 'सुनहरा घेरा', 'plate-vip': 'मखमल', 'back-vip': 'ज़रबफ़्त'
       },
       emo: { tea: 'चाय', cezve: 'कॉफ़ी पॉट', baklava: 'बाकलावा', lamp: 'दीया', eye: 'नज़र', clover: 'तिपतिया', shoe: 'नाल', dice: 'पासा', shades: 'कूल', flame: 'आग', zzz: 'नींद', clap: 'तालियाँ' }
     },
