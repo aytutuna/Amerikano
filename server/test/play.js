@@ -18,6 +18,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const Names = require('../../www/js/names.js');
 const crypto = require('crypto');
+const Catalog = require('../../www/js/catalog.js');
 const httpServer = require('http');
 let payout;
 
@@ -36,7 +37,7 @@ const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
-const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand', 'wear']);
+const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n', 'opened', 'claims', 'chips', 'score', 'hand', 'wear', 'vip']);
 
 let ips = 0;
 
@@ -104,6 +105,7 @@ function leakCheck(m) {
     for (const x of Object.keys(p)) assert(SEAT.has(x), 'unexpected player key ' + x);
     assert.strictEqual('hand' in p, k === 0, 'hand on seat ' + k);
     assert.strictEqual(typeof p.wear, 'object', 'every seat carries wear, bots too');
+    assert.strictEqual(typeof p.vip, 'boolean', 'and a vip flag, bots too');
   });
 }
 
@@ -1167,6 +1169,13 @@ async function personas() {
   const others = st.players.slice(1);
   assert.strictEqual(personaIds(others.map(p => p.pid)), 3);
   for (const p of others) {
+    const row = sql("SELECT vip, wear FROM personas WHERE id = '" + p.pid + "'")[0];
+    assert([0, 1].includes(row.vip), 'a persona is decided as VIP or not once: ' + row.vip);
+    assert.strictEqual(p.vip, row.vip === 1, 'the seat shows what the persona is');
+    assert.strictEqual((await call('GET', '/api/player/' + p.pid, acc)).body.vip, p.vip, 'and so does the card');
+    assert(row.vip === 1 || !Object.values(JSON.parse(row.wear)).some(id => Catalog.item(id).vip), 'only a VIP persona wears VIP items');
+  }
+  for (const p of others) {
     assert(p.level >= 1 && p.level <= 4, 'level near the human: ' + p.level);
     assert(p.bank >= 500 * 9, 'plausible chips: ' + p.bank);
     assert.strictEqual(p.away, false);
@@ -2201,7 +2210,7 @@ async function metrics() {
 
 // Plays RevenueCat's REST API on 8797: whatever a test puts in subs for a player id comes back as that player's purchases.
 function fakeRc() {
-  const f = { subs: {}, seen: [], down: false };
+  const f = { subs: {}, vip: {}, seen: [], down: false };
   f.server = httpServer.createServer((req, res) => {
     f.seen.push({ method: req.method, url: req.url, auth: req.headers.authorization });
     if (f.down) {
@@ -2209,12 +2218,14 @@ function fakeRc() {
       return res.end('{}');
     }
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ subscriber: { non_subscriptions: f.subs[req.url.split('/').pop()] || {} } }));
+    const id = req.url.split('/').pop();
+    res.end(JSON.stringify({ subscriber: { non_subscriptions: f.subs[id] || {}, subscriptions: f.vip[id] ? { [VIP]: f.vip[id] } : {} } }));
   }).listen(8797);
   return f;
 }
 
 const PACK = n => 'com.aytutuna.amerikano.tokens.' + n;
+const VIP = 'com.aytutuna.amerikano.vip.monthly';
 const event = (type, acc, product, tx, more) => ({ api_version: '1.0', event: Object.assign({ type: type, app_user_id: acc.id, product_id: product, transaction_id: tx, environment: 'SANDBOX' }, more) });
 const hook = (body, auth) => call('POST', '/api/rc', null, body, undefined, auth === null ? {} : { Authorization: auth === undefined ? 'test-hook-auth' : auth });
 const shopOf = async acc => (await call('GET', '/api/shop', acc)).body;
@@ -2226,7 +2237,7 @@ async function shop(rc) {
   const a = await guest();
   const b = await guest();
   assert.strictEqual((await call('GET', '/api/shop')).status, 401);
-  assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, earned: 0, cap: 20 });
+  assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, vipUntil: 0, earned: 0, cap: 20 });
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).status, 409, 'no tokens, no frame');
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).body.error, 'broke');
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'chips' })).status, 400);
@@ -2360,6 +2371,148 @@ async function shop(rc) {
   assert.deepStrictEqual(gone(), [{ method: 'DELETE', url: '/v1/subscribers/' + x.id, auth: 'Bearer sk_test' }], 'RevenueCat is told to forget the player');
   for (const t of ['owned', 'token_log', 'purchases']) assert.strictEqual(sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(x))[0].n, 0, t);
   console.log('shop: account deletion removes owned items, token log and purchases');
+}
+
+// the VIP subscription through RevenueCat's webhook and the app's own sync
+async function vip(rc) {
+  sql('DELETE FROM purchases');
+  sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%'");
+  const M = 30 * DAY;
+  const now = Date.now();
+  const sub = (type, acc, tx, until, more) => hook(event(type, acc, VIP, tx, Object.assign({ expiration_at_ms: until }, more)));
+  const me = acc => call('GET', '/api/me', acc).then(r => r.body);
+  const wear = (acc, slot, item) => call('POST', '/api/shop/wear', acc, { slot: slot, item: item });
+  const a = await guest();
+  const u1 = now + M;
+  const u2 = now + 2 * M;
+  assert.strictEqual((await me(a)).vipUntil, 0);
+
+  // a first month: the end date and 500 tokens, once, whichever of the webhook and sync comes first
+  assert.strictEqual((await sub('INITIAL_PURCHASE', a, 'vtx-1', u1)).status, 200);
+  let s = await shopOf(a);
+  assert.deepStrictEqual([s.tokens, s.vipUntil, (await me(a)).vipUntil], [500, u1, u1]);
+  await sub('INITIAL_PURCHASE', a, 'vtx-1', u1);
+  rc.vip[a.id] = { expires_date: new Date(u1).toISOString(), store_transaction_id: 'vtx-1', is_sandbox: true };
+  assert.deepStrictEqual([(await call('POST', '/api/shop/sync', a)).body.tokens, (await shopOf(a)).vipUntil], [500, u1], 'the same month from sync and the webhook counts once');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM token_log WHERE player = ' + who(a))[0].n, 1);
+
+  // sync first, the webhook after
+  const b = await guest();
+  rc.vip[b.id] = { expires_date: new Date(u1).toISOString(), store_transaction_id: 'vtx-b', is_sandbox: false };
+  s = (await call('POST', '/api/shop/sync', b)).body;
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [500, u1]);
+  await sub('INITIAL_PURCHASE', b, 'vtx-b', u1);
+  assert.strictEqual((await shopOf(b)).tokens, 500);
+  assert.strictEqual(sql("SELECT env FROM purchases WHERE tx = 'vtx-b'")[0].env, 'PRODUCTION');
+  // a subscriber without a transaction id gets the date, and the tokens come with the webhook
+  const n = await guest();
+  rc.vip[n.id] = { expires_date: new Date(u1).toISOString() };
+  s = (await call('POST', '/api/shop/sync', n)).body;
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, u1]);
+
+  // a renewal extends and pays again; an older event that arrives late neither cuts nor repeats it
+  await sub('RENEWAL', a, 'vtx-2', u2);
+  s = await shopOf(a);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [1000, u2]);
+  await sub('INITIAL_PURCHASE', a, 'vtx-1', u1);
+  await sub('UNCANCELLATION', a, 'vtx-1', u1);
+  await sub('PRODUCT_CHANGE', a, 'vtx-1', u1);
+  s = await shopOf(a);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [1000, u2], 'late events do not shorten VIP');
+  await sub('RENEWAL', a, 'vtx-0', now + 1000);
+  s = await shopOf(a);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [1500, u2], 'a month paid earlier is paid once, without moving the end back');
+  await sub('EXPIRATION', a, 'vtx-1', u1);
+  assert.strictEqual((await shopOf(a)).vipUntil, u2, 'the expiry of a month that was renewed changes nothing');
+  await sub('CANCELLATION', a, 'vtx-2', u2, { cancel_reason: 'UNSUBSCRIBE' });
+  assert.deepStrictEqual([(await shopOf(a)).vipUntil, (await shopOf(a)).tokens], [u2, 1500], 'cancelling just lets it run out');
+  await hook(event('RENEWAL', { id: '0'.repeat(32) }, VIP, 'vtx-x', { expiration_at_ms: u2 }));
+  await hook(event('NON_RENEWING_PURCHASE', a, VIP, 'vtx-y', { expiration_at_ms: u2 + M }));
+  assert.strictEqual((await shopOf(a)).vipUntil, u2, 'unknown players and other event types change nothing');
+  console.log('vip: first month, renewal, late events, sync and webhook count once');
+
+  // items for subscribers
+  s = await shopOf(a);
+  for (const id of ['frame-gold', 'plate-vip', 'back-vip']) assert(s.owned.includes(id), id + ' comes with VIP');
+  assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-gold' })).body.error, 'vip', 'VIP items are not for sale');
+  for (const [slot, item] of [['frame', 'frame-gold'], ['plate', 'plate-vip'], ['back', 'back-vip']]) assert.strictEqual((await wear(a, slot, item)).status, 200, item);
+  const gold = { frame: 'frame-gold', plate: 'plate-vip', back: 'back-vip' };
+  assert.deepStrictEqual((await me(a)).wear, gold);
+  const plain = await guest();
+  assert.strictEqual((await wear(plain, 'frame', 'frame-gold')).status, 403, 'nobody else wears them');
+  assert.strictEqual((await wear(plain, 'frame', 'frame-gold')).body.error, 'vip');
+  assert.deepStrictEqual((await shopOf(plain)).owned, []);
+
+  // seats and the card say vip as a boolean for everybody
+  const g = await pair(2, 2, [a, plain]);
+  const [sa, sp] = await begin(g);
+  assert.deepStrictEqual([sa.players[0].vip, sa.players[1].vip, sp.players[0].vip, sp.players[1].vip], [true, false, false, true]);
+  assert.deepStrictEqual(sp.players[1].wear, gold, 'the others see the VIP items');
+  const card = async (by, acc) => (await call('GET', '/api/player/' + acc.id, by)).body;
+  assert.deepStrictEqual([(await card(plain, a)).vip, (await card(a, plain)).vip, (await card(a, a)).vip], [true, false, true]);
+  g.a.ws.close();
+  g.b.ws.close();
+
+  // when it runs out the items come off everywhere, and come back with a new month
+  sql('UPDATE players SET vip_until = ' + (Date.now() - 1000) + ' WHERE id = ' + who(a));
+  s = await shopOf(a);
+  assert.deepStrictEqual([s.vipUntil, s.worn, s.owned], [0, {}, []]);
+  const lapsed = await me(a);
+  assert.deepStrictEqual([lapsed.vipUntil, lapsed.wear], [0, {}]);
+  assert.strictEqual((await wear(a, 'back', 'back-vip')).status, 403);
+  assert.strictEqual((await card(plain, a)).vip, false);
+  assert.deepStrictEqual((await card(plain, a)).wear, {});
+  const g2 = await pair(2, 2, [a, plain]);
+  const [sl] = await begin(g2);
+  assert.deepStrictEqual([sl.players[0].vip, sl.players[0].wear], [false, {}], 'a lapsed player sits down without them');
+  g2.a.ws.close();
+  g2.b.ws.close();
+  await sub('RENEWAL', a, 'vtx-3', Date.now() + M);
+  assert.deepStrictEqual((await me(a)).wear, gold, 'what they chose is back with the next month');
+  console.log('vip: items belong to the subscription, badge travels as a boolean');
+
+  // a refund ends VIP now and takes its month back; the refund of an older month leaves a later one alone
+  const c = await guest();
+  const [c1, c2] = [now + 10 * DAY, now + 40 * DAY];
+  await sub('INITIAL_PURCHASE', c, 'vtx-c1', c1);
+  await sub('RENEWAL', c, 'vtx-c2', c2);
+  assert.deepStrictEqual([(await shopOf(c)).tokens, (await shopOf(c)).vipUntil], [1000, c2]);
+  await sub('CANCELLATION', c, 'vtx-c1', c1, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  s = await shopOf(c);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [500, c2], 'an older month refunded leaves the current one');
+  sql('UPDATE players SET tokens = 100 WHERE id = ' + who(c));
+  const t0 = Date.now();
+  await sub('CANCELLATION', c, 'vtx-c2', c2, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  s = await shopOf(c);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, 0], 'the latest month refunded ends VIP and tokens stop at zero');
+  const ended = sql('SELECT vip_until FROM players WHERE id = ' + who(c))[0].vip_until;
+  assert(ended >= t0 - 5000 && ended <= Date.now(), 'VIP ended now: ' + (ended - t0));
+  await sub('RENEWAL', c, 'vtx-c2', c2);
+  await sub('CANCELLATION', c, 'vtx-c2', c2, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  assert.deepStrictEqual([(await shopOf(c)).tokens, (await shopOf(c)).vipUntil], [0, 0], 'a refunded month is not granted again');
+  // refund first, purchase after
+  const d = await guest();
+  await sub('CANCELLATION', d, 'vtx-d', now + M, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  await sub('INITIAL_PURCHASE', d, 'vtx-d', now + M);
+  assert.deepStrictEqual([(await shopOf(d)).tokens, (await shopOf(d)).vipUntil], [0, 0]);
+  console.log('vip: a refund ends VIP and takes the month back');
+
+  // expiry, and the billing grace period
+  const e = await guest();
+  const past = now - 1000;
+  await sub('INITIAL_PURCHASE', e, 'vtx-e', past);
+  assert.strictEqual((await shopOf(e)).vipUntil, 0, 'a month that is over gives no VIP');
+  await sub('BILLING_ISSUE', e, 'vtx-e', past, { grace_period_expiration_at_ms: now + 5 * DAY });
+  assert.strictEqual((await shopOf(e)).vipUntil, now + 5 * DAY, 'the grace period keeps VIP');
+  await sub('BILLING_ISSUE', e, 'vtx-e', past, { grace_period_expiration_at_ms: null });
+  assert.strictEqual((await shopOf(e)).vipUntil, now + 5 * DAY);
+  await sub('EXPIRATION', e, 'vtx-e', past, { expiration_reason: 'BILLING_ERROR' });
+  s = await shopOf(e);
+  assert.deepStrictEqual([s.vipUntil, s.tokens], [0, 500], 'expiration ends it, the paid month keeps its tokens');
+  rc.vip[e.id] = { expires_date: new Date(past).toISOString(), grace_period_expires_date: new Date(now + 2 * DAY).toISOString(), store_transaction_id: 'vtx-e', is_sandbox: true };
+  sql('UPDATE players SET sync_at = 0 WHERE id = ' + who(e));
+  assert.strictEqual((await call('POST', '/api/shop/sync', e)).body.vipUntil, now + 2 * DAY, 'sync honours a grace period');
+  console.log('vip: expiration and grace period');
 }
 
 // the day's earnings stop at the cap, and a new UTC day starts again
@@ -3328,7 +3481,7 @@ async function calls(f) {
   dial(ha, b);
   const rb = await r;
   assert.strictEqual(rb.id, (await mine).id);
-  assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed', 'wear']);
+  assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed', 'vip', 'wear']);
   await gap();
   await refuse(he, b, 'busy');
   await refuse(ha, e, 'busy');
@@ -3464,6 +3617,7 @@ async function calls(f) {
   await metrics();
   const rc = fakeRc();
   await shop(rc);
+  await vip(rc);
   await cap();
   rc.server.close();
   console.log('ok');
