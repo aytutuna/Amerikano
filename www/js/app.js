@@ -354,6 +354,8 @@ var App = (function () {
       if (!st || k !== st.gameNo + ':' + st.phase) return;
       Sheet.closeAll();
       over = st.phase === 'gameend' ? UI.roundEnd(st, A.nextGame) : UI.matchEnd(st);
+      // once the flourish has settled
+      if (on && st.phase === 'matchend' && !st.cup && !st.players[st.final.low].bot) setTimeout(Review.won, 2500);
     }, 900);
   }
 
