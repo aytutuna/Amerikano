@@ -29,7 +29,7 @@ async function freePorts(n) {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'amk-test-'));
 const persist = path.join(tmp, 'state');
-const logFile = process.env.WRANGLER_LOG || path.join(tmp, 'wrangler.log');
+const logFile = process.env.AMK_WRANGLER_LOG || path.join(tmp, 'wrangler.log');
 let dev, play;
 let stopping = false;
 
@@ -125,7 +125,8 @@ async function up(url, limit) {
   if (process.argv[2] === '--serve') {
     // no purchases of its own: the browser tests credit them through the webhook, so the sync call finds nothing new
     http.createServer((q, r) => r.writeHead(200, { 'Content-Type': 'application/json' }).end('{"subscriber":{}}')).listen(ports.RC);
-    fs.writeFileSync(process.argv[3], JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth' }));
+    fs.writeFileSync(process.argv[3] + '.tmp', JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth' }));
+    fs.renameSync(process.argv[3] + '.tmp', process.argv[3]);
     return;
   }
 

@@ -27,17 +27,21 @@ function site(api) {
 }
 
 module.exports = async () => {
+  fs.rmSync(path.join(__dirname, 'out', 'cutoff.txt'), { force: true });
   const info = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'amk-browser-')), 'serve.json');
   const logFile = path.join(path.dirname(info), 'wrangler.log');
   const dev = spawn(process.execPath, [path.join(root, 'server/test/run.js'), '--serve', info], {
     stdio: 'inherit',
-    env: Object.assign({}, process.env, { WRANGLER_LOG: process.env.WRANGLER_LOG || logFile }),
+    env: Object.assign({}, process.env, { AMK_WRANGLER_LOG: process.env.AMK_WRANGLER_LOG || logFile }),
     detached: process.platform !== 'win32',
   });
   let exited = false;
   dev.on('exit', () => { exited = true; });
   for (let i = 0; !fs.existsSync(info); i++) {
-    if (exited || i > 600) throw new Error('the server did not come up (see its output above)');
+    if (exited || i > 600) {
+      if (!exited) dev.kill('SIGTERM');
+      throw new Error('the server did not come up (see its output above)');
+    }
     await sleep(500);
   }
   const { port, hook } = JSON.parse(fs.readFileSync(info, 'utf8'));
