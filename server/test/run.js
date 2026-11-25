@@ -31,9 +31,20 @@ let dev, play;
 let stopping = false;
 
 function kill(p) {
-  if (!p || p.exitCode !== null || p.signalCode) return;
-  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], { stdio: 'ignore' });
-  else try { process.kill(-p.pid, 'SIGKILL'); } catch (e) { p.kill('SIGKILL'); }
+  if (!p) return;
+  if (process.platform === 'win32') {
+    if (p.exitCode === null && !p.signalCode) spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    // the group outlives its leader, so signal it even when the leader has already exited
+    try { process.kill(-p.pid, 'SIGKILL'); } catch (e) { /* group already gone */ }
+  }
+}
+
+// children whose parent died are out of reach of taskkill /T, so find what is left by the temp dir in its command line
+function sweep() {
+  if (process.platform !== 'win32') return;
+  const q = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*" + path.basename(tmp) + "*' -and $_.ProcessId -ne $PID -and $_.ProcessId -ne " + process.pid + " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }";
+  spawnSync('powershell', ['-NoProfile', '-Command', q], { stdio: 'ignore', timeout: 30000 });
 }
 
 function stop(code) {
@@ -41,6 +52,7 @@ function stop(code) {
   stopping = true;
   kill(play);
   kill(dev);
+  sweep();
   if (code) {
     let tail = '';
     try { tail = fs.readFileSync(logFile, 'utf8').split('\n').slice(-40).join('\n'); } catch (e) { /* no log yet */ }
