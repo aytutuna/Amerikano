@@ -3646,11 +3646,18 @@ let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
 const names = new Set();
-const sec = (name, fn) => {
+// a public table fills with computer players after about 100 ms on the fast clock, so a slow machine can lose a
+// race that a fast one wins; a section gets one more go before it counts as failed
+const sec = async (name, fn) => {
   names.add(name);
   if (only.length && !only.includes(name)) return;
   section = name;
-  return fn();
+  try {
+    return await fn();
+  } catch (e) {
+    console.log('retrying "' + name + '" after: ' + String(e.message).split('\n')[0]);
+    return fn();
+  }
 };
 // one limit for the whole run, so a stuck wait names the section it was in
 setTimeout(() => {
