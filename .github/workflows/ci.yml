@@ -9,7 +9,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   server:
@@ -27,7 +27,7 @@ jobs:
       - run: npm test
         working-directory: server
         env:
-          WRANGLER_LOG: ${{ runner.temp }}/wrangler.log
+          AMK_WRANGLER_LOG: ${{ runner.temp }}/wrangler.log
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -81,7 +81,7 @@ jobs:
             "client": [{
               "client_info": {"mobilesdk_app_id": "1:123456789012:android:0123456789abcdef", "android_client_info": {"package_name": "com.aytutuna.amerikano"}},
               "oauth_client": [],
-              "api_key": [{"current_key": "AIzaSyCIStandInKeyNotReal00000000000000"}],
+              "api_key": [{"current_key": "ci-stand-in-key-not-real"}],
               "services": {"appinvite_service": {"other_platform_oauth_client": []}}
             }],
             "configuration_version": "1"
@@ -108,7 +108,7 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - run: npx playwright test -c test/browser/playwright.config.js
         env:
-          WRANGLER_LOG: ${{ runner.temp }}/wrangler.log
+          AMK_WRANGLER_LOG: ${{ runner.temp }}/wrangler.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -135,11 +135,18 @@ jobs:
       ios: ${{ steps.f.outputs.ios }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
-        id: f
         with:
-          filters: |
-            ios:
+          fetch-depth: 0
+      - id: f
+        run: |
+          before='${{ github.event.before }}'
+          ios=true
+          if git cat-file -e "$before^{commit}" 2>/dev/null; then
+            if git diff --name-only "$before" "$GITHUB_SHA" | grep -qE '^(ios/|package\.json$|package-lock\.json$|capacitor\.config\.json$|\.github/workflows/ci\.yml$)'; then ios=true; else ios=false; fi
+          fi
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+
+  ios:
               - 'ios/**'
               - 'package.json'
               - 'package-lock.json'
