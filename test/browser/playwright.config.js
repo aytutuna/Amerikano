@@ -2,7 +2,6 @@ const { defineConfig } = require('@playwright/test');
 
 // PW_CHANNEL=chrome runs the local Chrome instead of the downloaded browsers
 const channel = process.env.PW_CHANNEL;
-const use = { viewport: { width: 844, height: 390 }, reducedMotion: 'reduce', baseURL: undefined };
 
 module.exports = defineConfig({
   testDir: '.',
@@ -14,7 +13,7 @@ module.exports = defineConfig({
   timeout: 240000,
   expect: { timeout: 15000 },
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'out/report' }]],
-  use: Object.assign({ actionTimeout: 15000, navigationTimeout: 30000 }, use),
+  use: { viewport: { width: 844, height: 390 }, reducedMotion: 'reduce', actionTimeout: 15000, navigationTimeout: 30000 },
   projects: [
     { name: 'chromium', use: channel ? { channel } : {} },
     { name: 'webkit', use: { browserName: 'webkit' } },
