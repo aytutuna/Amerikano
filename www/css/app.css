@@ -646,6 +646,7 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 .et th:first-child { width: 3.6em; }
 .ptbl th:first-child { text-align: start; padding-left: 2px; border-right: 2px solid rgba(162, 60, 47, .75); }
 .ptbl tbody th { font-weight: 700; }
+.ptbl .rh small { font-weight: 400; max-width: 8em; }
 .ptbl td.empty { text-align: start; padding: calc(12 * var(--u)) calc(6 * var(--u)); }
 .ptbl small { display: block; font-size: max(13px, calc(11 * var(--r))); line-height: 1.1; color: #5a4a2b; }
 .ptbl .tot td, .ptbl .tot th { border-top: 2px solid var(--ink); font-weight: 700; }

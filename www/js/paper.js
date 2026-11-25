@@ -60,7 +60,10 @@
     for (const g of hist) {
       if (!g) continue;
       const tr = node('tr');
-      tr.appendChild(cell('th', String(g.n), 'rh'));
+      const rh = cell('th', String(g.n), 'rh');
+      const task = Game.TASKS.find(x => x.id === g.task);
+      if (task) rh.appendChild(node('small', '', t('task', { task })));
+      tr.appendChild(rh);
       g.rows.forEach((r, i) => {
         const td = node('td', 'num');
         td.appendChild(node('span', '', num(r.game)));
