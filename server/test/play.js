@@ -1382,10 +1382,16 @@ async function whereabouts() {
   // the host starts with an empty seat and it is looked for in the pool
   const st = host.next(m => m.t === 'state');
   const finding = host.next(m => m.t === 'room' && m.finding === 1);
-  // the table the host just left may still hold the account for a moment on a slow machine, so ask again
-  const ask = setInterval(() => host.send({ t: 'start' }), 500);
-  host.send({ t: 'start' });
-  await finding.finally(() => clearInterval(ask));
+  // the public table it left may have started before the socket closed, and then it holds the account until its
+  // match is over; ask again only when told so
+  for (let i = 0; i < 180; i++) {
+    const no = host.next(m => m.t === 'error' && m.k === 'held');
+    host.send({ t: 'start' });
+    const r = await Promise.race([finding.then(() => 'ok'), no.then(() => 'held')]);
+    if (r === 'ok') break;
+    await sleep(500);
+  }
+  await finding;
   const view = await st;
   assert.strictEqual(personaIds(view.players.map(p => p.pid)), 1);
   leakCheck(view);
@@ -3536,7 +3542,7 @@ async function calls(f) {
   const dial = (x, to) => x.send({ t: 'call', to: to.id });
   const ended = (x, why) => x.next(m => m.t === 'call' && m.st === 'end' && m.why === why);
   const line = (me, other) => call('GET', '/api/dm/' + other.id, me).then(r => r.body.messages.filter(m => m.k).map(m => [m.k, m.mine]));
-  const gap = () => sleep(100);
+  const gap = () => sleep(150);
   const vc = (acc, id, op, body) => call('POST', '/api/voice/' + op, acc, Object.assign({ scope: 'call', id: id }, body));
   const refuse = async (x, to, why) => {
     const n = ended(x, why);
@@ -3562,7 +3568,6 @@ async function calls(f) {
   const rb = await r;
   assert.strictEqual(rb.id, (await mine).id);
   assert.deepStrictEqual(Object.keys(rb.from).sort(), ['av', 'level', 'pid', 'seed', 'vip', 'wear']);
-  await gap();
   await refuse(he, b, 'busy');
   await refuse(ha, e, 'busy');
   const dd = Promise.all([ended(ha, 'declined'), ended(hb, 'declined')]);
@@ -3621,9 +3626,9 @@ async function calls(f) {
   await gap();
   r = ring(hb, a);
   dial(ha, b);
-  const rid = (await r).id;
   const quick = ended(ha, 'slow');
   dial(ha, b);
+  const rid = (await r).id;
   await quick;
   const gave = Promise.all([ended(ha, 'missed'), ended(hb, 'missed')]);
   ha.send({ t: 'hang', id: rid });
@@ -3647,18 +3652,11 @@ let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
 const names = new Set();
-// a public table fills with computer players after about 100 ms on the fast clock, so a slow machine can lose a
-// race that a fast one wins; a section gets one more go before it counts as failed
 const sec = async (name, fn) => {
   names.add(name);
   if (only.length && !only.includes(name)) return;
   section = name;
-  try {
-    return await fn();
-  } catch (e) {
-    console.log('retrying "' + name + '" after: ' + String(e.message).split('\n')[0]);
-    return fn();
-  }
+  return fn();
 };
 // one limit for the whole run, so a stuck wait names the section it was in
 setTimeout(() => {
