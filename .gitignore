@@ -18,3 +18,4 @@ ios/DerivedData/
 *.apk
 .wrangler/
 server/test/dev.vars
+test/browser/out/
