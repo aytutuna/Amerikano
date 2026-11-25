@@ -147,13 +147,6 @@ jobs:
           echo "ios=$ios" >> "$GITHUB_OUTPUT"
 
   ios:
-              - 'ios/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'capacitor.config.json'
-              - '.github/workflows/ci.yml'
-
-  ios:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: xcode-27
