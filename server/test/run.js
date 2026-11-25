@@ -1,6 +1,9 @@
 // Runs the server suite the way a person would by hand: free ports, throwaway keys and env file, a fresh local
 // database, wrangler dev, play.js, then everything is stopped. Extra arguments go to play.js.
+// With --serve <file> it stops after wrangler dev is up: it writes the ports and the webhook key to <file> as JSON, answers
+// as RevenueCat on its port and runs until it is killed, for the browser tests.
 const net = require('net');
+const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -63,7 +66,7 @@ function stop(code) {
   process.exit(code);
 }
 process.on('SIGINT', () => stop(130));
-process.on('SIGTERM', () => stop(143));
+process.on('SIGTERM', () => stop(process.argv[2] === '--serve' ? 0 : 143));
 
 function devVars(p) {
   const ec = () => crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
@@ -118,6 +121,13 @@ async function up(url, limit) {
   const opts = { cwd: server, stdio: ['ignore', log, log], detached: process.platform !== 'win32' };
   dev = spawn(process.execPath, [wrangler, 'dev', '--port', ports.WORKER, '--inspector-port', ports.INSPECTOR, '--env-file', vars, '--test-scheduled', '--persist-to', persist], opts);
   await up('http://localhost:' + ports.WORKER + '/api/me', 120000);
+
+  if (process.argv[2] === '--serve') {
+    // no purchases of its own: the browser tests credit them through the webhook, so the sync call finds nothing new
+    http.createServer((q, r) => r.writeHead(200, { 'Content-Type': 'application/json' }).end('{"subscriber":{}}')).listen(ports.RC);
+    fs.writeFileSync(process.argv[3], JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth' }));
+    return;
+  }
 
   const env = Object.assign({}, process.env, { PERSIST: persist, DEV_VARS: vars, URL: 'ws://localhost:' + ports.WORKER });
   for (const k of names) env['PORT_' + k] = ports[k];
