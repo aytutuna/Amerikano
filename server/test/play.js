@@ -1796,17 +1796,25 @@ async function regions() {
 
 // two humans quick-play the same table at this stake; the personas fill the rest
 async function seatTwo(stake) {
-  const accA = await guest();
-  const accB = await guest();
-  const a = await hub(accA);
-  const b = await hub(accB);
-  const sa = a.next(m => m.t === 'seated');
-  a.send({ t: 'quick', stake: stake });
-  const A = await sa;
-  const sb = b.next(m => m.t === 'seated');
-  b.send({ t: 'quick', stake: stake });
-  const B = await sb;
-  assert.strictEqual(B.code, A.code);
+  let accA, accB, a, b, A, B;
+  // the table fills with computer players after 80 to 160 ms, so on a slow machine the second one can land at the next table
+  for (let i = 0; ; i++) {
+    accA = await guest();
+    accB = await guest();
+    a = await hub(accA);
+    b = await hub(accB);
+    const sa = a.next(m => m.t === 'seated');
+    a.send({ t: 'quick', stake: stake });
+    A = await sa;
+    const sb = b.next(m => m.t === 'seated');
+    b.send({ t: 'quick', stake: stake });
+    B = await sb;
+    if (B.code === A.code) break;
+    assert(i < 4, 'two quick players share a table: ' + A.code + ' ' + B.code);
+    console.log('seatTwo: the second player was seated at another table, trying again');
+    a.ws.close();
+    b.ws.close();
+  }
   const t = { accA, accB, a, b, A, B, ra: seated(A), rb: seated(B) };
   t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm, 150000));
   for (const c of [t.ra, t.rb]) play(c, { finish: () => {} });
