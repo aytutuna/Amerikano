@@ -69,7 +69,7 @@ jobs:
       - name: Android SDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0"
       - run: npm ci
       - run: npx cap sync android
       # The real file is the Firebase push config and stays out of git.
