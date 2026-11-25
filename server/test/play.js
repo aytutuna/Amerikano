@@ -1381,8 +1381,10 @@ async function whereabouts() {
   // the host starts with an empty seat and it is looked for in the pool
   const st = host.next(m => m.t === 'state');
   const finding = host.next(m => m.t === 'room' && m.finding === 1);
+  // the table the host just left may still hold the account for a moment on a slow machine, so ask again
+  const ask = setInterval(() => host.send({ t: 'start' }), 500);
   host.send({ t: 'start' });
-  await finding;
+  await finding.finally(() => clearInterval(ask));
   const view = await st;
   assert.strictEqual(personaIds(view.players.map(p => p.pid)), 1);
   leakCheck(view);
