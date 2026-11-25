@@ -3657,6 +3657,7 @@ process.on('unhandledRejection', e => {
   process.exit(1);
 });
 (async () => {
+  ({ payout } = await import('../src/account.js'));
   await sec('schema', () => schema());
   await sec('math', () => math());
   await sec('accounts', () => accounts());
