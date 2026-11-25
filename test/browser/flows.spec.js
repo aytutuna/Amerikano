@@ -95,20 +95,19 @@ test('a quick phrase and an emote at an online table', async ({ page }) => {
 });
 
 test('a 1,000 cup from joining to the result', async ({ page }) => {
+  test.setTimeout(360000);
   await guest(page);
   await page.click('[data-k=tabcups]');
   await page.click('[data-k=cup1000]');
   await expect(page.locator('#cup')).toBeVisible({ timeout: 60000 });
-  const hero = page.locator('.sw.paper .hero');
-  const title = page.locator('.sw .sh-title');
-  await expect(hero).toBeVisible({ timeout: 200000 });
-  // a first round that ends with a place in the final goes on to the final
-  if (/^Through/.test(await title.textContent())) {
-    await page.click('.sw .sh-acts .btn.primary');
-    await expect(page.locator('#cupr')).toHaveText(/^Final/, { timeout: 120000 });
-    await expect(hero).toBeVisible({ timeout: 200000 });
-  }
-  await expect(title).not.toBeEmpty();
-  await page.click('.sw .sh-acts .btn.primary');
+  const title = page.locator('.sw.paper:has(.hero) .sh-title');
+  // A first round that ends with a place in the final shows "Through" and moves on to the final by itself when the other table
+  // is done, so the sheet may or may not still be there to press. Anything else is the result.
+  await expect.poll(async () => {
+    if (!await title.count()) return 'playing';
+    if (/^Through/.test(await title.first().textContent())) return 'through';
+    return 'result';
+  }, { timeout: 300000, intervals: [500] }).toBe('result');
+  await page.locator('.sw .sh-acts .btn.primary').click();
   await expect(page.locator('[data-k=tabcups]')).toBeVisible();
 });
