@@ -1,4 +1,5 @@
-// Make the env file first (it is gitignored):
+// `npm test` (test/run.js) does all of this: free ports, a throwaway env file, a fresh database, the dev server, and stops it after.
+// By hand, make the env file first (it is gitignored):
 //   node -e "const c=require('crypto');console.log('PACE=0.02\nAPPLE_BASE=http://localhost:8791\nAPPLE_KEY='+c.generateKeyPairSync('ec',{namedCurve:'P-256'}).privateKey.export({type:'pkcs8',format:'der'}).toString('base64'))" > test/dev.vars
 // Plays whole matches through the socket API against a running
 // `wrangler dev --port 8787 --env-file test/dev.vars --test-scheduled`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
@@ -22,6 +23,25 @@ const Catalog = require('../../www/js/catalog.js');
 const httpServer = require('http');
 let payout;
 
+// A fake of someone else's server: whatever a handler throws becomes a 500, and a port that is taken stops the run with its name.
+function fake(name, port, fn) {
+  const s = httpServer.createServer(async (q, r) => {
+    try {
+      await fn(q, r);
+    } catch (e) {
+      console.error(name + ' fake: ' + q.method + ' ' + q.url + ': ' + e.message);
+      if (!r.headersSent) r.writeHead(500, { 'content-type': 'application/json' });
+      r.end('{}');
+    }
+  });
+  s.on('error', e => {
+    console.error(name + ' fake cannot listen on ' + port + ': ' + e.message);
+    process.exit(1);
+  });
+  s.listening$ = new Promise(res => s.listen(port, res));
+  return s;
+}
+
 // a run that stops without reaching the end must not look like a pass
 let reached = false;
 process.on('exit', code => {
@@ -31,7 +51,11 @@ process.on('exit', code => {
   }
 });
 
-const base = process.env.URL || 'ws://localhost:8787';
+// run.js hands over its free ports and database; by hand the old fixed ones apply
+const port = (k, d) => +process.env['PORT_' + k] || d;
+const PERSIST = process.env.PERSIST;
+const WATCHDOG = (+process.env.WATCHDOG_MIN || 60) * 60000;
+const base = process.env.URL || 'ws://localhost:' + port('WORKER', 8787);
 const http = base.replace(/^ws/, 'http');
 const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
@@ -47,9 +71,9 @@ async function call(method, path, acc, body, origin, extra) {
   if (origin) headers.Origin = origin;
   // guests are rate limited per address
   if (path === '/api/guest' || path === '/api/apple') headers['CF-Connecting-IP'] = '10.0.0.' + (++ips % 250);
-  const go = () => fetch(http + path, { method: method, headers: headers, body: body && JSON.stringify(body) });
+  const go = () => fetch(http + path, { method: method, headers: headers, body: body && JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   // the dev server drops idle connections while sql() runs
-  const r = await go().catch(go);
+  const r = await go().catch(go).catch(e => { throw new Error(method + ' ' + path + ': ' + e.message); });
   return { status: r.status, body: await r.json().catch(() => null), headers: r.headers };
 }
 
@@ -61,11 +85,13 @@ async function guest() {
 
 // the dev server and this script share the local database
 function sql(q) {
-  const run = () => execSync('npx wrangler d1 execute amerikano --local --json --command "' + q.replace(/"/g, '\\"') + '"', { cwd: __dirname + '/..', stdio: ['ignore', 'pipe', 'ignore'] });
+  const run = () => execSync('npx wrangler d1 execute amerikano --local --json' + (PERSIST ? ' --persist-to "' + PERSIST + '"' : '') + ' --command "' + q.replace(/"/g, '\\"') + '"', { cwd: __dirname + '/..', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
   // wrangler occasionally dies on a busy machine; a real sql error fails the same way each time
   let out;
   for (let i = 0; ; i++) {
-    try { out = run(); break; } catch (e) { if (i === 2) throw e; }
+    try { out = run(); break; } catch (e) {
+      if (i === 2) throw new Error('sql failed: ' + q.slice(0, 100) + '\n' + (e.stderr || e.stdout || e.message).toString().slice(-1500));
+    }
   }
   return JSON.parse(out)[0].results;
 }
@@ -77,21 +103,46 @@ function client(path, origin) {
     c.ws.on('open', res);
     c.ws.on('unexpected-response', (q, r) => rej(new Error('http ' + r.statusCode)));
     c.ws.on('error', rej);
+    c.ws.on('close', () => rej(new Error(path + ': closed before it opened')));
   });
+  c.ready.catch(() => {});
+  // a closed socket fails every wait at once
+  c.down = null;
+  const fail = why => {
+    if (c.down) return;
+    c.down = new Error(path + ': ' + why);
+    for (const h of c.handlers.slice()) if (h.fail) h.fail(c.down);
+  };
+  c.ws.on('close', (code, reason) => fail('closed (' + code + (reason && reason.length ? ' ' + reason : '') + ')'));
+  c.ws.on('error', e => fail('error ' + e.message));
   c.ws.on('message', d => {
     const m = JSON.parse(d);
     c.seen++;
     for (const h of c.handlers.slice()) h(m);
   });
   c.send = o => c.ws.send(JSON.stringify(o));
-  c.next = pred => new Promise(res => {
-    const h = m => {
-      if (!pred(m)) return;
-      c.handlers.splice(c.handlers.indexOf(h), 1);
-      res(m);
-    };
-    c.handlers.push(h);
-  });
+  c.next = (pred, ms) => {
+    const what = String(pred).replace(/\s+/g, ' ').slice(0, 90);
+    const p = new Promise((res, rej) => {
+      if (c.down) return rej(new Error('waiting for ' + what + ' on ' + c.down.message));
+      const done = () => {
+        clearTimeout(timer);
+        const i = c.handlers.indexOf(h);
+        if (i >= 0) c.handlers.splice(i, 1);
+      };
+      const timer = setTimeout(() => { done(); rej(new Error(path + ': no message for ' + what + ' within ' + (ms || 90000) / 1000 + ' s')); }, ms || 90000);
+      const h = m => {
+        if (!pred(m)) return;
+        done();
+        res(m);
+      };
+      h.fail = e => { done(); rej(new Error('waiting for ' + what + ' on ' + e.message)); };
+      c.handlers.push(h);
+    });
+    // a wait nobody reaches must not crash the run when it fails
+    p.catch(() => {});
+    return p;
+  };
   return c;
 }
 
@@ -301,12 +352,17 @@ async function math() {
 }
 
 async function hub(acc) {
-  const c = client('/ws/hub');
-  await c.ready;
-  const hi = c.next(m => m.t === 'hub');
-  c.send({ t: 'hello', auth: acc.auth });
-  assert.deepStrictEqual((await hi).stakes, [100, 500, 2500, 10000, 50000]);
-  return c;
+  // the dev clock gives a socket 200 ms to say hello, which a busy machine can miss
+  for (let i = 0; ; i++) {
+    const c = client('/ws/hub');
+    await c.ready;
+    const hi = c.next(m => m.t === 'hub');
+    c.send({ t: 'hello', auth: acc.auth });
+    const m = await hi.catch(e => { if (i === 2) throw e; });
+    if (!m) continue;
+    assert.deepStrictEqual(m.stakes, [100, 500, 2500, 10000, 50000]);
+    return c;
+  }
 }
 
 function seated(m) {
@@ -530,7 +586,7 @@ async function accounts() {
   assert.strictEqual(bad.status, 401);
   assert.strictEqual((await call('GET', '/api/me')).status, 401);
   assert.strictEqual((await call('GET', '/api/me', null, null, 'https://evil.example')).status, 403);
-  const pre = await fetch(http + '/api/me', { method: 'OPTIONS', headers: { Origin: 'http://localhost:8080', 'Access-Control-Request-Method': 'GET' } });
+  const pre = await fetch(http + '/api/me', { method: 'OPTIONS', headers: { Origin: 'http://localhost:8080', 'Access-Control-Request-Method': 'GET' }, signal: AbortSignal.timeout(30000) });
   assert.strictEqual(pre.status, 204);
   assert.strictEqual(pre.headers.get('access-control-allow-origin'), 'http://localhost:8080');
 
@@ -622,19 +678,23 @@ async function apple() {
   const spent = new Set();
   const revoked = [];
   const form = req => new Promise(res => { let d = ''; req.on('data', c => { d += c; }); req.on('end', () => res(Object.fromEntries(new URLSearchParams(d)))); });
-  const stub = httpServer.createServer(async (q, r) => {
+  const stub = fake('apple', port('APPLE', 8791), async (q, r) => {
     if (q.url === '/auth/keys') return r.end(JSON.stringify({ keys: [jwk] }));
+    if (q.method !== 'POST' || !/^\/auth\/(token|revoke)$/.test(q.url)) {
+      r.statusCode = 404;
+      return r.end('{}');
+    }
     const f = await form(q);
-    if (f.client_secret.split('.').length !== 3) r.statusCode = 400;
+    if (!f.client_secret || f.client_secret.split('.').length !== 3) r.statusCode = 400;
     else if (q.url === '/auth/revoke') revoked.push({ token: f.token, client: f.client_id });
-    else if (spent.has(f.code) || f.code.startsWith('bad') || (f.client_id === 'com.aytutuna.amerikano.web') !== (f.redirect_uri === 'https://amerikano.pages.dev/')) r.statusCode = 400;
+    else if (!f.code || spent.has(f.code) || f.code.startsWith('bad') || (f.client_id === 'com.aytutuna.amerikano.web') !== (f.redirect_uri === 'https://amerikano.pages.dev/')) r.statusCode = 400;
     else {
       spent.add(f.code);
       return r.end(JSON.stringify({ refresh_token: 'rt.' + f.code }));
     }
     r.end('{}');
   });
-  await new Promise(res => stub.listen(8791, res));
+  await stub.listening$;
   const sha = raw => crypto.createHash('sha256').update(raw).digest('hex');
   const mint = (o, key) => {
     o = Object.assign({ iss: 'https://appleid.apple.com', aud: 'com.aytutuna.amerikano', exp: Math.floor(Date.now() / 1000) + 600 }, o);
@@ -1778,7 +1838,10 @@ async function rematchBoth() {
 async function rematchOne() {
   const t = await seatTwo(100);
   // the window is short, so the chips go down while the match runs; the payout cannot bring them back to 1,000
-  while (!t.rb.st) await sleep(50);
+  for (let i = 0; !t.rb.st; i++) {
+    assert(i < 1200, 'rematch: the second player never got a state');
+    await sleep(50);
+  }
   sql("UPDATE players SET chips = 100 WHERE id = '" + t.accB.id + "'");
   await within(Promise.all(t.offer), 120000, 'match end');
   const poor = t.rb.next(m => m.t === 'error');
@@ -2109,22 +2172,27 @@ async function cupRun(n) {
 function fakePush() {
   const f = { apns: [], sandbox: [], fcm: [], exchanges: [], rules: {}, dead: new Set(), revoke: false };
   f.clear = () => { f.apns.length = f.sandbox.length = f.fcm.length = 0; };
-  const serve = (port, fn) => httpServer.createServer((req, res) => {
+  const serve = (name, port, fn) => fake(name, port, (req, res) => new Promise((ok, no) => {
     let b = '';
     req.on('data', d => { b += d; });
     req.on('end', () => {
-      const [status, o] = fn(req, b);
-      res.writeHead(status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(o || {}));
+      try {
+        const [status, o] = fn(req, b);
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(o || {}));
+        ok();
+      } catch (e) { no(e); }
     });
-  }).listen(port);
-  const servers = [['apns', 8792], ['sandbox', 8793]].map(([k, port]) => serve(port, (req, b) => {
+  }));
+  const servers = [['apns', 'APNS', 8792], ['sandbox', 'SANDBOX', 8793]].map(([k, p, d]) => serve(k, port(p, d), (req, b) => {
+    if (!/^\/3\/device\/[^/]+$/.test(req.url)) return [404, { reason: 'BadPath' }];
     const token = req.url.split('/').pop();
     f[k].push({ token: token, url: req.url, headers: req.headers, body: JSON.parse(b) });
     const rule = (f.rules[token] || {})[k] || [200];
     return [rule[0], rule[1] && { reason: rule[1] }];
   }));
-  servers.push(serve(8794, (req, b) => {
+  servers.push(serve('fcm', port('FCM', 8794), (req, b) => {
+    if (req.url !== '/token' && !/^\/v1\/projects\/[^/]+\/messages:send$/.test(req.url)) return [404, {}];
     if (req.url === '/token') {
       const at = 'at-' + crypto.randomBytes(8).toString('hex');
       f.exchanges.push({ form: new URLSearchParams(b), at: at });
@@ -2143,6 +2211,7 @@ function fakePush() {
     if (!rule) return [200, { name: 'projects/x/messages/1' }];
     return [rule[0], { error: { code: rule[0], status: rule[2] || 'X', message: rule[3], details: rule[1] ? [{ errorCode: rule[1] }] : [] } }];
   }));
+  f.ready = Promise.all(servers.map(s => s.listening$));
   f.close = () => servers.forEach(s => s.close());
   return f;
 }
@@ -2158,7 +2227,7 @@ const settle = async fn => {
 };
 const tick = async time => {
   // the time can only be set through this route, not through /__scheduled
-  const go = () => fetch(http + '/cdn-cgi/handler/scheduled?cron=0+*+*+*+*&time=' + time);
+  const go = () => fetch(http + '/cdn-cgi/handler/scheduled?cron=0+*+*+*+*&time=' + time, { signal: AbortSignal.timeout(30000) });
   assert.strictEqual(await (await go().catch(go)).text(), 'ok');
 };
 
@@ -2211,7 +2280,7 @@ async function metrics() {
 // Plays RevenueCat's REST API on 8797: whatever a test puts in subs for a player id comes back as that player's purchases.
 function fakeRc() {
   const f = { subs: {}, vip: {}, seen: [], down: false };
-  f.server = httpServer.createServer((req, res) => {
+  f.server = fake('revenuecat', port('RC', 8797), (req, res) => {
     f.seen.push({ method: req.method, url: req.url, auth: req.headers.authorization });
     if (f.down) {
       res.writeHead(500);
@@ -2220,7 +2289,7 @@ function fakeRc() {
     res.writeHead(200, { 'content-type': 'application/json' });
     const id = req.url.split('/').pop();
     res.end(JSON.stringify({ subscriber: { non_subscriptions: f.subs[id] || {}, subscriptions: f.vip[id] ? { [VIP]: f.vip[id] } : {} } }));
-  }).listen(8797);
+  });
   return f;
 }
 
@@ -2783,7 +2852,7 @@ async function reports() {
 }
 
 async function push() {
-  const vars = Object.fromEntries(fs.readFileSync(__dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+  const vars = Object.fromEntries(fs.readFileSync(process.env.DEV_VARS || __dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const apnsPub = crypto.createPublicKey(crypto.createPrivateKey({ key: Buffer.from(vars.APNS_KEY, 'base64'), format: 'der', type: 'pkcs8' }));
   const sa = JSON.parse(vars.FCM_KEY.slice(1, -1));
   const fcmPub = crypto.createPublicKey(sa.private_key);
@@ -3106,7 +3175,7 @@ async function push() {
   const ex = f.exchanges[f.exchanges.length - 1];
   assert.strictEqual(ex.form.get('grant_type'), 'urn:ietf:params:oauth:grant-type:jwt-bearer');
   const gj = jwtOk(ex.form.get('assertion'), fcmPub, 'RS256');
-  assert.deepStrictEqual([gj.claims.iss, gj.claims.scope, gj.claims.aud, gj.claims.exp - gj.claims.iat], [sa.client_email, 'https://www.googleapis.com/auth/firebase.messaging', 'http://localhost:8794/token', 3600]);
+  assert.deepStrictEqual([gj.claims.iss, gj.claims.scope, gj.claims.aud, gj.claims.exp - gj.claims.iat], [sa.client_email, 'https://www.googleapis.com/auth/firebase.messaging', 'http://localhost:' + port('FCM', 8794) + '/token', 3600]);
   assert.deepStrictEqual(to(f.fcm, ko1).slice(-2).map(m => m.bearer), [ex.at, ex.at]);
   console.log('push: FCM bearer exchanged with the signed service account JWT and cached');
 
@@ -3260,7 +3329,7 @@ async function push() {
   const mod = await import('../src/push.js');
   const dv = [{ token: hexTok(), kind: 'apns', lang: 'en', sandbox: 0 }, { token: fcmTok(), kind: 'fcm', lang: 'tr', sandbox: 0 }];
   f.clear();
-  const at = { PACE: '1', APNS_BASE: 'http://localhost:8792', FCM_BASE: 'http://localhost:8794', FCM_TOKEN_URL: 'http://localhost:8794/token' };
+  const at = { PACE: '1', APNS_BASE: 'http://localhost:' + port('APNS', 8792), FCM_BASE: 'http://localhost:' + port('FCM', 8794), FCM_TOKEN_URL: 'http://localhost:' + port('FCM', 8794) + '/token' };
   for (const env of [{}, { APNS_KEY: vars.APNS_KEY, FCM_KEY: vars.FCM_KEY }, Object.assign({ APNS_KEY_ID: 'testkid', FCM_PROJECT: 'x' }, at)]) {
     assert.strictEqual(await mod.send(env, dv, 'invite', { seed: 1, code: 'ABCD' }), 0);
     await mod.cron(Object.assign({ DB: null }, env), Date.UTC(2031, 0, 6, 10, 30));
@@ -3279,10 +3348,11 @@ async function push() {
 function fakeSfu() {
   const f = { log: [], sessions: {} };
   let n = 0;
-  f.server = httpServer.createServer((req, res) => {
+  f.server = fake('sfu', port('SFU', 8796), (req, res) => new Promise((ok, no) => {
     let raw = '';
     req.on('data', d => { raw += d; });
     req.on('end', () => {
+      try {
       const b = raw ? JSON.parse(raw) : {};
       f.log.push({ method: req.method, path: req.url, body: b, auth: req.headers.authorization });
       const send = (o, status) => {
@@ -3311,8 +3381,10 @@ function fakeSfu() {
       const from = f.sessions[t.sessionId];
       if (!from || !(t.trackName in from)) return send({ tracks: [{ errorCode: 'not_found' }] });
       send({ requiresImmediateRenegotiation: true, sessionDescription: { type: 'offer', sdp: 'offer' }, tracks: [{ mid: String(10 + n++), trackName: t.trackName, sessionId: t.sessionId }] });
+      ok();
+      } catch (e) { no(e); }
     });
-  }).listen(8796);
+  }));
   f.pushed = () => f.log.filter(r => r.method === 'POST' && /tracks\/new$/.test(r.path) && r.body.tracks[0].location === 'local');
   f.pulled = () => f.log.filter(r => r.method === 'POST' && /tracks\/new$/.test(r.path) && r.body.tracks[0].location === 'remote');
   return f;
@@ -3563,67 +3635,81 @@ async function calls(f) {
   console.log('calls: friends only, busy, decline, missed, accept, SFU proxy, hang up, dropped');
   for (const x of [ha, hc, he]) x.ws.close();
 }
+let section = 'start';
+const sec = (name, fn) => {
+  section = name;
+  return fn();
+};
+// one limit for the whole run, so a stuck wait names the section it was in
+setTimeout(() => {
+  console.error('watchdog: the run is still in "' + section + '" after ' + WATCHDOG / 60000 + ' minutes');
+  process.exit(1);
+}, WATCHDOG);
+process.on('unhandledRejection', e => {
+  console.error('in "' + section + '":', e);
+  process.exit(1);
+});
 (async () => {
-  schema();
-  await math();
-  await accounts();
-  await apple();
-  await races();
-  await solo();
-  await lobby();
-  await friends();
-  await silent();
-  await tables();
-  await busy();
-  await lone();
-  await forfeit();
-  await friendRules();
-  await words();
-  await chat();
-  await talk();
-  await tongues();
-  await gifts();
-  await invites();
-  await push();
-  await dms();
+  await sec('schema', () => schema());
+  await sec('math', () => math());
+  await sec('accounts', () => accounts());
+  await sec('apple', () => apple());
+  await sec('races', () => races());
+  await sec('solo', () => solo());
+  await sec('lobby', () => lobby());
+  await sec('friends', () => friends());
+  await sec('silent', () => silent());
+  await sec('tables', () => tables());
+  await sec('busy', () => busy());
+  await sec('lone', () => lone());
+  await sec('forfeit', () => forfeit());
+  await sec('friendRules', () => friendRules());
+  await sec('words', () => words());
+  await sec('chat', () => chat());
+  await sec('talk', () => talk());
+  await sec('tongues', () => tongues());
+  await sec('gifts', () => gifts());
+  await sec('invites', () => invites());
+  await sec('push', () => push());
+  await sec('dms', () => dms());
   const sfu = fakeSfu();
-  await voice(sfu);
-  await calls(sfu);
+  await sec('voice', () => voice(sfu));
+  await sec('calls', () => calls(sfu));
   sfu.server.close();
-  await purge();
-  await typedOff();
-  await reports();
-  await personas();
-  await pool();
-  await openRoom();
-  await whereabouts();
-  await board();
-  await fixes();
-  await held();
-  await fast();
-  await regions();
-  await rematchBoth();
-  await rematchOne();
-  await rematchAway();
-  await rematchNone();
-  await rematchFriends();
-  await cupCancel();
-  await cupPoor();
-  await cupGone();
-  await cupHello();
-  await cupRetry();
-  await cupRun(2);
-  await cupRun(6);
-  await metrics();
+  await sec('purge', () => purge());
+  await sec('typedOff', () => typedOff());
+  await sec('reports', () => reports());
+  await sec('personas', () => personas());
+  await sec('pool', () => pool());
+  await sec('openRoom', () => openRoom());
+  await sec('whereabouts', () => whereabouts());
+  await sec('board', () => board());
+  await sec('fixes', () => fixes());
+  await sec('held', () => held());
+  await sec('fast', () => fast());
+  await sec('regions', () => regions());
+  await sec('rematchBoth', () => rematchBoth());
+  await sec('rematchOne', () => rematchOne());
+  await sec('rematchAway', () => rematchAway());
+  await sec('rematchNone', () => rematchNone());
+  await sec('rematchFriends', () => rematchFriends());
+  await sec('cupCancel', () => cupCancel());
+  await sec('cupPoor', () => cupPoor());
+  await sec('cupGone', () => cupGone());
+  await sec('cupHello', () => cupHello());
+  await sec('cupRetry', () => cupRetry());
+  await sec('cupRun', () => cupRun(2));
+  await sec('cupRun', () => cupRun(6));
+  await sec('metrics', () => metrics());
   const rc = fakeRc();
-  await shop(rc);
-  await vip(rc);
-  await cap();
+  await sec('shop', () => shop(rc));
+  await sec('vip', () => vip(rc));
+  await sec('cap', () => cap());
   rc.server.close();
   console.log('ok');
   reached = true;
   process.exit(0);
 })().catch(e => {
-  console.error(e);
+  console.error('in "' + section + '":', e);
   process.exit(1);
 });
