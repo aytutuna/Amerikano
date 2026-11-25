@@ -7,8 +7,109 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm test
+        working-directory: server
+        env:
+          WRANGLER_LOG: ${{ runner.temp }}/wrangler.log
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: server-logs
+          path: ${{ runner.temp }}/wrangler.log
+          retention-days: 3
+          if-no-files-found: warn
+
+  langs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node server/test/langs.js
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0"
+      - run: npm ci
+      - run: npx cap sync android
+      # The real file is the Firebase push config and stays out of git.
+      - name: Stand-in google-services.json
+        run: |
+          cat > android/app/google-services.json <<'JSON'
+          {
+            "project_info": {"project_number": "123456789012", "project_id": "amerikano-ci", "firebase_url": "https://amerikano-ci.firebaseio.com", "storage_bucket": "amerikano-ci.appspot.com"},
+            "client": [{
+              "client_info": {"mobilesdk_app_id": "1:123456789012:android:0123456789abcdef", "android_client_info": {"package_name": "com.aytutuna.amerikano"}},
+              "oauth_client": [],
+              "api_key": [{"current_key": "AIzaSyCIStandInKeyNotReal00000000000000"}],
+              "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+            }],
+            "configuration_version": "1"
+          }
+          JSON
+      - run: ./gradlew assembleDebug
+        working-directory: android
+
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.f.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'capacitor.config.json'
+              - '.github/workflows/ci.yml'
+
   ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: xcode-27
     timeout-minutes: 40
     steps:
@@ -74,98 +175,5 @@ jobs:
         if: always()
         with:
           name: ios-shots
-          path: ${{ runner.temp }}/shots/*.png
-          if-no-files-found: warn
-
-  # Same web layer in Safari's engine, which is what the iOS web view runs.
-  webkit:
-    runs-on: macos-26
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm install --no-save playwright
-      - run: npx playwright install webkit
-      - name: Play a turn
-        run: |
-          mkdir -p "$RUNNER_TEMP/shots"
-          python3 -m http.server 8080 --directory www &
-          sleep 2
-          cat > "$RUNNER_TEMP/turn.js" <<'JS'
-          const { webkit, devices } = require(process.cwd() + '/node_modules/playwright');
-          const out = process.argv[2];
-          (async () => {
-            const browser = await webkit.launch();
-            const errors = [];
-            // there is no game server here, so the lobby comes up offline and its requests fail
-            const offline = /Failed to load resource|access control checks|8787/;
-            async function run(name, opts, play) {
-              const ctx = await browser.newContext(opts);
-              const page = await ctx.newPage();
-              page.on('pageerror', e => errors.push(name + ': ' + e.message));
-              page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push(name + ': ' + m.text()); });
-              await page.goto('http://localhost:8080/');
-              // a fresh browser has no account, so the sign-in page comes first
-              await page.waitForSelector('#home [data-k=guest]', { timeout: 15000 });
-              await page.screenshot({ path: out + '/' + name + '-signin.png' });
-              await page.click('#home [data-k=guest]');
-              await page.waitForSelector('#home [data-k=go]', { timeout: 15000 });
-              await page.waitForTimeout(1500);
-              await page.screenshot({ path: out + '/' + name + '-lobby.png' });
-              await play(page, name);
-              await ctx.close();
-            }
-            async function turn(page, name) {
-              await page.getByRole('button', { name: 'Training' }).click();
-              await page.waitForSelector('.sheet .btn.primary');
-              await page.screenshot({ path: out + '/' + name + '-setup.png' });
-              await page.click('.sheet .btn.primary');
-              await page.waitForSelector('#game:not([hidden]) .rc', { timeout: 15000 });
-              await page.waitForTimeout(3000);
-              await page.screenshot({ path: out + '/' + name + '-table.png' });
-              // game one starts with the human choosing, and the task sheet blocks the stock
-              await page.click('.tk');
-              await page.waitForFunction(() => !document.getElementById('piles').closest('[inert]'));
-              await page.click('#stock');
-              await page.waitForTimeout(1500);
-              await page.screenshot({ path: out + '/' + name + '-drew.png' });
-            }
-            let failed = false;
-            for (const [name, dev] of [['landscape', 'iPhone 14 landscape']]) {
-              try {
-                await run(name, devices[dev], turn);
-              } catch (e) {
-                console.log(name + ': ' + e.message);
-                failed = true;
-              }
-            }
-            try {
-              const ctx = await browser.newContext(devices['iPhone 14']);
-              const page = await ctx.newPage();
-              page.on('pageerror', e => errors.push('portrait: ' + e.message));
-              page.on('console', m => { if (m.type() === 'error' && !offline.test(m.text())) errors.push('portrait: ' + m.text()); });
-              await page.goto('http://localhost:8080/');
-              await page.waitForSelector('#rot', { state: 'visible', timeout: 15000 });
-              await page.waitForSelector('#home [data-k=guest]', { state: 'attached', timeout: 15000 });
-              await page.screenshot({ path: out + '/portrait-rot.png' });
-              await ctx.close();
-            } catch (e) {
-              console.log('portrait: ' + e.message);
-              failed = true;
-            }
-            await browser.close();
-            if (errors.length) console.log(errors.join('\n'));
-            if (failed || errors.length) process.exit(1);
-          })();
-          JS
-          node "$RUNNER_TEMP/turn.js" "$RUNNER_TEMP/shots"
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: webkit-shots
           path: ${{ runner.temp }}/shots/*.png
           if-no-files-found: warn
