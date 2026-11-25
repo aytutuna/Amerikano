@@ -89,7 +89,7 @@ function sql(q) {
 }
 
 function client(path, origin) {
-  const c = { handlers: [], log: [], errors: [], seen: 0 };
+  const c = { handlers: [], log: [], errors: [], seen: 0, recent: [] };
   c.ws = new WebSocket(base + path, { headers: origin ? { Origin: origin } : {} });
   c.ready = new Promise((res, rej) => {
     c.ws.on('open', res);
@@ -110,6 +110,7 @@ function client(path, origin) {
   c.ws.on('message', d => {
     const m = JSON.parse(d);
     c.seen++;
+    c.recent = c.recent.concat(d.toString().slice(0, 120)).slice(-12);
     for (const h of c.handlers.slice()) h(m);
   });
   c.send = o => c.ws.send(JSON.stringify(o));
@@ -122,7 +123,7 @@ function client(path, origin) {
         const i = c.handlers.indexOf(h);
         if (i >= 0) c.handlers.splice(i, 1);
       };
-      const timer = setTimeout(() => { done(); rej(new Error(path + ': no message for ' + what + ' within ' + (ms || 90000) / 1000 + ' s')); }, ms || 90000);
+      const timer = setTimeout(() => { done(); rej(new Error(path + ': no message for ' + what + ' within ' + (ms || 90000) / 1000 + ' s, last seen ' + c.recent.join(' | '))); }, ms || 90000);
       const h = m => {
         if (!pred(m)) return;
         done();
