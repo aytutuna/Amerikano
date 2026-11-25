@@ -2519,8 +2519,10 @@ async function vip(rc) {
   assert.deepStrictEqual(sp.players[1].wear, gold, 'the others see the VIP items');
   const card = async (by, acc) => (await call('GET', '/api/player/' + acc.id, by)).body;
   assert.deepStrictEqual([(await card(plain, a)).vip, (await card(a, plain)).vip, (await card(a, a)).vip], [true, false, true]);
-  g.a.ws.close();
-  g.b.ws.close();
+  // a closed socket keeps the seat, and a started table holds its players; leaving frees them for the next table
+  g.a.send({ t: 'leave' });
+  g.b.send({ t: 'leave' });
+  await sleep(300);
 
   // when it runs out the items come off everywhere, and come back with a new month
   sql('UPDATE players SET vip_until = ' + (Date.now() - 1000) + ' WHERE id = ' + who(a));
@@ -3636,7 +3638,12 @@ async function calls(f) {
   for (const x of [ha, hc, he]) x.ws.close();
 }
 let section = 'start';
+// names on the command line run alone, in the normal order
+const only = process.argv.slice(2);
+const names = new Set();
 const sec = (name, fn) => {
+  names.add(name);
+  if (only.length && !only.includes(name)) return;
   section = name;
   return fn();
 };
@@ -3706,6 +3713,8 @@ process.on('unhandledRejection', e => {
   await sec('vip', () => vip(rc));
   await sec('cap', () => cap());
   rc.server.close();
+  const bad = only.filter(x => !names.has(x));
+  if (bad.length) throw new Error('no such section: ' + bad.join(', ') + ' (have ' + [...names].join(' ') + ')');
   console.log('ok');
   reached = true;
   process.exit(0);
