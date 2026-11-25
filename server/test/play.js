@@ -1,21 +1,12 @@
-// `npm test` (test/run.js) does all of this: free ports, a throwaway env file, a fresh database, the dev server, and stops it after.
-// By hand, make the env file first (it is gitignored):
-//   node -e "const c=require('crypto');console.log('PACE=0.02\nAPPLE_BASE=http://localhost:8791\nAPPLE_KEY='+c.generateKeyPairSync('ec',{namedCurve:'P-256'}).privateKey.export({type:'pkcs8',format:'der'}).toString('base64'))" > test/dev.vars
-// Plays whole matches through the socket API against a running
-// `wrangler dev --port 8787 --env-file test/dev.vars --test-scheduled`, which sets PACE, a throwaway APPLE_KEY and APPLE_BASE.
-// The Apple tests play Apple's servers on port 8791. The push tests play APNs on 8792 and 8793 and FCM with Google's token
-// endpoint on 8794, and need throwaway keys in the same file:
-//   APNS_KEY (base64 pkcs8 P-256 like APPLE_KEY), APNS_KEY_ID=testkid, APNS_BASE=http://localhost:8792, APNS_SANDBOX=http://localhost:8793,
-//   FCM_BASE=http://localhost:8794, FCM_TOKEN_URL=http://localhost:8794/token,
-// The shop tests play RevenueCat on 8797 and need RC_WEBHOOK_AUTH=test-hook-auth, RC_SECRET_KEY=sk_test and RC_API=http://localhost:8797.
-// The voice tests play the Realtime SFU on 8796 and need REALTIME_APP_ID=testapp, REALTIME_APP_TOKEN=testtoken and RTC_BASE=http://localhost:8796.
-//   FCM_KEY='{"client_email":"push-test@example.iam.gserviceaccount.com","private_key":"<a PEM pkcs8 RSA key, newlines as backslash n>"}'
+// Run it with `npm test` (test/run.js): free ports, throwaway keys, a fresh database and the dev server, all stopped after.
+// By hand, start `wrangler dev --env-file <file> --test-scheduled` with the variables devVars() in run.js writes, and set URL, PERSIST and PORT_<name> to match.
+// Plays whole matches through the socket API; the fakes of Apple, APNs, FCM, Google, RevenueCat and the Realtime SFU listen on the ports given.
 const assert = require('assert');
 const WebSocket = require('ws');
 const Game = require('../../www/js/game.js');
 const Chat = require('../../www/js/chat.js');
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const Names = require('../../www/js/names.js');
 const crypto = require('crypto');
@@ -85,7 +76,8 @@ async function guest() {
 
 // the dev server and this script share the local database
 function sql(q) {
-  const run = () => execSync('npx wrangler d1 execute amerikano --local --json' + (PERSIST ? ' --persist-to "' + PERSIST + '"' : '') + ' --command "' + q.replace(/"/g, '\\"') + '"', { cwd: __dirname + '/..', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
+  const args = [__dirname + '/../node_modules/wrangler/bin/wrangler.js', 'd1', 'execute', 'amerikano', '--local', '--json'].concat(PERSIST ? ['--persist-to', PERSIST] : [], ['--command', q]);
+  const run = () => execFileSync(process.execPath, args, { cwd: __dirname + '/..', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, killSignal: 'SIGKILL' });
   // wrangler occasionally dies on a busy machine; a real sql error fails the same way each time
   let out;
   for (let i = 0; ; i++) {
@@ -184,7 +176,7 @@ function choose(m) {
 function play(c, o) {
   let last = '';
   let hold = false;
-  c.handlers.push(m => {
+  const h = m => {
     if (m.t === 'joined') Object.assign(c, { seat: m.seat, token: m.token, code: m.code });
     if (m.t === 'error') {
       c.errors.push(m.k);
@@ -199,7 +191,10 @@ function play(c, o) {
     if (m.phase === 'matchend') return o.finish(c);
     if (hold) return;
     react(m);
-  });
+  };
+  // a socket that closes before the match ends fails the finish promise instead of leaving it open
+  h.fail = e => { if (o.abort) o.abort(e); };
+  c.handlers.push(h);
 
   function react(m) {
     const key = [m.gameNo, m.phase, m.turn, c.log.length, m.claim && m.claim.i, m.players[0].hand.length].join();
@@ -351,18 +346,26 @@ async function math() {
   console.log('payout: stake back plus chips at stake/10, a loss past the stake is charged');
 }
 
-async function hub(acc) {
-  // the dev clock gives a socket 200 ms to say hello, which a busy machine can miss
+// the dev clock gives a socket 200 ms to say hello, which a busy machine can miss, so a closed socket is tried again
+async function hello(msg, pred) {
   for (let i = 0; ; i++) {
     const c = client('/ws/hub');
-    await c.ready;
-    const hi = c.next(m => m.t === 'hub');
-    c.send({ t: 'hello', auth: acc.auth });
-    const m = await hi.catch(e => { if (i === 2) throw e; });
-    if (!m) continue;
-    assert.deepStrictEqual(m.stakes, [100, 500, 2500, 10000, 50000]);
-    return c;
+    try {
+      await c.ready;
+      const w = c.next(pred);
+      c.send(Object.assign({ t: 'hello' }, msg));
+      return [c, await w];
+    } catch (e) {
+      c.ws.terminate();
+      if (i === 2) throw e;
+    }
   }
+}
+
+async function hub(acc) {
+  const [c, m] = await hello({ auth: acc.auth }, m => m.t === 'hub');
+  assert.deepStrictEqual(m.stakes, [100, 500, 2500, 10000, 50000]);
+  return c;
 }
 
 function seated(m) {
@@ -372,10 +375,8 @@ function seated(m) {
 }
 
 async function tables() {
-  const bad = client('/ws/hub');
-  await bad.ready;
-  bad.send({ t: 'hello', auth: '0'.repeat(32) + '.' + '0'.repeat(64) });
-  assert.strictEqual((await bad.next(m => m.t === 'error')).k, 'auth');
+  const [, err] = await hello({ auth: '0'.repeat(32) + '.' + '0'.repeat(64) }, m => m.t === 'error');
+  assert.strictEqual(err.k, 'auth');
 
   const accA = await guest();
   const accB = await guest();
@@ -514,11 +515,11 @@ async function forfeit() {
   await c.ready;
   c.send({ t: 'join', auth: poor.auth });
   assert.strictEqual((await c.next(m => m.t === 'error')).k, 'poor');
-  const fin = new Promise(res => play(Object.assign(a, { seat: ja.seat }), { finish: res }));
+  const fin = played(Object.assign(a, { seat: ja.seat }));
   a.send({ t: 'start' });
   await b.next(m => m.t === 'state');
   b.send({ t: 'leave' });
-  await fin;
+  await within(fin, 120000, 'match end');
   await new Promise(r => setTimeout(r, 600));
   assert.strictEqual((await call('GET', '/api/me', accB)).body.chips, 4500, 'the leaver loses the escrow');
   assert.deepStrictEqual(sql("SELECT reason FROM chip_log WHERE player = '" + accB.id + "' AND reason <> 'start'").map(x => x.reason), ['escrow']);
@@ -848,8 +849,11 @@ async function pair(n, games, accs) {
 async function begin(g) {
   const sa = g.a.next(m => m.t === 'state');
   const sb = g.b.next(m => m.t === 'state');
+  // a refusal (held, host, elsewhere) shows as itself, not as a missing state
+  const no = g.a.next(m => m.t === 'error').then(m => { throw new Error('start refused: ' + m.k); });
+  no.catch(() => {});
   g.a.send({ t: 'start' });
-  return [await sa, await sb];
+  return Promise.race([Promise.all([sa, sb]), no]);
 }
 
 async function friendRules() {
@@ -1213,7 +1217,7 @@ async function personas() {
     all.push(m);
     if (m.t === 'state') stamps.push([Date.now(), m]);
   });
-  const fin = new Promise(res => play(r, { finish: res }));
+  const fin = played(r);
   const counts = [];
   const first = r.next(m => m.t === 'room');
   first.then(m => assert.strictEqual(m.finding, 3, 'the waiting view counts the seats being filled'));
@@ -1292,7 +1296,7 @@ async function personas() {
   const msg = one.next(m => m.t === 'error');
   const two2 = await hub(acc);
   assert.strictEqual((await msg).k, 'replaced');
-  assert.strictEqual(await gone, 4000);
+  assert.strictEqual(await within(gone, 5000, 'the old hub socket closing'), 4000);
   two2.ws.close();
   console.log('hub: the newest socket of an account wins');
 }
@@ -1479,7 +1483,7 @@ async function pool() {
     const r = seated(await s);
     const run = { stake, acc, h, r, first: null, done: null };
     run.first = r.next(m => m.t === 'state');
-    run.done = new Promise(res => play(r, { finish: res }));
+    run.done = played(r);
     runs.push(run);
   }
   const firsts = await Promise.all(runs.map(x => x.first));
@@ -1495,7 +1499,7 @@ async function pool() {
   assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE busy IS NOT NULL')[0].n, 9);
   const tops = sql("SELECT topup FROM personas WHERE id IN ('" + ids.join("','") + "')");
   assert(tops.every(x => x.topup === now), 'the top-up date moves by whole days');
-  await Promise.all(runs.map(x => x.done));
+  await within(Promise.all(runs.map(x => x.done)), 120000, 'match end');
   await sleep(800);
   assert.strictEqual(sql('SELECT count(*) AS n FROM personas WHERE busy IS NOT NULL')[0].n, 0, 'they are free again after the match');
 
@@ -1565,11 +1569,7 @@ async function fixes() {
   const [a, b] = [await guest(), await guest()];
   await call('POST', '/api/friend', a, { id: b.id });
   await call('POST', '/api/friend', b, { id: a.id });
-  const h = client('/ws/hub');
-  await h.ready;
-  const hi = h.next(m => m.t === 'hub');
-  h.send({ t: 'hello', auth: a.auth, at: 'training' });
-  await hi;
+  const [h] = await hello({ auth: a.auth, at: 'training' }, m => m.t === 'hub');
   const at = async () => (await call('GET', '/api/friends', b)).body.friends.find(x => x.id === a.id).at;
   assert.deepStrictEqual(await at(), { w: 'training' }, 'hello carries where the player is');
 
@@ -1663,7 +1663,17 @@ async function fast() {
   host.ws.close();
 }
 
-const within = (p, ms, what) => Promise.race([p, new Promise((r, j) => setTimeout(() => j(new Error('timeout: ' + what)), ms))]);
+const within = (p, ms, what) => {
+  let t;
+  const lim = new Promise((r, j) => { t = setTimeout(() => j(new Error('timeout: ' + what)), ms); });
+  return Promise.race([p, lim]).finally(() => clearTimeout(t));
+};
+// plays a client to the end of the match; the promise fails if its socket closes first
+const played = (c, o) => {
+  const p = new Promise((res, rej) => play(c, Object.assign({ finish: res, abort: rej }, o)));
+  p.catch(() => {});
+  return p;
+};
 
 // an account whose first call came from this country, as the dev server is told by header
 async function from(country, continent) {
@@ -1787,7 +1797,7 @@ async function seatTwo(stake) {
   const B = await sb;
   assert.strictEqual(B.code, A.code);
   const t = { accA, accB, a, b, A, B, ra: seated(A), rb: seated(B) };
-  t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm));
+  t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm, 150000));
   for (const c of [t.ra, t.rb]) play(c, { finish: () => {} });
   return t;
 }
@@ -1971,11 +1981,7 @@ async function cupCancel() {
 // a hello tells a player who is in no tournament, so an app that missed the message can clear its state
 async function cupHello() {
   const acc = await guest();
-  const c = client('/ws/hub');
-  await c.ready;
-  const none = c.next(m => m.t === 'cup' && m.buy === 0);
-  c.send({ t: 'hello', auth: acc.auth });
-  await within(none, 5000, 'a hello says there is no tournament');
+  const [c] = await within(hello({ auth: acc.auth }, m => m.t === 'cup' && m.buy === 0), 20000, 'a hello says there is no tournament');
   c.ws.close();
   console.log('tournament: a hello from an unregistered player gets buy 0');
 }
@@ -2254,10 +2260,7 @@ async function metrics() {
   await hub(a);
   await sleep(300);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = '" + a.id + "' AND day = " + day)[0].n, 1);
-  const bad = client('/ws/hub');
-  await bad.ready;
-  bad.send({ t: 'hello', auth: 'nobody.nothing' });
-  await sleep(500);
+  await hello({ auth: 'nobody.nothing' }, m => m.t === 'error');
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'nobody'")[0].n, 0);
   sql("INSERT INTO active (player, day) VALUES ('old', " + (day - 100) + ")");
   // a match whose human was paid nothing writes an escrow row and no payout row, and still counts
@@ -2520,9 +2523,10 @@ async function vip(rc) {
   const card = async (by, acc) => (await call('GET', '/api/player/' + acc.id, by)).body;
   assert.deepStrictEqual([(await card(plain, a)).vip, (await card(a, plain)).vip, (await card(a, a)).vip], [true, false, true]);
   // a closed socket keeps the seat, and a started table holds its players; leaving frees them for the next table
+  const closed = [g.a, g.b].map(c => new Promise(res => c.ws.on('close', res)));
   g.a.send({ t: 'leave' });
   g.b.send({ t: 'leave' });
-  await sleep(300);
+  await within(Promise.all(closed), 5000, 'the leavers closing');
 
   // when it runs out the items come off everywhere, and come back with a new month
   sql('UPDATE players SET vip_until = ' + (Date.now() - 1000) + ' WHERE id = ' + who(a));
@@ -2594,7 +2598,7 @@ async function cap() {
     const c = client('/ws/new');
     await c.ready;
     c.send({ t: 'create', auth: acc.auth, players: 2, games: 2, level: 'relaxed' });
-    const done = new Promise(res => play(c, { finish: res }));
+    const done = played(c);
     await c.next(m => m.t === 'joined');
     c.send({ t: 'start' });
     await within(done, 120000, 'match');
@@ -2859,6 +2863,7 @@ async function push() {
   const sa = JSON.parse(vars.FCM_KEY.slice(1, -1));
   const fcmPub = crypto.createPublicKey(sa.private_key);
   const f = fakePush();
+  await f.ready;
   sql('DELETE FROM devices');
   const name = (acc, lang) => Names.text(sql('SELECT name_seed FROM players WHERE id = ' + who(acc))[0].name_seed, lang);
   const to = (list, token) => list.filter(r => r.token === token);
@@ -3351,6 +3356,7 @@ function fakeSfu() {
   const f = { log: [], sessions: {} };
   let n = 0;
   f.server = fake('sfu', port('SFU', 8796), (req, res) => new Promise((ok, no) => {
+    res.on('close', ok);
     let raw = '';
     req.on('data', d => { raw += d; });
     req.on('end', () => {
@@ -3502,11 +3508,8 @@ async function voice(f) {
   console.log('voice: tablemates only, names made by the server, blocked and voice-off kept apart, rate limited');
 
   // the hub says voice is available; without an app id it is off and silent
-  const hi = client('/ws/hub');
-  await hi.ready;
-  const hello = hi.next(m => m.t === 'hub');
-  hi.send({ t: 'hello', auth: o.auth });
-  assert.strictEqual((await hello).voice, true);
+  const [hi, hm] = await hello({ auth: o.auth }, m => m.t === 'hub');
+  assert.strictEqual(hm.voice, true);
   hi.ws.close();
   const { on: live, voice: api } = await import('../src/voice.js');
   assert.strictEqual(live({ REALTIME_APP_ID: '' }), false);
@@ -3681,6 +3684,7 @@ process.on('unhandledRejection', e => {
   await sec('push', () => push());
   await sec('dms', () => dms());
   const sfu = fakeSfu();
+  await sfu.server.listening$;
   await sec('voice', () => voice(sfu));
   await sec('calls', () => calls(sfu));
   sfu.server.close();
@@ -3710,6 +3714,7 @@ process.on('unhandledRejection', e => {
   await sec('cupRun', () => cupRun(6));
   await sec('metrics', () => metrics());
   const rc = fakeRc();
+  await rc.server.listening$;
   await sec('shop', () => shop(rc));
   await sec('vip', () => vip(rc));
   await sec('cap', () => cap());
