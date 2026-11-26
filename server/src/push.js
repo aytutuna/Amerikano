@@ -1,7 +1,7 @@
 import Names from '../../www/js/names.js';
 import { unb64, b64 } from './apple.js';
 import { reward } from './account.js';
-import { week } from './social.js';
+import { week, simulate } from './social.js';
 import { rollup } from './stats.js';
 import { setting } from './admin.js';
 import { digest } from './mail.js';
@@ -256,7 +256,9 @@ async function weeklies(env, now) {
   const sql = 'UPDATE players SET week_sent = ?1 WHERE id IN (SELECT id FROM players WHERE id IN (SELECT player FROM devices WHERE ' + z +
     ') AND push_on = 1 AND push_week = 1 AND week_sent < ?1 AND ' + fin('', '?1') + ' > 0 ORDER BY week_sent LIMIT ?2) RETURNING id, ' + fin('', '?1') +
     ' AS won, (SELECT count(*) FROM players q WHERE q.week = ?1 AND q.week_won > ' + fin('players.', '?1') +
-    ') + (SELECT count(*) FROM players q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') + ') + 1 AS place';
+    ') + (SELECT count(*) FROM players q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') +
+    ') + (SELECT count(*) FROM personas q WHERE q.week = ?1 AND q.week_won > ' + fin('players.', '?1') +
+    ') + (SELECT count(*) FROM personas q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') + ') + 1 AS place';
   await serve(env, 'week', 'week_sent', n => env.DB.prepare(sql).bind(last, n), z, p => ({ won: p.won, rank: p.place }));
 }
 
@@ -285,7 +287,7 @@ export async function cron(env, now) {
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
   // weeklies first, as they only have work on Mondays; one failing job does not stop the others. The daily push is tried on
   // every tick, so a crowd that does not fit one run is served by the next within its window.
-  const jobs = hourly(now) ? [rollup, dayTotals, cleanup, digest, ...keys ? [weeklies] : []] : [];
+  const jobs = hourly(now) ? [rollup, dayTotals, simulate, cleanup, digest, ...keys ? [weeklies] : []] : [];
   if (keys) jobs.push(dailies);
   for (const job of jobs) {
     try {

@@ -1631,6 +1631,91 @@ async function board() {
   g.b.ws.close();
 }
 
+// computer players are on the boards like anyone: what they win at public tables counts, a friend table counts for nobody, and the
+// hourly job adds what keeps them looking like players who play every week
+async function boards() {
+  const w = WEEK();
+  const big = 2e9;
+  const hex = c => c.repeat(32);
+  const bot = (c, won, level, xp, factor = 1) => sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, week, week_won, factor) VALUES ('" + hex(c) + "', 950, '1,1,1,0', " + level + ', ' + xp + ', 9, 3, 5000, 0, 0, 6, ' + w + ', ' + won + ', ' + factor + ')');
+  sql('DELETE FROM personas WHERE created = 6');
+  const me = await guest();
+  const set = n => sql('UPDATE players SET week = ' + w + ', week_won = ' + n + ', xp = 5, level = 1 WHERE id = ' + who(me));
+  set(big + 100);
+  bot('a', big + 500, 100000, 1e12);
+  bot('b', big + 200, 3, 300);
+  bot('c', big + 100, 3, 300);
+  let top = (await call('GET', '/api/top', me)).body;
+  assert.deepStrictEqual(top.week.slice(0, 2).map(x => x.id), [hex('a'), hex('b')], 'computer players are on the weekly board');
+  assert.strictEqual(top.week[0].won, big + 500);
+  assert.deepStrictEqual(top.you, { won: big + 100, rank: 3 }, 'a human rank counts them');
+  assert.strictEqual(top.level[0].id, hex('a'), 'and on the level board, with their level');
+  assert.strictEqual(top.level[0].level, 100000);
+  assert(top.up >= 2, 'the level rank counts them too: ' + top.up);
+  assert.deepStrictEqual(Object.keys(top.week[0]).sort(), ['avatar', 'id', 'level', 'seed', 'won'], 'the same fields as a person');
+  const card = (await call('GET', '/api/player/' + hex('b'), me)).body;
+  assert.deepStrictEqual([card.won, card.rank], [big + 200, 2], 'the card has real numbers');
+  sql('DELETE FROM personas WHERE created = 6');
+  top = (await call('GET', '/api/top', me)).body;
+  assert.deepStrictEqual(top.you, { won: big + 100, rank: 1 });
+  console.log('boards: computer players rank on both boards and in a human rank');
+
+  // a match at a public table counts for them; one at a friend table counts for nobody
+  const [a, b] = [link(level(4, await guest())), link(level(4, await guest()))];
+  sql('UPDATE players SET chips = 50000 WHERE id IN (' + who(a) + ', ' + who(b) + ')');
+  const pub = await quickAt(a, 100);
+  const fr = await friendAt(b, 4, 100);
+  const [sp, sf] = await Promise.all([pub.first, fr.first]);
+  const bots = m => m.players.slice(1).map(p => p.pid);
+  const snap = ids => sql("SELECT id, week, week_won, week_xp FROM personas WHERE id IN ('" + ids.join("','") + "')");
+  const before = snap(bots(sf));
+  await Promise.all([within(pub.done, 240000, 'public match'), within(fr.done, 240000, 'friend match')]);
+  await sleep(1000);
+  assert.deepStrictEqual(snap(bots(sf)), before, 'a friend table counts for no computer player');
+  assert.deepStrictEqual(sql('SELECT week, week_won FROM players WHERE id = ' + who(b))[0], { week: 0, week_won: 0 }, 'nor for a person');
+  const st = pub.r.st;
+  st.players.slice(1).forEach((p, j) => {
+    const k = j + 1;
+    const row = snap([p.pid])[0];
+    const win = st.final.low === k;
+    const fin = st.stats.filter(f => f.fin === k).length;
+    const gain = Math.max(0, payout(100, 4, p.chips) - hold(100, 4));
+    assert.strictEqual(row.week, w);
+    assert.strictEqual(row.week_won, gain, 'a computer player counts what it won at the table');
+    assert.strictEqual(row.week_xp, 40 + (win ? 30 : 0) + 5 * fin, 'and the xp of the match');
+  });
+  assert.strictEqual(sp.players.length, 4);
+  console.log('boards: a public table counts for the computer players, a friend table for nobody');
+  for (const x of [pub, fr]) {
+    x.r.ws.close();
+    if (x.h) x.h.ws.close();
+  }
+
+  // the hourly job: a free computer player gains inside its band, one at a table nothing; the rate can be set by a test
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('simrate', '{\"won\":1000,\"xp\":100}')");
+  bot('d', 0, 3, 300, 0.5);
+  sql("UPDATE personas SET week = 0, week_won = 77, week_xp = 5 WHERE id = '" + hex('d') + "'");
+  bot('e', 0, 3, 300, 1.5);
+  sql("UPDATE personas SET busy = 'table', busy_at = " + Date.now() + " WHERE id = '" + hex('e') + "'");
+  bot('f', 0, 3, 300, 1);
+  const hour = Math.floor(Date.now() / 3600000) * 3600000;
+  await tick(hour);
+  const row = c => sql("SELECT week, week_won, week_xp, prev_week, prev_won FROM personas WHERE id = '" + hex(c) + "'")[0];
+  const d = row('d');
+  assert.strictEqual(d.week, w, 'the week turns over');
+  assert.deepStrictEqual([d.prev_week, d.prev_won], [0, 77], 'last week moves to the prev columns');
+  assert(d.week_won >= 1000 * 0.5 * 0.7 && d.week_won <= 1000 * 0.5 * 1.3, 'inside the band of its factor: ' + d.week_won);
+  assert(d.week_xp >= 100 * 0.5 * 0.7 && d.week_xp <= 100 * 0.5 * 1.3, 'xp too: ' + d.week_xp);
+  assert.deepStrictEqual(row('e'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'not while it is at a table');
+  const fr1 = row('f');
+  assert(fr1.week_won >= 700 && fr1.week_won <= 1300 && fr1.week_xp >= 70 && fr1.week_xp <= 130, 'a factor of one: ' + fr1.week_won + ' ' + fr1.week_xp);
+  await tick(hour);
+  assert(row('f').week_won > fr1.week_won, 'every hour adds');
+  sql("DELETE FROM settings WHERE key = 'simrate'");
+  sql('DELETE FROM personas WHERE created = 6');
+  console.log('boards: the hourly job adds wins and xp inside the band, and skips a table');
+}
+
 function schema() {
   const text = require('fs').readFileSync(__dirname + '/../migrations/0004_personas.sql', 'utf8');
   assert(!/insert/i.test(text), 'the migration only creates the table');
@@ -4068,13 +4153,19 @@ async function push() {
   set(w8, lw, 450);
   // already won this week: last week is in the prev columns
   set(w9, lw + 1, 100, ', prev_week = ' + lw + ', prev_won = 400');
+  // computer players are on the board: one ahead of most with last week's chips in the week columns, one with them in the prev columns
+  sql('DELETE FROM personas WHERE created = 5');
+  const bot = (i, extra) => sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, week, week_won, prev_week, prev_won) VALUES ('" + String(i).repeat(32) + "', " + (900 + i) + ", '1,1,1,0', 3, 300, 9, 3, 5000, 0, 0, 5, " + extra + ')');
+  sql('UPDATE personas SET week = 0, week_won = 0, prev_week = 0, prev_won = 0 WHERE week >= ' + (lw - 1) + ' OR prev_week >= ' + (lw - 1));
+  bot(1, lw + ', 800, 0, 0');
+  bot(2, (lw + 1) + ', 20, ' + lw + ', 550');
   f.clear();
   await tick(T + 10 * 3600000 + 5 * 60000);
   const wm = acc => [...f.apns, ...f.fcm].filter(m => acc.tokens.includes(m.token));
-  assert.deepStrictEqual(wm(w1)[0].body, { aps: { alert: { title: 'Weekly leaderboard', body: 'You won 500 chips last week and finished #3.' }, sound: 'default' }, t: 'week' });
-  assert.deepStrictEqual(wm(w2)[0].message.notification, { title: 'Haftalık sıralama', body: 'Geçen hafta 500 çip kazandın ve sıralamada 3. oldun.' });
+  assert.deepStrictEqual(wm(w1)[0].body, { aps: { alert: { title: 'Weekly leaderboard', body: 'You won 500 chips last week and finished #5.' }, sound: 'default' }, t: 'week' });
+  assert.deepStrictEqual(wm(w2)[0].message.notification, { title: 'Haftalık sıralama', body: 'Geçen hafta 500 çip kazandın ve sıralamada 5. oldun.' });
   assert.deepStrictEqual(wm(w3)[0].body.aps.alert.body, 'You won 900 chips last week and finished #1.');
-  assert.strictEqual(wm(w9)[0].message.notification.body, 'You won 400 chips last week and finished #6.', 'a player who already won this week still gets last week\'s rank');
+  assert.strictEqual(wm(w9)[0].message.notification.body, 'You won 400 chips last week and finished #8.', 'a player who already won this week still gets last week\'s rank, with the computer players in it');
   for (const [acc, why] of [[w4, 'won nothing last week'], [w5, 'switched off'], [w7, 'no chips won']]) assert.strictEqual(wm(acc).length, 0, why);
   assert.strictEqual(wm(w6).length + wm(w8).length, 0, 'in a zone ahead the clock is not Monday morning, or the UTC week has not turned');
   seen.push(...f.apns, ...f.fcm);
@@ -4084,7 +4175,8 @@ async function push() {
   assert.strictEqual(f.apns.length + f.fcm.length, n, 'sent once');
   await tick(T + 5 * 60000);
   assert.strictEqual(wm(w8).length, 1, 'once UTC is in the new week the zone ahead gets its push, in its own hours');
-  assert.strictEqual(wm(w8)[0].body.aps.alert.body, 'Geçen hafta 450 çip kazandın ve sıralamada 5. oldun.');
+  assert.strictEqual(wm(w8)[0].body.aps.alert.body, 'Geçen hafta 450 çip kazandın ve sıralamada 7. oldun.');
+  sql('DELETE FROM personas WHERE created = 5');
   console.log('push: weekly rank on Monday morning local, last week only, once');
 
   // an account that is deleted takes its devices along
@@ -5999,6 +6091,7 @@ process.on('unhandledRejection', e => {
   await sec('startWindow', () => startWindow());
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
+  await sec('boards', () => boards());
   await sec('board', () => board());
   await sec('fixes', () => fixes());
   await sec('held', () => held());

@@ -5,7 +5,7 @@ import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
 import { verify, player, award, seat, credit, charge, strike, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
-import { won, rel, apart } from './social.js';
+import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
 import { look, claim, release, giveBack, keep, spend, payoff, grant } from './persona.js';
 import { setting } from './admin.js';
@@ -1073,7 +1073,7 @@ export class Room extends DurableObject {
       }
       const played = !free && !s.left && !s.lv && (s.fake || (s.acts || 0) > (s.autos || 0));
       const xp = played ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
-      return { pid: s.pid, pay: pay, net: pay - held - fee, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > held ? pay - held : 0, fake: s.fake, done: false };
+      return { pid: s.pid, pay: pay, net: pay - held - fee, xp: xp, from: s.from, win: win, won: board && played && pay > held ? pay - held : 0, fake: s.fake, done: false };
     });
     // taken now: a seat that leaves after the end must not change what the Hub is told
     if (r.cup) r.cup.order = st.final.order.map(i => ({ pid: r.seats[i].pid, left: !r.seats[i].fake && !!r.seats[i].bot, played: !!(r.res[i] && r.res[i].xp), sharp: (r.sharp || []).length, fakes: r.seats.filter(q => q.fake).length }));
@@ -1103,6 +1103,8 @@ export class Room extends DurableObject {
       }
       await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
       await this.net(x.pid, x.net);
+    // only public tables count for the weekly board; a tournament's prizes are counted by the Hub
+    const board = r.pub && !r.cup;
       x.done = true;
       this.save();
       if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });
@@ -1141,6 +1143,7 @@ export class Room extends DurableObject {
     }).filter(Boolean);
     if (rows.length) await this.env.DB.batch(rows);
   }
+        if (r.pub && !r.cup) await personaWeek(this.env.DB, x.pid, x.won, x.xp);
 
   // The Hub gets the finishing order, and again on the next alarm until it has taken it.
   async sendCup() {

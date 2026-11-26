@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { freeCode, stub, pick } from './room.js';
 import { verify, player, seat, credit, barred, cupBarred, gates, STAKES, ENTRY, BUYINS, prizes } from './account.js';
-import { rel, won } from './social.js';
+import { rel, won, personaWeek } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
 import { flowRow } from './flow.js';
@@ -879,6 +879,7 @@ export class Hub extends DurableObject {
         m.paid = true;
         this.save();
         await grant(db, m.pid, prize[i]);
+        if (prize[i] > c.buy) await personaWeek(db, m.pid, prize[i] - c.buy, 0);
         continue;
       }
       await credit(db, m.pid, prize[i], 'cup', c.id + ':out');
