@@ -4263,6 +4263,8 @@ async function limits() {
   assert.deepStrictEqual(await within(end, 3000, 'the 4th try closes the socket'), [1008, 'tries']);
   console.log('limits: the 4th join or create try closes the socket');
 
+  // the limiter counts in windows aligned to the clock minute, so the tries must not straddle a boundary
+  while (Date.now() % 60000 > 30000) await sleep(500);
   // /ws/new is the dearest path: 10 a minute per address
   const N = addr();
   for (let i = 0; i < 10; i++) {
