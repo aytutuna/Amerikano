@@ -11,7 +11,7 @@ FCM_PROJECT = "amerikano-514707"
 REALTIME_APP_ID = ""
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["*/10 * * * *"]
 
 [[durable_objects.bindings]]
 name = "ROOM"

@@ -757,7 +757,6 @@ async function apple() {
   assert.deepStrictEqual(row(web.body.id).apple_refresh, 'rt.w1');
   console.log('apple sign-in makes an account, the same subject gets it back, every device stays signed in');
 
-  const racer = 'race.' + t.sub;
   // sign-out ends that device's session, its device row and its hub socket, and nothing else
   const so = 'out.' + t.sub;
   const au = b => Object.assign(b, { auth: b.id + '.' + b.secret });
@@ -788,6 +787,7 @@ async function apple() {
   console.log('sign-out ends one session or all of them, with the device rows and hub sockets');
 
   const burst = await Promise.all([1, 2, 3, 4].map(async i => post('/api/apple', null, await cred({ sub: racer }, null, 'r' + i))));
+  const racer = 'race.' + t.sub;
   assert.strictEqual(new Set(burst.map(x => x.body.id)).size, 1);
   assert.ok(row(burst[0].body.id).apple_refresh);
   assert.strictEqual(sessions(burst[0].body.id), 4);
@@ -2307,6 +2307,8 @@ const tick = async time => {
 
 // the tz, in minutes behind UTC, whose clock reads h:30 at this moment
 const tzAt = (now, h) => ((Math.floor(now % DAY / 60000) - h * 60 - 30 + 720) % 1440 + 1440) % 1440 - 720;
+// the tz of a device that reads half past noon now, so a test is never inside the quiet hours of invites and messages
+const noonTz = () => tzAt(Date.now(), 12);
 
 async function befriend(a, b) {
   await call('POST', '/api/friend', a, { id: b.id });
@@ -2337,12 +2339,12 @@ async function metrics() {
   const before = sql(played)[0].n;
   assert(before >= 1);
   // the first run after midnight UTC writes the row for the day that just ended; a second one leaves it alone
-  await tick((day + 1) * DAY + 30 * 60000);
+  await tick((day + 1) * DAY + 5 * 60000);
   const [row] = sql('SELECT * FROM stats WHERE day = ' + day);
   assert(row && row.new >= 1 && row.dau >= 1, 'stats row ' + JSON.stringify(row));
   assert.strictEqual(row.matches, before);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = 'old'")[0].n, 0);
-  await tick((day + 1) * DAY + 40 * 60000);
+  await tick((day + 2) * DAY - DAY + 3600000 + 5 * 60000);
   assert.deepStrictEqual(sql('SELECT * FROM stats WHERE day = ' + day), [row]);
   assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
   assert.strictEqual(sql("SELECT count(*) AS n FROM active WHERE player = '" + a.id + "'")[0].n, 0);
@@ -2991,11 +2993,11 @@ async function push() {
   for (const x of [f1, f2, fo, fb]) await befriend(g.accA, x);
   const k1 = hexTok();
   const k2 = fcmTok();
-  await reg(f1, 'apns', k1, 'en', 0);
-  await reg(f2, 'fcm', k2, 'tr', 0);
-  await reg(fo, 'apns', hexTok(), 'en', 0);
-  await reg(fx, 'apns', hexTok(), 'en', 0);
-  await reg(fb, 'apns', hexTok(), 'en', 0);
+  await reg(f1, 'apns', k1, 'en', noonTz());
+  await reg(f2, 'fcm', k2, 'tr', noonTz());
+  await reg(fo, 'apns', hexTok(), 'en', noonTz());
+  await reg(fx, 'apns', hexTok(), 'en', noonTz());
+  await reg(fb, 'apns', hexTok(), 'en', noonTz());
   const invite = async x => {
     const ack = g.a.next(m => m.t === 'sent');
     g.a.send({ t: 'invite', to: x.id });
@@ -3054,8 +3056,8 @@ async function push() {
   const g2 = await pair(3, 3);
   const [fp, fm2] = [await guest(), await guest()];
   for (const x of [fp, fm2, fb]) await befriend(g2.accA, x);
-  await reg(fp, 'apns', hexTok(), 'en', 0);
-  await reg(fm2, 'apns', hexTok(), 'en', 0);
+  await reg(fp, 'apns', hexTok(), 'en', noonTz());
+  await reg(fm2, 'apns', hexTok(), 'en', noonTz());
   await call('POST', '/api/push', fp, { invite: false });
   await call('POST', '/api/push', fm2, { on: false });
   await call('POST', '/api/block/' + fb.id, g2.accA);
@@ -3129,7 +3131,7 @@ async function push() {
   const [m1, m2] = [await guest(), await guest()];
   await befriend(m1, m2);
   const km = fcmTok();
-  await reg(m2, 'fcm', km, 'tr', 0);
+  await reg(m2, 'fcm', km, 'tr', noonTz());
   f.clear();
   assert.strictEqual((await call('POST', '/api/dm', m1, { to: m2.id, text: 'selam' })).status, 200);
   await settle(() => to(f.fcm, km).length);
@@ -3327,7 +3329,7 @@ async function push() {
   // already won this week: last week is in the prev columns
   set(w9, lw + 1, 100, ', prev_week = ' + lw + ', prev_won = 400');
   f.clear();
-  await tick(T + 10.5 * 3600000);
+  await tick(T + 10 * 3600000 + 5 * 60000);
   const wm = acc => [...f.apns, ...f.fcm].filter(m => acc.tokens.includes(m.token));
   assert.deepStrictEqual(wm(w1)[0].body, { aps: { alert: { title: 'Weekly leaderboard', body: 'You won 500 chips last week and finished #3.' }, sound: 'default' }, t: 'week' });
   assert.deepStrictEqual(wm(w2)[0].message.notification, { title: 'Haftalık sıralama', body: 'Geçen hafta 500 çip kazandın ve sıralamada 3. oldun.' });
@@ -3337,10 +3339,10 @@ async function push() {
   assert.strictEqual(wm(w6).length + wm(w8).length, 0, 'in a zone ahead the clock is not Monday morning, or the UTC week has not turned');
   seen.push(...f.apns, ...f.fcm);
   const n = f.apns.length + f.fcm.length;
-  await tick(T + 10.5 * 3600000);
-  await tick(T + 11.5 * 3600000);
+  await tick(T + 10 * 3600000 + 5 * 60000);
+  await tick(T + 11 * 3600000 + 5 * 60000);
   assert.strictEqual(f.apns.length + f.fcm.length, n, 'sent once');
-  await tick(T + 0.5 * 3600000);
+  await tick(T + 5 * 60000);
   assert.strictEqual(wm(w8).length, 1, 'once UTC is in the new week the zone ahead gets its push, in its own hours');
   assert.strictEqual(wm(w8)[0].body.aps.alert.body, 'Geçen hafta 450 çip kazandın ve sıralamada 5. oldun.');
   console.log('push: weekly rank on Monday morning local, last week only, once');
@@ -3355,13 +3357,15 @@ async function push() {
   const old = await guest();
   await reg(old, 'fcm', fcmTok(), 'en', 0);
   sql('UPDATE devices SET seen = 1 WHERE player = ' + who(old));
-  await tick(Date.UTC(2031, 0, 8, 3, 10));
+  await tick(Date.UTC(2031, 0, 8, 3, 5));
   assert.strictEqual(devs(old).length, 0, 'a device not seen for 90 days goes at 03:00 UTC');
   console.log('push: account deletion and old devices remove their rows');
 
-  // a run makes at most 40 subrequests; the players it does not reach stay unmarked for the next hour
+  // a run makes a limited number of subrequests; a small budget shows the players it does not reach staying unmarked, and the
+  // next ticks, ten minutes apart inside the evening window, serve the rest
   sql('DELETE FROM devices');
   const T2 = Date.UTC(2031, 5, 10, 12, 0);
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('pushbudget', '40')");
   const mine = acc => sql('SELECT daily_sent AS s FROM players WHERE id = ' + who(acc))[0].s;
   const crowd = [];
   for (let i = 0; i < 30; i++) {
@@ -3373,21 +3377,83 @@ async function push() {
   const served = crowd.filter(c => mine(c) === T2).length;
   assert(served > 5 && served < 30, 'the budget served ' + served + ' of 30');
   assert.strictEqual(f.apns.length, served, 'a player is marked only when pushed');
-  await tick(T2 + 3600000);
-  assert.strictEqual(crowd.filter(c => mine(c) === T2 || mine(c) === T2 + 3600000).length, 30, 'the next run takes the rest');
+  await tick(T2 + 3 * 60000);
+  assert.strictEqual(f.apns.length, served + crowd.filter(c => mine(c) === T2 + 3 * 60000).length, 'a run minutes later pushes new players only');
+  for (let i = 2; i <= 5; i++) await tick(T2 + i * 600000);
+  assert.strictEqual(crowd.filter(c => mine(c) >= T2).length, 30, 'the ticks inside the window take the rest');
   assert.strictEqual(f.apns.length, 30, 'nobody twice');
   // a player with ten devices costs up to 31, so the second one does not fit and is handed back
+  sql("DELETE FROM settings WHERE key = 'pushbudget'");
   sql('DELETE FROM devices');
   const T3 = Date.UTC(2031, 5, 11, 12, 0);
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('pushbudget', '40')");
   const [big1, big2] = [await guest(), await guest()];
   for (const b of [big1, big2]) await mk(b, Array.from({ length: 10 }, () => ['apns', tzAt(T3, 18), 'en']));
   f.clear();
   await tick(T3);
   assert.deepStrictEqual([big1, big2].map(b => mine(b) === T3).sort(), [false, true], 'one of two big players fits');
   assert.strictEqual(f.apns.length, 10);
-  await tick(T3 + 3600000);
-  assert.strictEqual(f.apns.length, 20, 'the one left over is pushed next hour');
-  console.log('push: a run stays inside its subrequest budget and leaves the rest unmarked');
+  await tick(T3 + 600000);
+  assert.strictEqual(f.apns.length, 20, 'the one left over is pushed on the next tick');
+  sql("DELETE FROM settings WHERE key = 'pushbudget'");
+  // the full budget serves a crowd in one run
+  sql('DELETE FROM devices');
+  const T5 = Date.UTC(2031, 5, 13, 12, 0);
+  const wide = [];
+  for (let i = 0; i < 30; i++) {
+    wide.push(await guest());
+    await mk(wide[i], [['apns', tzAt(T5, 18), 'en']]);
+  }
+  f.clear();
+  await tick(T5);
+  assert.strictEqual(wide.filter(c => mine(c) === T5).length, 30, 'with 900 subrequests nobody waits');
+  console.log('push: a run stays inside its subrequest budget, the next ticks of the window take the rest');
+
+  // invites and messages are held back at night on the device's own clock; the lists in the app still have them
+  const [qa, qb, qc, qd] = [await guest(), await guest(), await guest(), await guest()];
+  await befriend(qa, qb);
+  await befriend(qa, qc);
+  await befriend(qa, qd);
+  const kq = { b: hexTok(), c: hexTok(), d: hexTok() };
+  const clock = h => tzAt(Date.now(), h);
+  await reg(qb, 'apns', kq.b, 'en', clock(23));
+  await reg(qc, 'apns', kq.c, 'en', clock(3));
+  await reg(qd, 'apns', kq.d, 'en', clock(7));
+  f.clear();
+  for (const x of [qb, qc, qd]) assert.strictEqual((await call('POST', '/api/dm', qa, { to: x.id, text: 'hej' })).status, 200);
+  await sleep(600);
+  assert.deepStrictEqual([kq.b, kq.c, kq.d].map(k => to(f.apns, k).length), [0, 0, 0], 'a message at 23:30, 03:30 or 07:30 on the device does not push');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM messages WHERE sender = ' + who(qa))[0].n, 3, 'it is still in the list');
+  await reg(qb, 'apns', kq.b, 'en', clock(8));
+  await reg(qc, 'apns', kq.c, 'en', clock(21));
+  await call('POST', '/api/dm', qa, { to: qb.id, text: 'morning' });
+  await call('POST', '/api/dm', qa, { to: qc.id, text: 'evening' });
+  await settle(() => to(f.apns, kq.b).length && to(f.apns, kq.c).length);
+  assert.deepStrictEqual([kq.b, kq.c].map(k => to(f.apns, k).length), [1, 1], 'at 08:30 and 21:30 it does, and the held message left no gap behind');
+  const gq = await pair(3, 3, [qa, qd]);
+  await reg(qd, 'apns', kq.d, 'en', clock(2));
+  f.clear();
+  gq.a.send({ t: 'invite', to: qd.id });
+  await gq.a.next(m => m.t === 'sent');
+  await sleep(400);
+  assert.strictEqual(to(f.apns, kq.d).length, 0, 'an invite at 02:30 on the device does not push');
+  gq.a.ws.close();
+  gq.b.ws.close();
+  console.log('push: invites and messages keep quiet from 22:00 to 08:00 on the device clock');
+
+  // a token that signs in as a second account is the second account's alone
+  const [ta, tb, tc] = [await guest(), await guest(), await guest()];
+  const tk = hexTok();
+  await reg(ta, 'apns', tk, 'en', noonTz());
+  await reg(tb, 'apns', tk, 'en', noonTz());
+  f.clear();
+  await call('POST', '/api/friend', tc, { id: ta.id });
+  await sleep(500);
+  assert.strictEqual(to(f.apns, tk).length, 0, 'the first account no longer pushes to the token');
+  await call('POST', '/api/friend', tc, { id: tb.id });
+  await settle(() => to(f.apns, tk).length);
+  assert.strictEqual(to(f.apns, tk).length, 1, 'the second does');
+  console.log('push: a token taken by a second account stops pushing to the first');
 
   // one job failing does not stop the next
   const T4 = Date.UTC(2031, 5, 12, 3, 5);

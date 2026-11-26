@@ -3,6 +3,7 @@ import { unb64, b64 } from './apple.js';
 import { reward } from './account.js';
 import { week } from './social.js';
 import { rollup } from './stats.js';
+import { setting } from './admin.js';
 import more from './text.js';
 
 const DAY = 86400000;
@@ -11,8 +12,9 @@ const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const LIVE = { apns: 'https://api.push.apple.com', sandbox: 'https://api.sandbox.push.apple.com', fcm: 'https://fcm.googleapis.com', token: 'https://oauth2.googleapis.com/token' };
 const JWT_LIFE = 50 * 60000;
 const SOON = 60000;
-// the Free plan allows 50 subrequests a run, fetches and D1 calls alike; players the budget does not reach wait for the next hour
-const BUDGET = 40;
+// subrequests a run may make, fetches and D1 calls alike; players the budget does not reach wait for the next run
+const BUDGET = 900;
+const QUIET = [22, 8];
 // claiming players, reading their devices and handing back the ones that did not fit: at most 3 calls a round
 const ROUND = 3;
 // what one player is assumed to cost when choosing how many to claim
@@ -158,18 +160,25 @@ async function viaFcm(env, d, m, tap, ttl) {
 
 // The devices of one player that want this kind of push.
 export async function devices(env, id, k) {
-  const { results } = await env.DB.prepare('SELECT d.token, d.kind, d.lang, d.sandbox FROM devices d JOIN players p ON p.id = d.player WHERE d.player = ?1 AND p.push_on = 1 AND p.' + KIND[k].col + ' = 1').bind(id).all();
+  const { results } = await env.DB.prepare('SELECT d.token, d.kind, d.lang, d.sandbox, d.tz FROM devices d JOIN players p ON p.id = d.player WHERE d.player = ?1 AND p.push_on = 1 AND p.' + KIND[k].col + ' = 1').bind(id).all();
   return results;
 }
 
 // One push of this kind from one player to another per gap. The last one is kept in D1, so the gap outlives the hub.
 export async function ring(env, from, to, k, v) {
-  const ds = await devices(env, to, k);
-  if (!ds.length) return;
   const now = Date.now();
+  // invites and messages do not wake a phone at night; the lists in the app still show them
+  const ds = (await devices(env, to, k)).filter(d => !(k === 'invite' || k === 'dm') || !asleep(now, d.tz));
+  if (!ds.length) return;
   const r = await env.DB.prepare('INSERT INTO push_log (kind, sender, target, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (kind, sender, target) DO UPDATE SET at = ?4 WHERE at <= ?5')
     .bind(k, from, to, now, now - KIND[k].gap).run();
   if (r.meta.changes) await send(env, ds, k, v);
+}
+
+// whether the device's own clock reads a quiet hour; tz is minutes behind UTC
+function asleep(now, tz) {
+  const h = Math.floor(((now - tz * 60000) % DAY + DAY) % DAY / 3600000);
+  return h >= QUIET[0] || h < QUIET[1];
 }
 
 // Pushes to these devices in each one's language and returns how many were taken. A sender without its key does nothing.
@@ -249,6 +258,9 @@ async function weeklies(env, now) {
   await serve(env, 'week', 'week_sent', n => env.DB.prepare(sql).bind(last, n), z, p => ({ won: p.won, rank: p.place }));
 }
 
+// the hourly jobs run on the first tick of the hour only
+const hourly = now => new Date(now).getUTCMinutes() < 10;
+
 async function cleanup(env, now) {
   if (new Date(now).getUTCHours() !== 3) return;
   spend(env);
@@ -262,10 +274,15 @@ async function cleanup(env, now) {
 }
 
 export async function cron(env, now) {
-  const run = Object.assign({}, env, { bud: { left: BUDGET } });
+  // a test can name a small budget through a settings row, to see the run stop short
+  const small = env.PACE && env.DB && await setting(env.DB, 'pushbudget');
+  const run = Object.assign({}, env, { bud: { left: small ? Number(small) : BUDGET } });
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
-  // weeklies first, as they only have work on Mondays; one failing job does not stop the others
-  for (const job of keys ? [rollup, cleanup, weeklies, dailies] : [rollup, cleanup]) {
+  // weeklies first, as they only have work on Mondays; one failing job does not stop the others. The daily push is tried on
+  // every tick, so a crowd that does not fit one run is served by the next within its window.
+  const jobs = hourly(now) ? [rollup, cleanup, ...keys ? [weeklies] : []] : [];
+  if (keys) jobs.push(dailies);
+  for (const job of jobs) {
     try {
       await job(run, now);
     } catch (e) {
