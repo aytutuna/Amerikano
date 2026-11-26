@@ -1,4 +1,4 @@
-const { test, expect, guest, signedIn, fakeStore } = require('./fixtures');
+const { test, expect, guest, signedIn, fakeStore, sql } = require('./fixtures');
 
 test('guest sign-in reaches the lobby', async ({ page }) => {
   await page.goto(process.env.AMK_WEB + '/');
@@ -71,6 +71,27 @@ test('after two missed turns the seat shows away with a button to take it back',
   await expect(idle).toBeHidden();
   // the count starts over, so it takes two more missed turns to show again
   await expect(idle).toBeVisible({ timeout: 90000 });
+});
+
+test('an online table never says bot, and a computer player away reads like anyone away', async ({ page }) => {
+  // every match sends one computer player away for a while, an odds setting only the test server reads
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('awayodds', '1')");
+  try {
+    await guest(page);
+    await page.click('[data-k=quick]');
+    await expect(page.locator('#game')).toBeVisible({ timeout: 60000 });
+    await expect(page.locator('.seat .tw', { hasText: 'Bot' })).toHaveCount(0);
+    await expect(page.locator('#game')).not.toContainText(/Sharp|Relaxed/);
+    const word = await page.evaluate(() => I18n.t('away'));
+    // the test server makes the time away a fraction of a second, so it is watched every frame
+    const seen = await page.waitForFunction(() => { const e = document.querySelector('.seat.away:not([data-p="0"]) .tw'); return e && e.textContent; }, null, { polling: 'raf', timeout: 90000 });
+    expect(await seen.jsonValue()).toBe(word);
+    // and it comes back
+    await expect(page.locator('.seat.away:not([data-p="0"])')).toHaveCount(0, { timeout: 90000 });
+    await expect(page.locator('.seat .tw', { hasText: 'Bot' })).toHaveCount(0);
+  } finally {
+    sql("DELETE FROM settings WHERE key = 'awayodds'");
+  }
 });
 
 test('shop: buy a token pack and wear a cosmetic', async ({ page }) => {

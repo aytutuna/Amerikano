@@ -95,6 +95,9 @@ export async function claim(db, code, level, stake, avoid, fee = 0) {
   return make(db, code, level, stake, avoid, now, fee);
 }
 
+// whether a computer player stays for the next match: a little more often after a win, and only with the bank to cover entry and fee
+export const stays = (won, afford) => afford && Math.random() < (won ? 0.7 : 0.5);
+
 export function release(db, code) {
   return db.prepare('UPDATE personas SET busy = NULL WHERE busy = ?').bind(code).run();
 }

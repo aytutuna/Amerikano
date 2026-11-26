@@ -7,9 +7,9 @@ import { verify, player, award, seat, credit, charge, strike, grantTokens, payou
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
-import { look, claim, release, giveBack, keep, spend, payoff, grant } from './persona.js';
+import { look, claim, release, giveBack, keep, spend, payoff, grant, stays } from './persona.js';
 import { setting } from './admin.js';
-import { flowRow } from './flow.js';
+import { flowRow, rematches } from './flow.js';
 import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -22,7 +22,8 @@ const LAPSE = 90000;
 const SLOW = 1500;
 const NEXT = 20000;
 const REMATCH = 15000;
-const STAYS = 0.6;
+// about one match in fifteen has a computer player away for a while
+const AWAY = 1 / 15;
 const KEEP = 600000;
 const CUP_KEEP = 3 * 3600000;
 const BURST = 3;
@@ -259,6 +260,7 @@ export class Room extends DurableObject {
       return;
     }
     await this.lapse();
+    if (this.st) this.returned();
     if (r.over && !r.paid) await this.settle().catch(() => {});
     if (this.owes() && r.paid) await this.sendCup().catch(() => {});
     if (r.rm) return this.tick();
@@ -575,8 +577,8 @@ export class Room extends DurableObject {
     }
     for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
     r.seats = r.seats.map((s, i) => gone[i] ? null : s);
-    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover']) delete s[k];
-    for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted', 'sharp']) delete r[k];
+    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover', 'awayAt', 'away']) delete s[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted', 'sharp', 'rolled']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
     if (r.open) this.window();
     if (!r.seats.some(s => s && s.pid && !s.fake)) r.dead = Date.now() + KEEP * this.k;
@@ -636,6 +638,7 @@ export class Room extends DurableObject {
     }
     await this.record();
     const sharp = await this.sharpSeats();
+    await this.awayRoll();
     const st = Game.newMatch({ players: r.n, games: r.games, level: 'relaxed', allBots: true });
     st.players.forEach((p, i) => {
       p.name = r.seats[i].name;
@@ -658,6 +661,41 @@ export class Room extends DurableObject {
       this.save();
     }
     return r.sharp;
+  }
+
+  // Once per match, one computer seat may be set to go away a while after the start; the odds are a guess the daily totals let us retune.
+  async awayRoll() {
+    const { r } = this;
+    if (r.rolled) return;
+    r.rolled = true;
+    const odds = this.env.PACE ? Number(await setting(this.env.DB, 'awayodds')) || AWAY : AWAY;
+    const fakes = r.seats.map((s, i) => s.fake ? i : -1).filter(i => i >= 0);
+    if (fakes.length && Math.random() < odds) r.seats[fakes[pick(fakes.length)]].awayAt = Date.now() + between(10000, 60000) * this.k;
+    this.save();
+  }
+
+  // a computer player in the middle of its time away
+  away(s) {
+    return !!s && !!s.fake && s.away > Date.now();
+  }
+
+  // when the first computer player now away is due back
+  awayEnd() {
+    return Math.min(Infinity, ...this.r.seats.filter(s => this.away(s)).map(s => s.away));
+  }
+
+  // a computer player whose time is up is back, and the table is told
+  returned() {
+    let any = false;
+    for (const s of this.r.seats) {
+      if (s && s.away && s.away <= Date.now()) {
+        delete s.away;
+        any = true;
+      }
+    }
+    if (!any) return;
+    this.save();
+    this.send();
   }
 
   // one row per seat that took part, computer players too; a repeat of the deal leaves the first rows as they are
@@ -1011,6 +1049,10 @@ export class Room extends DurableObject {
     const i = this.actor();
     const r = this.r;
     const s = r.seats[i];
+    if (s.awayAt && Date.now() >= s.awayAt) {
+      delete s.awayAt;
+      s.away = Date.now() + between(10000, 40000) * this.k;
+    }
     if (!s.bot) {
       s.autos = (s.autos || 0) + 1;
       if (st.phase !== 'claim' && s.cover !== this.turn()) {
@@ -1020,7 +1062,8 @@ export class Room extends DurableObject {
       if (s.misses >= 2 || !this.here(i)) s.auto = true;
     }
     if (st.justOpened) st.played = true;
-    if (s.bot) Game.botStep(st);
+    // a computer player away plays what a stand-in for a person would, so the two look alike
+    if (s.bot) this.away(s) ? Game.safeStep(st) : Game.botStep(st);
     else if (s.lv) {
       // a counted leave plays like one that pressed Leave, but the seat can still be taken back by its player
       const p = st.players[i];
@@ -1060,6 +1103,8 @@ export class Room extends DurableObject {
     const fin = st.stats.map(x => x.fin);
     // a friend table for no chips is a place to play with friends, not a way to earn
     const free = !r.stake && !r.cup;
+    // only public tables count for the weekly board; a tournament's prizes are counted by the Hub
+    const board = r.pub && !r.cup;
     r.res = r.seats.map((s, i) => {
       if (!s.pid || !s.esc) return null;
       const win = st.final.low === i;
@@ -1098,13 +1143,12 @@ export class Room extends DurableObject {
         x.done = true;
         this.save();
         if (r.stake) r.seats[i].bank = await payoff(this.env.DB, x.pid, x.pay, x);
+        if (r.pub && !r.cup) await personaWeek(this.env.DB, x.pid, x.won, x.xp);
         await this.net(x.pid, x.net);
         continue;
       }
       await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
       await this.net(x.pid, x.net);
-    // only public tables count for the weekly board; a tournament's prizes are counted by the Hub
-    const board = r.pub && !r.cup;
       x.done = true;
       this.save();
       if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });
@@ -1143,7 +1187,6 @@ export class Room extends DurableObject {
     }).filter(Boolean);
     if (rows.length) await this.env.DB.batch(rows);
   }
-        if (r.pub && !r.cup) await personaWeek(this.env.DB, x.pid, x.won, x.xp);
 
   // The Hub gets the finishing order, and again on the next alarm until it has taken it.
   async sendCup() {
@@ -1159,9 +1202,12 @@ export class Room extends DurableObject {
     const now = Date.now();
     const p = {};
     r.seats.forEach((s, i) => {
-      if (s.fake) p[i] = { at: now + between(2000, 12000) * this.k, stay: Math.random() < STAYS && s.bank >= ENTRY * r.stake + feeFor(r.stake) };
+      if (s.fake) p[i] = { at: now + between(2000, 12000) * this.k, stay: stays(this.st.final.low === i, s.bank >= ENTRY * r.stake + feeFor(r.stake)) };
     });
-    r.rm = { end: now + REMATCH * this.k, want: [], p: p };
+    const fakes = Object.keys(p).length;
+    r.rm = { end: now + REMATCH * this.k, want: [], p: p, fakes: fakes };
+    // who was offered a rematch and who took it goes into the day's totals, for tables with a computer player
+    if (fakes) this.ctx.waitUntil(rematches(this.env.DB, r.pub ? 'pub' : 'friend', r.stake, { human: this.humans().length, fake: fakes }).catch(() => {}));
     this.report();
     this.arm();
   }
@@ -1217,6 +1263,10 @@ export class Room extends DurableObject {
     if (!rm) return;
     const want = this.wanting();
     r.rm = null;
+    if (rm.fakes) {
+      const fakeYes = want.filter(i => r.seats[i].fake).length;
+      this.ctx.waitUntil(rematches(this.env.DB, r.pub ? 'pub' : 'friend', r.stake, { humanYes: want.length - fakeYes, fakeYes: fakeYes }).catch(() => {}));
+    }
     this.lines = [];
     if (!want.some(i => !r.seats[i].fake)) {
       await release(this.env.DB, r.code);
@@ -1236,10 +1286,10 @@ export class Room extends DurableObject {
     }
     r.seats = r.seats.map((s, i) => {
       if (!want.includes(i)) return null;
-      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv']) delete s[k];
+      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv', 'awayAt', 'away']) delete s[k];
       return s;
     });
-    for (const k of ['id', 'res', 'paid', 'wait', 'sharp']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'sharp', 'rolled']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: r.pub ? Date.now() + KEEP * this.k : 0 });
     this.st = null;
     this.ctx.storage.delete('st');
@@ -1303,7 +1353,7 @@ export class Room extends DurableObject {
       this.save();
     }
     const dead = (r.over && !r.paid) || this.owes() ? Infinity : r.dead || Infinity;
-    const t = Math.min(this.due(), dead, this.strays(), this.lapseAt());
+    const t = Math.min(this.due(), dead, this.strays(), this.lapseAt(), this.awayEnd());
     // A lobby with no timer still gets a periodic check
     // Whole milliseconds, and never the time of the alarm that just ran: that one is dropped.
     const at = Math.max(Math.ceil(t < Infinity ? t : Date.now() + KEEP * this.k), Date.now() + 1);
@@ -1391,7 +1441,7 @@ export class Room extends DurableObject {
         const i = (k + me) % n;
         const o = {
           name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level, wear: r.seats[i].wear || {}, vip: !!r.seats[i].vip,
-          bank: r.seats[i].bank, away: !r.seats[i].bot && (!here.has(i) || !!r.seats[i].auto), n: p.hand.length,
+          bank: r.seats[i].bank, away: !r.seats[i].bot && (!here.has(i) || !!r.seats[i].auto) || this.away(r.seats[i]), n: p.hand.length,
           opened: p.opened, claims: p.claims, chips: p.chips, score: p.score
         };
         if (k === 0) o.hand = ids(p.hand);

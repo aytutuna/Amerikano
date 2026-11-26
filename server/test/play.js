@@ -1716,6 +1716,62 @@ async function boards() {
   console.log('boards: the hourly job adds wins and xp inside the band, and skips a table');
 }
 
+// A computer player is now and then away for a while and plays only safe moves then, and between matches it stays for a rematch at
+// the rates the daily totals count. The odds of an away match can be raised by a setting only a test can use.
+async function rematchPersona() {
+  const { stays } = await import('../src/persona.js');
+  let won = 0;
+  let lost = 0;
+  const N = 6000;
+  for (let i = 0; i < N; i++) {
+    won += stays(true, true) ? 1 : 0;
+    lost += stays(false, true) ? 1 : 0;
+  }
+  assert(won / N > 0.67 && won / N < 0.73, 'a winner stays about 0.7 of the time: ' + won / N);
+  assert(lost / N > 0.47 && lost / N < 0.53, 'a loser about 0.5: ' + lost / N);
+  assert(!stays(true, false) && !stays(false, false), 'one that cannot cover entry and fee never stays');
+  console.log('rematch: stay rates ' + (won / N).toFixed(2) + ' after a win and ' + (lost / N).toFixed(2) + ' after a loss');
+
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('awayodds', '1')");
+  const acc = link(level(4, await guest()));
+  sql('UPDATE players SET chips = 50000 WHERE id = ' + who(acc));
+  const day = Math.floor(Date.now() / DAY);
+  const total = () => sql("SELECT coalesce(sum(rm_human), 0) AS h, coalesce(sum(rm_human_yes), 0) AS hy, coalesce(sum(rm_fake), 0) AS f, coalesce(sum(rm_fake_yes), 0) AS fy FROM persona_day WHERE day = " + day)[0];
+  const before = total();
+  const run = await quickAt(acc, 100);
+  const away = [];
+  let first = true;
+  let flagged = 0;
+  const forbidden = ['take', 'claim', 'open', 'lay', 'add', 'finish'];
+  run.r.handlers.push(m => {
+    if (m.t !== 'state') return;
+    const aw = m.players.map(p => p.away);
+    if (first) {
+      first = false;
+      assert(!aw.some(Boolean), 'nobody is away in the first state');
+    }
+    aw.forEach((x, k) => {
+      if (k && x) {
+        flagged++;
+        for (const e of m.log) if (e.p === k) assert(!forbidden.includes(e.k), 'an away seat makes only safe moves: ' + e.k);
+      }
+    });
+    away.push(aw.slice(1).some(Boolean));
+  });
+  await within(run.done, 240000, 'match end');
+  await sleep(1500);
+  assert(away.includes(true), 'a computer player was shown away');
+  assert(away.lastIndexOf(true) < away.length - 1 && away.slice(away.indexOf(true)).includes(false), 'and it came back');
+  assert(flagged > 0 && run.r.st.phase === 'matchend', 'the match went on to its end');
+  const after = total();
+  assert(after.f - before.f >= 3 && after.fy <= after.f && after.fy - before.fy <= after.f - before.f, 'the computer players\' rematch offers are counted: ' + JSON.stringify([before, after]));
+  assert(after.h - before.h >= 1 && after.hy - before.hy <= after.h - before.h, 'and the person\'s');
+  sql("DELETE FROM settings WHERE key = 'awayodds'");
+  console.log('rematch: a computer player went away and came back inside a match, the totals count the offers');
+  run.r.ws.close();
+  run.h.ws.close();
+}
+
 function schema() {
   const text = require('fs').readFileSync(__dirname + '/../migrations/0004_personas.sql', 'utf8');
   assert(!/insert/i.test(text), 'the migration only creates the table');
@@ -6092,6 +6148,7 @@ process.on('unhandledRejection', e => {
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
   await sec('boards', () => boards());
+  await sec('rematchPersona', () => rematchPersona());
   await sec('board', () => board());
   await sec('fixes', () => fixes());
   await sec('held', () => held());
