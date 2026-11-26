@@ -88,10 +88,10 @@ test('a quick phrase and an emote at an online table', async ({ page }) => {
   const phrase = page.locator('.sheet .says .btn').first();
   const said = await phrase.textContent();
   await phrase.click();
-  await expect(page.locator('.bub:not(.emo)', { hasText: said })).toHaveCount(1);
+  await expect(page.locator('.seat[data-p="0"] .bub:not(.emo)', { hasText: said })).toHaveCount(1);
   await page.click('#chat');
   await page.locator('.sheet .emos .emo').first().click();
-  await expect(page.locator('.bub.emo use[href="#e-smile"]')).toHaveCount(1);
+  await expect(page.locator('.seat[data-p="0"] .bub.emo use[href="#e-smile"]')).toHaveCount(1);
 });
 
 test('a 1,000 cup from joining to the result', async ({ page }) => {
