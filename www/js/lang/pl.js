@@ -257,7 +257,7 @@
     },
 
     idle: {
-      note: 'Skończył ci się czas, więc ktoś gra za ciebie.',
+      note: 'Skończył ci się czas, więc twoje miejsce jest rozgrywane za ciebie.',
       back: 'Jestem z powrotem'
     },
 
