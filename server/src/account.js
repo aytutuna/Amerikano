@@ -125,6 +125,8 @@ export async function charge(db, id, held, fee, match) {
 // Safe to run again for the same match.
 export async function strike(db, id, match, code, stake, now = Date.now()) {
   await db.prepare('INSERT OR IGNORE INTO leaves (player, match, at, code, stake, kind) VALUES (?, ?, ?, ?, ?, ?)').bind(id, match, now, code, stake, 'pub').run();
+  // a repeat works from the first run's time, so the cooldown does not move
+  now = (await db.prepare('SELECT at FROM leaves WHERE player = ? AND match = ?').bind(id, match).first()).at;
   const { n } = await db.prepare('SELECT count(*) AS n FROM leaves WHERE player = ? AND at > ?').bind(id, now - 7 * DAY).first();
   if (n < 3) return n;
   const cost = Math.min(stake, 2500);

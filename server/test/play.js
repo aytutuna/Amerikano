@@ -4833,6 +4833,36 @@ async function leaves() {
   hh.ws.close();
   console.log('leaves: a seat gone for the window counts once, a quick return counts nothing');
 
+  // the same match counted again, as when a lapsed seat comes back and presses Leave: nothing moves
+  const k1 = await mk(4, 100000);
+  old(k1, 2, 3600000);
+  const kh = await hub(k1);
+  const ks = kh.next(m => m.t === 'seated');
+  kh.send({ t: 'quick', stake: 100 });
+  const kseat = await ks;
+  let kr = seated(kseat);
+  await kr.next(m => m.t === 'state');
+  kr.ws.close();
+  for (let i = 0; i < 60 && !penalties(k1).length; i++) await sleep(300);
+  assert.strictEqual(count(k1), 3);
+  const first = row(k1);
+  assert(first.cool_until > 0, 'cooling after the lapse');
+  kr = client('/ws/' + kseat.code);
+  await kr.ready;
+  kr.send({ t: 'join', token: kseat.token });
+  await kr.next(m => m.t === 'joined');
+  await kr.next(m => m.t === 'state');
+  kr.send({ t: 'leave' });
+  await sleep(1200);
+  assert.strictEqual(count(k1), 3, 'one row per match');
+  assert.deepStrictEqual(penalties(k1).length, 1, 'charged once');
+  assert.strictEqual(row(k1).cool_until, first.cool_until, 'the cooldown does not move');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'leave' AND a = " + who(k1))[0].n, 1);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE action = 'leave' AND target = " + who(k1))[0].n, 1);
+  kr.ws.close();
+  kh.ws.close();
+  console.log('leaves: counting the same match twice changes nothing');
+
   // the nightly cleanup keeps 35 days, and deleting the account takes its rows
   const T = Date.UTC(2031, 5, 21, 3, 5);
   const seed = (m, at) => sql('INSERT INTO leaves (player, match, at, code, stake, kind) VALUES (' + who(d) + ", '" + m + "', " + at + ", 'PURG', 500, 'pub')");
@@ -4843,6 +4873,32 @@ async function leaves() {
   assert.strictEqual((await call('DELETE', '/api/me', d)).status, 200);
   assert.strictEqual(count(d), 0, 'deleting the account deletes its leaves');
   console.log('leaves: purged after 35 days, removed with the account');
+}
+
+// a seat that lapsed but came back plays the rematch as anyone does: xp for it, and it can lapse again
+async function lapseRematch() {
+  const t = await seatTwo(100);
+  const xp = () => sql('SELECT xp FROM players WHERE id = ' + who(t.accA))[0].xp;
+  await t.ra.ready;
+  await t.rb.next(m => m.t === 'state');
+  const before = xp();
+  t.ra.ws.close();
+  for (let i = 0; i < 60 && !sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(t.accA))[0].n; i++) await sleep(300);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(t.accA))[0].n, 1, 'the lapse counted');
+  const back = client('/ws/' + t.A.code);
+  await back.ready;
+  play(back, { finish: () => {} });
+  back.send({ t: 'join', token: t.A.token });
+  await within(back.next(m => m.t === 'state' && m.rm, 150000), 160000, 'match end');
+  const next = [back, t.rb].map(c => c.next(m => m.t === 'state' && m.phase !== 'matchend'));
+  back.send({ t: 'rematch' });
+  t.rb.send({ t: 'rematch' });
+  await within(Promise.all(next), 30000, 'new match');
+  await within(back.next(m => m.t === 'state' && m.rm, 150000), 160000, 'second match end');
+  for (let i = 0; i < 30 && xp() === before; i++) await sleep(300);
+  assert(xp() > before, 'the rematch gave xp');
+  console.log('lapseRematch: a seat that lapsed earns in the rematch');
+  for (const c of [back, t.rb, t.a, t.b]) c.ws.close();
 }
 
 // no leave from a friend table or a tournament was counted anywhere in the run
@@ -5032,6 +5088,7 @@ process.on('unhandledRejection', e => {
   await sec('fee', () => fee());
   await sec('gates', () => gates());
   await sec('leaves', () => leaves());
+  await sec('lapseRematch', () => lapseRematch());
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
   await sec('board', () => board());
