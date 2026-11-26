@@ -614,28 +614,37 @@ export class Room extends DurableObject {
     return rows.length ? this.env.DB.batch(rows) : null;
   }
 
+  // The seat keeps its escrow and counters, so the match settles it by its real result; it plays on as a relaxed stand-in with no
+  // token of its own, and nothing from a match left early counts for xp, tokens or wins.
   leave(ws, a) {
     const r = this.r;
     if (r.seats[a.seat]) this.hush(r.seats[a.seat].pid);
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
-      const s = r.seats[a.seat];
-      // The stand-in has no escrow, so what was held is lost here and net is settled now. The row is made too, in case the deal had not recorded it yet.
-      if (r.id && !r.over && s.esc) {
-        const now = Date.now();
-        this.ctx.waitUntil(this.env.DB.batch([
-          this.seatRow(s, a.seat, now),
-          this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ?, net = ? WHERE match = ? AND player = ?').bind(now, -(hold(r.stake, r.games) + feeFor(r.stake)), r.id, s.pid)
-        ]));
+      const { token, gone, auto, ...s } = r.seats[a.seat];
+      const live = !!r.id && !r.over && !!s.esc && !!this.st;
+      r.seats[a.seat] = Object.assign(s, { bot: true, left: live || undefined });
+      if (this.st) {
+        this.st.players[a.seat].bot = true;
+        this.st.players[a.seat].level = 'relaxed';
       }
-      r.seats[a.seat] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true };
-      if (this.st) this.st.players[a.seat].bot = true;
+      if (live) this.ctx.waitUntil(this.gone(r.seats[a.seat], a.seat).catch(e => console.error('leave', e)));
     } else {
       r.seats[a.seat] = null;
       if (r.host === a.seat) r.host = this.firstHuman();
     }
     ws.close(1000, 'left');
     this.left(ws);
+  }
+
+  // The row is made too, in case the deal had not recorded it yet.
+  async gone(s, i) {
+    const { r } = this;
+    const now = Date.now();
+    await this.env.DB.batch([
+      this.seatRow(s, i, now),
+      this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ? WHERE match = ? AND player = ?').bind(now, r.id, s.pid)
+    ]);
   }
 
   left(ws) {
@@ -966,7 +975,7 @@ export class Room extends DurableObject {
         console.error('loss past the hold', r.code, s.pid, pay);
         pay = 0;
       }
-      const played = !free && (s.fake || (s.acts || 0) > (s.autos || 0));
+      const played = !free && !s.left && (s.fake || (s.acts || 0) > (s.autos || 0));
       const xp = played ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
       return { pid: s.pid, pay: pay, net: pay - held - fee, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > held ? pay - held : 0, fake: s.fake, done: false };
     });

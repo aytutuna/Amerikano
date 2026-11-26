@@ -386,6 +386,26 @@ async function math() {
     for (const p of st.players) least = Math.min(least, p.chips + maxLoss(games));
   }
   assert.strictEqual(least, 0, 'a seat never loses more than maxLoss(games)');
+  // a seat's own level beats the match's: only a relaxed seat ever slips, and the level survives dump and load
+  const slips = relaxed => {
+    let st = Game.newMatch({ players: 4, games: 4, level: 'sharp', allBots: true });
+    if (relaxed) st.players[2].level = 'relaxed';
+    st = Game.load(Game.dump(st));
+    assert.strictEqual(st.players[2].level, relaxed ? 'relaxed' : undefined);
+    let draws = 0;
+    st.rnd = () => { draws++; return 0.5; };
+    for (let guard = 0; st.phase !== 'matchend'; guard++) {
+      assert(guard < 200000, 'a match that does not end');
+      if (st.phase === 'gameend') {
+        const was = draws;
+        Game.nextGame(st);
+        draws = was;
+      } else assert(Game.botStep(st), 'stuck in ' + st.phase);
+    }
+    return draws;
+  };
+  assert.strictEqual(slips(false), 0, 'a sharp table never slips');
+  assert(slips(true) > 0, 'one relaxed seat does');
   const p = (level, apple) => ({ level: level, apple: apple ? 'x' : null });
   assert.strictEqual(barred(p(1, false), 0, false), null, 'a table for nothing is open to anyone');
   assert.deepStrictEqual(barred(p(1, true), 500, true), { k: 'level', need: 4 });
@@ -575,14 +595,29 @@ async function forfeit() {
   const fin = played(Object.assign(a, { seat: ja.seat }));
   a.send({ t: 'start' });
   await b.next(m => m.t === 'state');
+  const before = sql('SELECT xp, tokens, games, wins, week_won FROM players WHERE id = ' + who(accB))[0];
   b.send({ t: 'leave' });
   await within(fin, 120000, 'match end');
-  await new Promise(r => setTimeout(r, 600));
-  assert.strictEqual((await call('GET', '/api/me', accB)).body.chips, 5000 - 1100 - 25, 'the leaver loses what was held and the fee');
-  assert.deepStrictEqual(sql("SELECT reason FROM chip_log WHERE player = '" + accB.id + "' AND reason <> 'start'").map(x => x.reason), ['escrow', 'fee']);
-  const back = payout(500, 3, a.st.players[0].chips);
-  assert.strictEqual((await call('GET', '/api/me', accA)).body.chips, 5000 - 1125 + back);
-  console.log('forfeit: the leaver lost the 1,100 held, the other got', back);
+  await sleep(800);
+  // the seat is settled by its real result, as if the player had stayed: the hold is paid back with the chips the stand-in won or lost
+  const seatB = a.st.players.find(p => p.pid === accB.id);
+  const back = payout(500, 3, seatB.chips);
+  assert.strictEqual((await call('GET', '/api/me', accB)).body.chips, 5000 - 1100 - 25 + back, 'the leaver gets the real payout');
+  assert.deepStrictEqual(sql("SELECT reason FROM chip_log WHERE player = " + who(accB) + " AND reason <> 'start' ORDER BY id").map(x => x.reason), back ? ['escrow', 'fee', 'match'] : ['escrow', 'fee']);
+  assert.deepStrictEqual(sql('SELECT xp, tokens, games, wins, week_won FROM players WHERE id = ' + who(accB))[0], before, 'a match left early gives no xp, tokens or wins');
+  const rows = seatsOf(ja.code);
+  assert.deepStrictEqual(rows.find(x => x.player === accB.id).gone, 1);
+  assert.strictEqual(rows.find(x => x.player === accB.id).net, back - 1125);
+  assert.strictEqual(rows.reduce((n, x) => n + x.net, 0), -75, 'the seats together lose only the fees');
+  assert.strictEqual((await call('GET', '/api/me', accA)).body.chips, 5000 - 1125 + payout(500, 3, a.st.players[0].chips));
+  console.log('forfeit: the leaver is settled by the real result,', back, 'back of the 1,100 held, nothing credited');
+
+  // a leave once the match is over changes nothing
+  const mine = sql('SELECT chips, xp FROM players WHERE id = ' + who(accA))[0];
+  a.send({ t: 'leave' });
+  await sleep(600);
+  assert.deepStrictEqual(sql('SELECT chips, xp FROM players WHERE id = ' + who(accA))[0], mine);
+  assert.strictEqual(seatsOf(ja.code).find(x => x.player === accA.id).gone, 0, 'a leave after the end is not recorded');
   a.ws.close();
 }
 
@@ -4105,9 +4140,8 @@ async function matchlog() {
   await sleep(800);
   rows = seatsOf(jc.code).filter(x => !x.fake);
   assert.deepStrictEqual(rows.map(x => [x.player, x.gone, x.gone_at > 0]), [[accC.id, 0, false], [accD.id, 1, true]]);
-  assert.strictEqual(rows[1].net, -225);
-  assert.strictEqual(rows[1].net, moved(accD, rows[0].match), 'a leaver net is what the chip log moved');
-  console.log('matchlog: a leave sets gone and the lost stake');
+  assert.strictEqual(rows[1].net, moved(accD, rows[0].match), 'a leaver net is what the chip log moved, the real result');
+  console.log('matchlog: a leave sets gone and the net is settled with the match');
   c.ws.close();
 
   // a public table: the three computer players are rows too, flagged

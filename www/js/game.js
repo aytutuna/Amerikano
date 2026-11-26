@@ -965,11 +965,11 @@ var Game = (function () {
     return st;
   }
 
-  // Relaxed bots slip with these chances; sharp bots never touch st.rnd.
+  // Relaxed bots slip with these chances; sharp bots never touch st.rnd. A player's own level wins over the match's.
   const SLIP = { noClaim: 0.8, passDiscard: 0.5, badDiscard: 0.5, missAdd: 0.5, late: 0.45 };
 
-  function slip(st, k) {
-    return st.level === 'relaxed' && st.rnd() < SLIP[k];
+  function slip(st, k, p) {
+    return (p.level || st.level) === 'relaxed' && st.rnd() < SLIP[k];
   }
 
   function botChoose(st, p) {
@@ -998,14 +998,14 @@ var Game = (function () {
         }
       }
     }
-    if (take && !slip(st, 'passDiscard')) takeDiscard(st);
+    if (take && !slip(st, 'passDiscard', p)) takeDiscard(st);
     else drawStock(st);
   }
 
   function botClaim(st, p) {
     if (p.opened || p.claims >= 4) return false;
     const g = gain(st, p, st.claim.card);
-    return g[1] < g[0] && g[1] <= 2 && !slip(st, 'noClaim');
+    return g[1] < g[0] && g[1] <= 2 && !slip(st, 'noClaim', p);
   }
 
   function addAll(st, p) {
@@ -1015,7 +1015,7 @@ var Game = (function () {
       for (const c of p.hand.slice()) {
         if (!c.r) continue;
         const m = st.melds.find(x => validMeld(x.cards.concat(c), x.t, 2));
-        if (!m || slip(st, 'missAdd')) continue;
+        if (!m || slip(st, 'missAdd', p)) continue;
         addToMeld(st, m.id, [c]);
         if (st.phase !== 'play') return;
         moved = true;
@@ -1033,12 +1033,12 @@ var Game = (function () {
   function botPlay(st, p) {
     if (st.task.id === 'ara') {
       const melds = finishPlan(p.hand);
-      if (melds && !slip(st, 'late')) finishHand(st, melds);
+      if (melds && !slip(st, 'late', p)) finishHand(st, melds);
       return;
     }
     if (!p.opened) {
       const melds = openMelds(p.hand, st.task.reqs);
-      if (melds && !slip(st, 'late')) open(st, melds);
+      if (melds && !slip(st, 'late', p)) open(st, melds);
       return;
     }
     addAll(st, p);
@@ -1081,7 +1081,7 @@ var Game = (function () {
       const v = pts(c) - 7 * neighbours(p.hand, c);
       if (best === null || d < bs[0] || (d === bs[0] && v > bs[1])) { best = c; bs = [d, v]; }
     }
-    if (slip(st, 'badDiscard')) best = pool[Math.floor(st.rnd() * pool.length)];
+    if (slip(st, 'badDiscard', p)) best = pool[Math.floor(st.rnd() * pool.length)];
     discard(st, best);
   }
 
