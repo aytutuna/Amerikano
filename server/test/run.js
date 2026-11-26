@@ -12,6 +12,7 @@ const { spawn, spawnSync } = require('child_process');
 
 const server = path.join(__dirname, '..');
 const wrangler = path.join(server, 'node_modules/wrangler/bin/wrangler.js');
+const adminKey = crypto.randomBytes(24).toString('hex');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // all the ports are held open together, so no two of them can be the same
@@ -92,6 +93,7 @@ function devVars(p) {
     'RC_WEBHOOK_AUTH=test-hook-auth',
     'RC_SECRET_KEY=sk_test',
     'RC_API=' + host('RC'),
+    'ADMIN_KEY=' + adminKey,
     '',
   ].join('\n');
 }
@@ -125,12 +127,12 @@ async function up(url, limit) {
   if (process.argv[2] === '--serve') {
     // no purchases of its own: the browser tests credit them through the webhook, so the sync call finds nothing new
     http.createServer((q, r) => r.writeHead(200, { 'Content-Type': 'application/json' }).end('{"subscriber":{}}')).listen(ports.RC);
-    fs.writeFileSync(process.argv[3] + '.tmp', JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth' }));
+    fs.writeFileSync(process.argv[3] + '.tmp', JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth', admin: adminKey }));
     fs.renameSync(process.argv[3] + '.tmp', process.argv[3]);
     return;
   }
 
-  const env = Object.assign({}, process.env, { PERSIST: persist, DEV_VARS: vars, URL: 'ws://localhost:' + ports.WORKER });
+  const env = Object.assign({}, process.env, { PERSIST: persist, DEV_VARS: vars, ADMIN_KEY: adminKey, URL: 'ws://localhost:' + ports.WORKER });
   for (const k of names) env['PORT_' + k] = ports[k];
   play = spawn(process.execPath, [path.join(__dirname, 'play.js'), ...process.argv.slice(2)], { cwd: server, stdio: 'inherit', env, detached: process.platform !== 'win32' });
   const code = await new Promise(res => play.on('exit', (c, sig) => res(c === null ? 1 : c)));

@@ -3753,6 +3753,44 @@ async function matchlog() {
   console.log('matchlog: account deletion removes the rows');
 }
 
+const ADMIN = process.env.ADMIN_KEY;
+const adm = (method, path, key, body, ip) => call(method, '/admin/api/' + path, null, body, null, Object.assign({ 'CF-Connecting-IP': ip || '10.9.0.1' }, key ? { Authorization: 'Bearer ' + key } : {}));
+
+async function admin() {
+  const { admin: handler } = await import('../src/admin.js');
+  for (const p of ['/admin', '/admin/api/log']) assert.strictEqual((await handler(new Request('http://x' + p), {})).status, 503, 'no ADMIN_KEY, no page');
+  assert(ADMIN, 'the runner sets ADMIN_KEY');
+
+  const page = await fetch(http + '/admin');
+  assert.strictEqual(page.status, 200);
+  assert(/text\/html/.test(page.headers.get('content-type')) && /<title>Admin<\/title>/.test(await page.text()));
+  assert.strictEqual((await adm('GET', 'log')).status, 401);
+  assert.strictEqual((await adm('GET', 'log', 'wrong')).status, 401);
+  assert.strictEqual((await adm('GET', 'log', ADMIN)).status, 200);
+  assert.strictEqual((await call('GET', '/admin/api/log', null, null, 'https://evil.example', { Authorization: 'Bearer ' + ADMIN })).status, 403, 'only its own origin');
+  assert.strictEqual((await call('GET', '/admin/api/log', null, null, http, { Authorization: 'Bearer ' + ADMIN, 'CF-Connecting-IP': '10.9.0.1' })).status, 200);
+  console.log('admin: 503 without a key, 401 with a wrong one, its own origin only');
+
+  const got = async () => (await adm('GET', 'settings', ADMIN)).body.settings;
+  assert.deepStrictEqual(JSON.parse((await got()).strong), { 100: 0, 500: 1, 2500: 2, 10000: 9, 50000: 9, cup1000: 1, cup5000: 2, cup25000: 9 });
+  assert.strictEqual((await got()).chipsoff, '');
+  for (const [key, value] of [['chipsoff', 'tr'], ['chipsoff', 'TR,'], ['strong', '{}'], ['strong', 'x'], ['nope', 'TR'], ['chipsoff', 5]]) {
+    assert.strictEqual((await adm('POST', 'settings', ADMIN, { key, value })).status, 400, key + ' ' + value);
+  }
+  assert.strictEqual((await adm('POST', 'settings', ADMIN, { key: 'chipsoff', value: 'TR,CA' })).status, 200);
+  assert.strictEqual((await got()).chipsoff, 'TR,CA');
+  assert.strictEqual(sql("SELECT value FROM settings WHERE key = 'chipsoff'")[0].value, 'TR,CA', 'the next request reads what was saved');
+  assert.strictEqual((await adm('POST', 'settings', ADMIN, { key: 'chipsoff', value: '' })).status, 200);
+  const log = (await adm('GET', 'log', ADMIN)).body.log;
+  assert.deepStrictEqual(log.slice(0, 2).map(x => [x.who, x.action, x.target, JSON.parse(x.detail).to]), [['admin', 'setting', 'chipsoff', ''], ['admin', 'setting', 'chipsoff', 'TR,CA']]);
+  console.log('admin: settings saved, read back and logged');
+
+  const codes = await Promise.all(Array.from({ length: 45 }, () => adm('GET', 'log', 'guess', null, '10.9.0.2')));
+  assert(codes.some(x => x.status === 429), 'tries are limited per address');
+  assert.strictEqual((await adm('GET', 'log', ADMIN)).status, 200, 'another address is not affected');
+  console.log('admin: repeated tries are refused');
+}
+
 // the source scan: nothing but the one function sets chips or tokens
 function chipfn() {
   const dir = __dirname + '/../src/';
@@ -3819,6 +3857,7 @@ process.on('unhandledRejection', e => {
   sfu.server.close();
   await sec('purge', () => purge());
   await sec('matchlog', () => matchlog());
+  await sec('admin', () => admin());
   await sec('chipfn', () => chipfn());
   await sec('typedOff', () => typedOff());
   await sec('reports', () => reports());

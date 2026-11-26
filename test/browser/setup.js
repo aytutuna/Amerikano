@@ -44,12 +44,13 @@ module.exports = async () => {
     }
     await sleep(500);
   }
-  const { port, hook } = JSON.parse(fs.readFileSync(info, 'utf8'));
+  const { port, hook, admin } = JSON.parse(fs.readFileSync(info, 'utf8'));
   const web = site(port);
   await new Promise(r => web.listen(0, '127.0.0.1', r));
   process.env.AMK_WEB = 'http://localhost:' + web.address().port;
   process.env.AMK_API = 'http://localhost:' + port;
   process.env.AMK_HOOK = hook;
+  process.env.AMK_ADMIN = admin;
 
   return async () => {
     web.close();

@@ -6,6 +6,7 @@ import { chat } from './chat.js';
 import { voice } from './voice.js';
 import { shop } from './shop.js';
 import { cron } from './push.js';
+import { admin } from './admin.js';
 
 export { Room, Hub };
 
@@ -37,6 +38,8 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
+    // the admin page talks to its own Worker only
+    if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) return origin && origin !== url.origin ? new Response('forbidden', { status: 403 }) : admin(request, env);
     if (origin && !ORIGIN.test(origin)) return new Response('forbidden', { status: 403 });
     if (url.pathname.startsWith('/api/')) return account(request, env, ctx, origin);
     const m = url.pathname.match(/^\/ws\/(new|hub|[A-Z]{4})$/);

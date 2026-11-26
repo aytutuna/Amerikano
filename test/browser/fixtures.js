@@ -4,6 +4,8 @@ const base = require('@playwright/test');
 const allowed = [
   // the shop asks the server to sync right after its sheet opened, gets 429 and the app waits out the gap on purpose
   /429.*\/api\/shop\/sync/,
+  // the admin spec tries a wrong key first
+  /401.*\/admin\/api\//,
 ];
 
 let ips = Math.floor(Math.random() * 15000);
