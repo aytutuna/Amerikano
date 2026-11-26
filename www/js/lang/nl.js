@@ -356,6 +356,7 @@
         busy: 'Je hebt al een plek aan een andere tafel.',
         held: v => v.name + ' heeft een plek aan een andere tafel, dus de partij kan nog niet beginnen.',
         elsewhere: 'Je hebt een plek aan een andere tafel, dus deze partij kan niet beginnen. Verlaat eerst die tafel.',
+        dealfail: 'De partij kon niet beginnen. Je fiches zijn teruggegeven. Probeer het opnieuw.',
         host: 'Alleen de host kan de partij starten.',
         opts: 'Deze partij-instellingen zijn niet toegestaan.',
         join: 'Doe eerst mee in een kamer.',

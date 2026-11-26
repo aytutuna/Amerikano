@@ -354,6 +354,7 @@
         busy: 'Du hast schon einen Platz an einem anderen Tisch.',
         held: v => v.name + ' hat einen Platz an einem anderen Tisch, deshalb kann die Partie noch nicht starten.',
         elsewhere: 'Du hast einen Platz an einem anderen Tisch, deshalb kann diese Partie nicht starten. Verlasse zuerst jenen Tisch.',
+        dealfail: 'Die Partie konnte nicht starten. Deine Chips wurden zurückgegeben. Versuche es noch einmal.',
         host: 'Nur der Gastgeber kann die Partie starten.',
         opts: 'Diese Spieleinstellungen sind nicht erlaubt.',
         join: 'Tritt zuerst einem Raum bei.',

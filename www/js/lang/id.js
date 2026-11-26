@@ -352,6 +352,7 @@
         busy: 'Kamu sudah punya kursi di meja lain.',
         held: v => v.name + ' punya kursi di meja lain, jadi pertandingan belum bisa dimulai.',
         elsewhere: 'Kamu punya kursi di meja lain, jadi pertandingan ini belum bisa dimulai. Keluar dulu dari meja itu.',
+        dealfail: 'Pertandingan tidak bisa dimulai. Chip-mu sudah dikembalikan. Coba lagi.',
         host: 'Hanya tuan rumah yang bisa memulai pertandingan.',
         opts: 'Pengaturan pertandingan itu tidak diizinkan.',
         join: 'Gabung ke ruang dulu.',

@@ -4127,6 +4127,85 @@ async function probe() {
   console.log('probe: the code alphabet and length are unchanged');
 }
 
+const breakDeal = h => sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('faildeal', '" + JSON.stringify(h) + "')");
+const mendDeal = () => sql("DELETE FROM settings WHERE key = 'faildeal'");
+
+// a table that cannot deal tries again, then gives every stake back
+async function dealfail() {
+  const rows = (acc, tail) => sql('SELECT delta FROM chip_log WHERE player = ' + who(acc) + " AND ref LIKE '%" + tail + "' ORDER BY id").map(x => x.delta);
+  const chips = async acc => (await call('GET', '/api/me', acc)).body.chips;
+  const state = m => m.t === 'state';
+
+  // one failure, then the retry deals, and nobody is charged twice
+  let g = await pair(2, 2);
+  breakDeal({ kind: 'friend', n: 1, seat: 0 });
+  const dealt = Promise.all([g.a.next(state), g.b.next(state)]);
+  g.a.send({ t: 'start' });
+  await within(dealt, 20000, 'the retry deals');
+  assert.deepStrictEqual([rows(g.accA, ':in'), rows(g.accB, ':in')], [[-100], [-100]]);
+  assert.strictEqual(JSON.parse(sql("SELECT value FROM settings WHERE key = 'faildeal'")[0].value).n, 0, 'the hook fired once');
+  mendDeal();
+  g.a.ws.close();
+  g.b.ws.close();
+  console.log('dealfail: a failure is retried and deals');
+
+  // a failure that stays, after the first seat was taken: both get the error, everything is returned, the table can start again
+  g = await pair(2, 2);
+  breakDeal({ kind: 'friend', n: 99, seat: 1 });
+  const off = [g.a, g.b].map(c => c.next(m => m.t === 'error' && m.k === 'dealfail'));
+  g.a.send({ t: 'start' });
+  await within(Promise.all(off), 20000, 'both are told the deal failed');
+  assert.deepStrictEqual([rows(g.accA, ':in'), rows(g.accA, ':back'), rows(g.accB, ':in'), rows(g.accB, ':back')], [[-100], [100], [], []]);
+  assert.deepStrictEqual([await chips(g.accA), await chips(g.accB)], [5000, 5000]);
+  mendDeal();
+  const again = Promise.all([g.a.next(state), g.b.next(state)]);
+  g.a.send({ t: 'start' });
+  await within(again, 20000, 'the table starts again');
+  assert.deepStrictEqual([rows(g.accA, ':in').length, rows(g.accA, ':back').length], [2, 1], 'the second match has its own refs');
+  g.a.ws.close();
+  g.b.ws.close();
+  console.log('dealfail: a deal that never works returns every stake and leaves the table usable');
+
+  // a public table with computer players: the human is refunded, the computer players' banks come back, the table is gone
+  const t0 = Date.now();
+  const mine = Array.from({ length: 15 }, (x, i) => ({ id: 'dealfail' + crypto.randomBytes(12).toString('hex'), seed: 101 + i }));
+  sql('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created) VALUES ' +
+    mine.map(x => "('" + x.id + "', " + x.seed + ", '0,0,0,0', 2, 100, 3, 1, 123450, " + t0 + ', 0, ' + t0 + ')').join(', '));
+  sql("UPDATE personas SET busy = 'hold', busy_at = " + t0 + " WHERE busy IS NULL AND id NOT LIKE 'dealfail%'");
+  breakDeal({ kind: 'pub', n: 99, seat: 2 });
+  const acc = await guest();
+  const h = await hub(acc);
+  const sat = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 100 });
+  const r = seated(await sat);
+  await within(r.next(m => m.t === 'error' && m.k === 'dealfail'), 30000, 'the public table gives up');
+  await sleep(500);
+  assert.deepStrictEqual([rows(acc, ':in'), rows(acc, ':back'), await chips(acc)], [[-100], [100], 5000]);
+  const left = sql("SELECT chips, busy FROM personas WHERE id LIKE 'dealfail%'");
+  assert(left.every(x => x.chips === 123450 && x.busy === null), 'banks are back and no computer player is held: ' + JSON.stringify(left.filter(x => x.chips !== 123450 || x.busy !== null)));
+  assert(sql("SELECT count(*) AS n FROM personas WHERE id LIKE 'dealfail%' AND busy_at >= " + t0)[0].n >= 2, 'computer players were at the table');
+  mendDeal();
+  r.ws.close();
+  h.ws.close();
+  console.log('dealfail: a public table refunds the human and the computer players and is wiped');
+
+  // a tournament table that cannot deal cancels the tournament: the buy-in comes back, the computer players' too
+  breakDeal({ kind: 'cup', n: 99, seat: 0 });
+  const cacc = await guest();
+  const ch = await hub(cacc);
+  const cupoff = ch.next(m => m.t === 'error' && m.k === 'cupoff');
+  ch.send({ t: 'cup', buy: 1000 });
+  await within(cupoff, 60000, 'the tournament is cancelled');
+  assert.deepStrictEqual([rows(cacc, ':in'), rows(cacc, ':back'), await chips(cacc)], [[-1000], [1000], 5000]);
+  const spent = sql("SELECT chips FROM personas WHERE id LIKE 'dealfail%'").filter(x => x.chips !== 123450);
+  assert.strictEqual(spent.length, 0, 'the computer players got their buy-ins back');
+  mendDeal();
+  ch.ws.close();
+  sql("DELETE FROM personas WHERE id LIKE 'dealfail%'");
+  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
+  console.log('dealfail: a tournament table that cannot deal refunds the tournament');
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -4181,6 +4260,7 @@ process.on('unhandledRejection', e => {
   await sec('matchlog', () => matchlog());
   await sec('admin', () => admin());
   await sec('chipfn', () => chipfn());
+  await sec('dealfail', () => dealfail());
   await sec('typedOff', () => typedOff());
   await sec('reports', () => reports());
   await sec('personas', () => personas());

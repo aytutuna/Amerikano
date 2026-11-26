@@ -671,7 +671,9 @@ export class Hub extends DurableObject {
     }
     try {
       for (const p of c.mem.filter(m => m.fake)) {
-        await spend(db, p.pid, c.buy);
+        if (!p.spent) await spend(db, p.pid, c.buy);
+        p.spent = true;
+        this.save();
         await keep(db, p.pid, c.id);
       }
       await this.plan(c, 'first', c.mem.slice(0, 4));
@@ -759,6 +761,13 @@ export class Hub extends DurableObject {
     for (const code of Object.keys(c.tabs)) await this.room(code).cupClose(c.id, true).catch(() => {});
     // no prize was paid, so everyone who bought in gets it back, those already out too; a player who left gave it up
     for (const m of c.mem) {
+      // a computer player gets its buy-in back too, once
+      if (m.fake && m.spent && !m.back && !m.paid) {
+        m.back = true;
+        this.save();
+        await grant(this.env.DB, m.pid, c.buy);
+        continue;
+      }
       if (m.fake || m.left || m.paid || m.back) continue;
       await credit(this.env.DB, m.pid, c.buy, 'cup', c.id + ':back');
       m.back = true;

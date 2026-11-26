@@ -355,6 +355,7 @@
         busy: 'Tu as déjà une place à une autre table.',
         held: v => v.name + ' a une place à une autre table, la partie ne peut donc pas encore commencer.',
         elsewhere: 'Tu as une place à une autre table, la partie ne peut donc pas commencer. Quitte d’abord cette table.',
+        dealfail: 'La partie n’a pas pu démarrer. Tes jetons t’ont été rendus. Réessaie.',
         host: 'Seul l’hôte peut lancer la partie.',
         opts: 'Ces réglages de partie ne sont pas autorisés.',
         join: 'Rejoins d’abord une salle.',

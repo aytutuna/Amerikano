@@ -355,6 +355,7 @@
         busy: 'Hai già un posto a un altro tavolo.',
         held: v => v.name + ' ha un posto a un altro tavolo, quindi la partita non può ancora iniziare.',
         elsewhere: 'Hai un posto a un altro tavolo, quindi questa partita non può iniziare. Prima lascia quel tavolo.',
+        dealfail: 'La partita non è potuta iniziare. Le tue fiche ti sono state restituite. Riprova.',
         host: 'Solo l’host può iniziare la partita.',
         opts: 'Queste impostazioni di partita non sono consentite.',
         join: 'Entra prima in una sala.',

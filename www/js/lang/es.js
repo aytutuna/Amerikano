@@ -355,6 +355,7 @@
         busy: 'Ya tienes un asiento en otra mesa.',
         held: v => v.name + ' tiene un asiento en otra mesa, así que la partida todavía no puede empezar.',
         elsewhere: 'Tienes un asiento en otra mesa, así que esta partida no puede empezar. Sal primero de esa mesa.',
+        dealfail: 'No se pudo iniciar la partida. Te devolvimos las fichas. Inténtalo de nuevo.',
         host: 'Solo el anfitrión puede empezar la partida.',
         opts: 'Esos ajustes de partida no están permitidos.',
         join: 'Primero entra a una sala.',

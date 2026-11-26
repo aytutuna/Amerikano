@@ -356,6 +356,7 @@
         busy: 'Masz już miejsce przy innym stole.',
         held: v => v.name + ' ma miejsce przy innym stole, więc partia nie może jeszcze się zacząć.',
         elsewhere: 'Masz miejsce przy innym stole, więc ta partia nie może się zacząć. Najpierw opuść tamten stół.',
+        dealfail: 'Nie udało się rozpocząć partii. Twoje żetony zostały zwrócone. Spróbuj ponownie.',
         host: 'Partię może zacząć tylko gospodarz.',
         opts: 'Te ustawienia partii są niedozwolone.',
         join: 'Najpierw dołącz do pokoju.',

@@ -355,6 +355,7 @@
         busy: 'Você já tem um lugar em outra mesa.',
         held: v => v.name + ' tem um lugar em outra mesa, então a partida ainda não pode começar.',
         elsewhere: 'Você tem um lugar em outra mesa, então esta partida não pode começar. Saia dessa mesa primeiro.',
+        dealfail: 'Não foi possível iniciar a partida. Suas fichas foram devolvidas. Tente novamente.',
         host: 'Só o anfitrião pode começar a partida.',
         opts: 'Essas opções de partida não são permitidas.',
         join: 'Entre em uma sala primeiro.',

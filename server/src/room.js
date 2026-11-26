@@ -455,7 +455,92 @@ export class Room extends DurableObject {
 
   // a second call while the stakes are being taken waits for the first
   begin() {
-    return this.starting || (this.starting = this.deal().finally(() => { this.starting = null; }));
+    return this.starting || (this.starting = this.attempt().finally(() => { this.starting = null; }));
+  }
+
+  // A deal that fails is tried again a little later; after DEAL_TRIES tries or DEAL_TIME the table gives up and
+  // everything taken is given back, so a table can never hold stakes for a match that does not start.
+  async attempt() {
+    const r = this.r;
+    if (r.giveup) return this.giveUp();
+    if (!r.dealt) r.dealt = Date.now();
+    try {
+      await this.deal();
+    } catch (e) {
+      if (this.r !== r) return;
+      r.tries = (r.tries || 0) + 1;
+      console.error('deal', r.code, r.tries, e && e.message);
+      if (r.tries >= DEAL_TRIES || Date.now() - r.dealt >= DEAL_TIME * this.k) return this.giveUp();
+      r.retry = Date.now() + DEAL_RETRY * this.k;
+      this.save();
+      this.arm();
+    }
+  }
+
+  // the test hook: a settings row names the kind of table, how many more times to fail and at which seat
+  async broken(i) {
+    if (!this.env.PACE) return;
+    const row = await setting(this.env.DB, 'faildeal');
+    const h = row && JSON.parse(row);
+    const kind = this.r.cup ? 'cup' : this.r.pub ? 'pub' : 'friend';
+    if (!h || h.n <= 0 || h.kind !== kind || h.seat !== i) return;
+    await this.env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'faildeal'").bind(JSON.stringify(Object.assign({}, h, { n: h.n - 1 }))).run();
+    throw new Error('forced failure');
+  }
+
+  // Stakes go back with the ref <match>:back, a computer player's with its bank. Each seat is marked as it is done,
+  // so a failure in the middle is finished by the next call.
+  async giveUp() {
+    const { r } = this;
+    r.giveup = true;
+    this.save();
+    try {
+      for (const s of r.seats) {
+        if (!s || !s.esc || s.back) continue;
+        if (s.fake) {
+          s.back = true;
+          this.save();
+          await grant(this.env.DB, s.pid, r.stake);
+        } else {
+          await credit(this.env.DB, s.pid, r.stake, 'escrow', r.id + ':back');
+          s.back = true;
+          this.save();
+        }
+      }
+    } catch (e) {
+      r.retry = Date.now() + DEAL_RETRY * this.k;
+      this.save();
+      return this.arm();
+    }
+    r.aborted = true;
+    this.save();
+    for (const w of this.socks()) this.fail(w, 'dealfail');
+    // a tournament table is the Hub's to end, which returns the buy-ins; a public table is wiped
+    if (r.cup) return this.ctx.waitUntil(this.hub().cupFail(r.cup.id).catch(() => {}));
+    if (r.pub) return this.wipe();
+    // a friend table starts over with whoever is still seated, as a rematch does
+    const gone = r.seats.map(s => s && (s.fake || s.bot && s.pid));
+    for (const w of this.socks()) {
+      const a = w.deserializeAttachment();
+      if (gone[a.seat]) {
+        w.serializeAttachment(Object.assign({}, a, { seat: -1 }));
+        w.close(1000, 'poor');
+      }
+    }
+    for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
+    r.seats = r.seats.map((s, i) => gone[i] ? null : s);
+    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto']) delete s[k];
+    for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
+    Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
+    if (r.open) r.go = Date.now() + this.lag(4000, 8000);
+    if (!r.seats.some(s => s && s.pid && !s.fake)) r.dead = Date.now() + KEEP * this.k;
+    if (r.host >= 0 && !r.seats[r.host]) r.host = this.firstHuman();
+    this.st = null;
+    this.ctx.storage.delete('st');
+    this.save();
+    this.send();
+    this.arm();
+    this.report();
   }
 
   lonely() {
@@ -470,6 +555,7 @@ export class Room extends DurableObject {
       const s = r.seats[i];
       if (s.fake) {
         if (!s.esc) {
+          await this.broken(i);
           s.bank = await spend(this.env.DB, s.pid, r.stake);
           s.esc = true;
           this.save();
@@ -477,6 +563,7 @@ export class Room extends DurableObject {
         continue;
       }
       if (!s.pid || s.bot || s.esc) continue;
+      await this.broken(i);
       // the escrow is the stake; a player who can no longer cover it is replaced by a bot
       if (await credit(this.env.DB, s.pid, -r.stake, 'escrow', r.id + ':in')) {
         s.esc = true;
@@ -1031,13 +1118,14 @@ export class Room extends DurableObject {
   // Stakes are held for a started match, so the bots play it out even when nobody is connected.
   owes() {
     const r = this.r;
+    if (r.aborted) return false;
     return r.started && !r.paid && (!!r.cup || r.seats.some(s => s && s.esc)) || !!r.cup && r.paid && !r.cup.sent;
   }
 
   due() {
     const { r, st, k } = this;
     if (!st) {
-      if (r.started) return 0;
+      if (r.started) return r.aborted ? Infinity : r.retry || 0;
       const due = r.seats.filter(s => s && s.gone).map(s => s.gone + GRACE * k);
       if (r.go) due.push(r.go);
       return due.length ? Math.min(...due) : Infinity;
