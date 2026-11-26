@@ -615,7 +615,9 @@ export class Room extends DurableObject {
       if (!s.pid || s.bot || s.esc) continue;
       await this.broken(i);
       // what is held and the fee go together; a player who can no longer cover both is replaced by a bot and pays nothing
-      if (await charge(this.env.DB, s.pid, held, fee, r.id)) {
+      // a ban lands while the table waits, when match_seat holds no row yet: the seat is taken out here and costs nothing
+      const banned = await this.env.DB.prepare('SELECT banned FROM players WHERE id = ?').bind(s.pid).first();
+      if (!(banned && banned.banned) && await charge(this.env.DB, s.pid, held, fee, r.id)) {
         s.esc = true;
         const p = await player(this.env.DB, s.pid);
         s.bank = p ? p.chips : 0;
@@ -626,8 +628,11 @@ export class Room extends DurableObject {
       r.seats[i] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true };
       for (const w of this.socks()) {
         if (w.deserializeAttachment().seat !== i) continue;
-        this.fail(w, 'poor');
-        w.close(1000, 'poor');
+        if (banned && banned.banned) w.close(4002, 'banned');
+        else {
+          this.fail(w, 'poor');
+          w.close(1000, 'poor');
+        }
       }
       this.report();
     }

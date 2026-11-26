@@ -41,6 +41,11 @@ export async function digest(env, now) {
   if (!results.length) return;
   const text = results.map(x => new Date(x.at).toISOString() + ' ' + x.subject + '\n' + x.body).join('\n\n----\n\n');
   if (await post(env, 'Amerikano: ' + results.length + ' held report mails', text)) {
-    await env.DB.prepare("UPDATE mail_log SET sent = ?, body = '' WHERE sent = 0 AND id <= ?").bind(now, results[results.length - 1].id).run();
+    // the digest counts as one mail against the hourly limit, the rows it folded in as none
+    const last = results[results.length - 1].id;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE mail_log SET sent = -1, body = '' WHERE sent = 0 AND id <= ?").bind(last),
+      env.DB.prepare('UPDATE mail_log SET sent = ? WHERE id = ?').bind(now, last)
+    ]);
   }
 }

@@ -3381,29 +3381,36 @@ async function reportMail(rs) {
   assert.strictEqual(sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(c))[0].n, 1, 'the report is stored');
   assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 1, 'the mail is kept');
 
-  // the 21st mail in an hour is held for the digest
-  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO mail_log (at, kind, report, subject, body, sent) SELECT ' + Date.now() + ", 'report', 0, 'filler', '', " + Date.now() + ' FROM n');
+  // the 20th mail in an hour still goes, the 21st is held for the digest
+  const inHour = () => sql('SELECT count(*) AS n FROM mail_log WHERE sent > ' + (Date.now() - 3600000))[0].n;
+  const fill = 19 - inHour();
+  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ' + fill + ') INSERT INTO mail_log (at, kind, report, subject, body, sent) SELECT ' + Date.now() + ", 'report', 0, 'filler', '', " + Date.now() + ' FROM n');
+  assert.strictEqual(inHour(), 19);
+  const last = await guest();
+  assert.strictEqual((await rep(a, last, { text: 'twentieth' })).status, 200);
+  await waitFor(6);
   const d = await guest();
   assert.strictEqual((await rep(a, d, { text: 'over the limit' })).status, 200);
-  await quiet(5);
+  await quiet(6);
   assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 2, 'both are held');
   const T = Date.UTC(2031, 6, 20, 5, 0);
   await tick(T);
-  await waitFor(6);
-  const digest = rs.got[5].body;
+  await waitFor(7);
+  const digest = rs.got[6].body;
   assert(/2 held report mails/.test(digest.subject), digest.subject);
   for (const part of ['while down', 'over the limit']) assert(digest.text.includes(part), part);
   assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 0);
   assert.strictEqual(sql("SELECT count(*) AS n FROM mail_log WHERE body <> ''")[0].n, 0, 'sent mails keep no text');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent > ' + (T - 3600000))[0].n, 1, 'the digest counts as one mail');
   await tick(T + 3600000);
-  await quiet(6);
+  await quiet(7);
   console.log('reportMail: an unreachable Resend does not fail the report, the 21st mail in an hour is held and goes out in the digest');
 
   // without a key nothing is sent or kept
   const { mail } = await import('../src/mail.js');
   const kept = sql('SELECT count(*) AS n FROM mail_log')[0].n;
   await mail({}, 'report', 1, 'no key', 'text');
-  await quiet(6);
+  await quiet(7);
   assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log')[0].n, kept);
   sql('DELETE FROM mail_log');
   console.log('reportMail: no key, no mail');
@@ -4529,6 +4536,28 @@ async function adminActions() {
   assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(accB))[0].n, 0);
   console.log('admin: a banned player in a running match is replaced and settled by the real result');
   x.ws.close();
+
+  // a ban while the table waits for its start: the deal takes the seat out and charges nothing
+  const accC = level(4, link(await guest()));
+  const accD = level(4, link(await guest()));
+  const p = client('/ws/new');
+  await p.ready;
+  p.send({ t: 'create', auth: accC.auth, players: 3, games: 3, stake: 500 });
+  const jp = await p.next(m => m.t === 'joined');
+  const q = client('/ws/' + jp.code);
+  await q.ready;
+  q.send({ t: 'join', auth: accD.auth });
+  await q.next(m => m.t === 'joined');
+  const bankD = chips(accD);
+  assert.strictEqual((await act('ban', { id: accD.id }, ip6)).status, 200);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM match_seat WHERE code = '" + jp.code + "'")[0].n, 0, 'nothing is recorded before the deal');
+  p.send({ t: 'start' });
+  await gone(q, 5000);
+  await p.next(m => m.t === 'state');
+  assert.strictEqual(chips(accD), bankD, 'no stake was taken');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM match_seat WHERE code = '" + jp.code + "' AND player = " + who(accD))[0].n, 0, 'and it never counted as seated');
+  p.ws.close();
+  console.log('admin: a ban before the deal keeps the player out of the match and its stake');
 }
 
 // the source scan: nothing but the one function sets chips or tokens
