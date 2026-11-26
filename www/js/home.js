@@ -829,7 +829,8 @@ var UI = (function () {
       p.setAttribute('role', 'status');
       side.appendChild(p);
     } else side.appendChild(node('p', 'note', m.pub ? t('hall.fill') : t(mine ? 'net.hintHost' : 'net.hintGuest')));
-    if (m.stake) side.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(m.stake) })));
+    if (m.fee) side.appendChild(node('p', 'note', t('hall.fee', { n: m.fee })));
+    if (m.stake) side.appendChild(node('p', 'note', t('hall.stakeNote', { n: m.stake, h: m.hold })));
     const out = node('p', 'note');
     out.setAttribute('role', 'status');
     const acts = node('div', 'wt-acts');
@@ -914,6 +915,9 @@ var UI = (function () {
     at.net = 'up';
     at.stakes = m.stakes;
     at.entry = m.entry;
+    at.gate = m.gate;
+    at.cupGate = m.cupGate;
+    at.fee = m.fee;
     if (Account.me()) Social.refresh().then(redraw, () => {});
     redraw();
   }
@@ -933,7 +937,15 @@ var UI = (function () {
 
   const short = n => n >= 1e4 ? new Intl.NumberFormat(I18n.loc(), { notation: 'compact' }).format(n) : fmt(n);
   const redraw = () => { if (!$('home').hidden) draw(); };
-  const afford = (me, s) => !!me && me.chips >= at.entry * s;
+  // why a table is shut to this player, as the line for its card, or null; guests sit only at the two smallest tables
+  function shut(me, s) {
+    if (!me) return t('hall.locked');
+    if (!me.apple && s > 500) return t('hall.lockGuest');
+    if (me.level < at.gate[s]) return t('hall.level', { n: at.gate[s] });
+    return me.chips < at.entry * s ? t('hall.locked') : null;
+  }
+
+  const afford = (me, s) => !shut(me, s);
 
   // a small green oval with a seat per player that is in
   function miniTable(n) {
@@ -946,7 +958,8 @@ var UI = (function () {
   function roomCards(me) {
     const list = node('div', 'rooms');
     for (const s of at.stakes) {
-      const ok = afford(me, s);
+      const why = shut(me, s);
+      const ok = !why;
       const b = raw('room', () => {
         connecting(false, t('hall.finding'));
         Net.play(s);
@@ -957,13 +970,13 @@ var UI = (function () {
       const here = at.n[s] || 0;
       b.appendChild(miniTable(here));
       const meta = node('span', 'rmeta');
-      meta.appendChild(node('b', '', t('hall.min', { n: fmt(at.entry * s) })));
-      meta.appendChild(node('i', '', t('hall.playing', { n: fmt(here), c: here })));
+      meta.appendChild(node('b', '', t('hall.minFee', { n: fmt(at.entry * s), f: fmt(at.fee[s]) })));
+      meta.appendChild(node('i', '', ok ? t('hall.playing', { n: fmt(here), c: here }) : why));
       b.appendChild(meta);
       if (!ok) {
         const lock = node('span', 'lock');
         lock.setAttribute('role', 'img');
-        lock.setAttribute('aria-label', t('hall.locked'));
+        lock.setAttribute('aria-label', why);
         lock.appendChild(Cards.icon('i-lock', 'ic'));
         b.appendChild(lock);
       }
@@ -991,7 +1004,8 @@ var UI = (function () {
   function cupCards(me) {
     const list = node('div', 'rooms cups');
     for (const buy of BUYS) {
-      const ok = !!me && me.chips >= buy;
+      const why = !me ? t('hall.locked') : !me.apple ? t('hall.lockGuest') : me.level < at.cupGate[buy] ? t('hall.level', { n: at.cupGate[buy] }) : me.chips < buy ? t('hall.locked') : null;
+      const ok = !why;
       const b = raw('room', () => {
         leaving = false;
         cupForm({ buy: buy, n: 1 });
@@ -1003,12 +1017,12 @@ var UI = (function () {
       b.appendChild(fullOval());
       const meta = node('span', 'rmeta');
       meta.appendChild(node('b', '', t('cup.prize', { n: fmt(buy * 4) })));
-      meta.appendChild(node('i', '', t('cup.line')));
+      meta.appendChild(node('i', '', ok ? t('cup.line') : why));
       b.appendChild(meta);
       if (!ok) {
         const lock = node('span', 'lock');
         lock.setAttribute('role', 'img');
-        lock.setAttribute('aria-label', t('hall.locked'));
+        lock.setAttribute('aria-label', why);
         lock.appendChild(Cards.icon('i-lock', 'ic'));
         b.appendChild(lock);
       }

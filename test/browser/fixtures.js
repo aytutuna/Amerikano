@@ -1,4 +1,6 @@
 const base = require('@playwright/test');
+const path = require('path');
+const { execFileSync } = require('child_process');
 
 // Console errors that are known and harmless, matched against the message and the address it came from.
 const allowed = [
@@ -35,6 +37,16 @@ async function guest(page, lang) {
   await page.waitForSelector('[data-k=quick]');
 }
 
+// Gives the page's account an Apple identity and a level straight in the test database; the cups and the larger tables are not for guests.
+async function signedIn(page, level) {
+  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('amerikano.account')).id);
+  const wrangler = path.join(__dirname, '../../server/node_modules/wrangler/bin/wrangler.js');
+  const q = "UPDATE players SET apple = 'test-' || id, level = " + (level || 1) + " WHERE id = '" + id + "'";
+  execFileSync(process.execPath, [wrangler, 'd1', 'execute', 'amerikano', '--local', '--persist-to', process.env.AMK_PERSIST, '--command', q], { cwd: path.join(__dirname, '../../server'), stdio: 'ignore', timeout: 60000 });
+  await page.reload();
+  await page.waitForSelector('[data-k=quick]');
+}
+
 // A store that answers like RevenueCat on an iPhone. A purchase is credited the way RevenueCat's webhook would.
 async function fakeStore(page) {
   await page.exposeFunction('amkBuy', async product => {
@@ -57,4 +69,4 @@ async function fakeStore(page) {
   });
 }
 
-module.exports = { test, expect: base.expect, guest, fakeStore };
+module.exports = { test, expect: base.expect, guest, signedIn, fakeStore };

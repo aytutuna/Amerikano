@@ -1,4 +1,4 @@
-const { test, expect, guest, fakeStore } = require('./fixtures');
+const { test, expect, guest, signedIn, fakeStore } = require('./fixtures');
 
 test('guest sign-in reaches the lobby', async ({ page }) => {
   await page.goto(process.env.AMK_WEB + '/');
@@ -97,6 +97,7 @@ test('a quick phrase and an emote at an online table', async ({ page }) => {
 test('a 1,000 cup from joining to the result', async ({ page }) => {
   test.setTimeout(360000);
   await guest(page);
+  await signedIn(page);
   await page.click('[data-k=tabcups]');
   await page.click('[data-k=cup1000]');
   await expect(page.locator('#cup')).toBeVisible({ timeout: 60000 });
@@ -128,7 +129,7 @@ test('no pace switch, and the friend table form takes a stake a guest cannot use
   await page.click('[data-k=friends]');
   await stake.fill('100');
   await page.locator('.sheet .sh-acts .btn.primary').click();
-  await expect(page.getByText('Sign in with Apple to play friend tables for chips.').first()).toBeVisible();
+  await expect(page.getByText('Sign in with Apple to unlock this.').first()).toBeVisible();
 });
 
 // a second player in a browser of their own, from an address of their own
@@ -170,4 +171,19 @@ test('a friend table: join by a typed code and by a /t/CODE link', async ({ page
   await expect(linked.page.locator('.wt-mid .code')).toHaveText(code, { timeout: 30000 });
   await expect(page.locator('.wt-table .ws:not(.free)')).toHaveCount(2, { timeout: 30000 });
   await linked.ctx.close();
+});
+
+test('tables above the player level are locked and say what they need', async ({ page }) => {
+  await guest(page);
+  await expect(page.locator('[data-k=room100]')).toBeEnabled();
+  await expect(page.locator('[data-k=room100]')).toContainText('fee 5');
+  await expect(page.locator('[data-k=room500]')).toBeDisabled();
+  await expect(page.locator('[data-k=room500]')).toContainText('Lv 4');
+  // a guest is shut out of the larger tables whatever the level, and a signed-in account sees the level instead
+  await expect(page.locator('[data-k=room2500]')).toBeDisabled();
+  await expect(page.locator('[data-k=room2500]')).toContainText('Sign in to unlock');
+  await signedIn(page);
+  await expect(page.locator('[data-k=room2500]')).toContainText('Lv 10');
+  await signedIn(page, 4);
+  await expect(page.locator('[data-k=room500]')).toBeEnabled();
 });

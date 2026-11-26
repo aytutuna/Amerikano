@@ -21,8 +21,8 @@ var Net = (function () {
     return dev ? 'ws://localhost:8787' : 'wss://amerikano.aytu-tuna.workers.dev';
   }
 
-  function msg(k) {
-    const s = t('net.err.' + k);
+  function msg(k, m) {
+    const s = t('net.err.' + k, { n: m && m.need });
     return s === 'net.err.' + k ? t('net.err.other') : s;
   }
 
@@ -145,13 +145,13 @@ var Net = (function () {
       drop();
       UI.close();
       if (live) App.leave(false);
-      UI.notice(msg(m.k));
+      UI.notice(msg(m.k, m));
       if (m.k === 'auth') UI.retry();
       else UI.show();
       return;
     }
     if (App.online()) App.fail(m.k, m);
-    else UI.notice(msg(m.k));
+    else UI.notice(msg(m.k, m));
   }
 
   // The hub socket lives as long as the app is in the foreground, whatever screen is up.
@@ -230,7 +230,7 @@ var Net = (function () {
       if (App.online() && App.state() && App.state().cup) App.leave(true);
       return UI.notice(t('cup.off'));
     }
-    UI.notice(msg(m.k));
+    UI.notice(msg(m.k, m));
   }
 
   function hubSay(m) {
