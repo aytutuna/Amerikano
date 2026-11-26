@@ -88,9 +88,10 @@ function sql(q) {
   return JSON.parse(out)[0].results;
 }
 
-function client(path, origin) {
+// extra is for headers only the dev server honours: X-Addr is the address a limit counts, X-Hello how long a silent socket may stay
+function client(path, origin, extra) {
   const c = { handlers: [], log: [], errors: [], seen: 0, recent: [] };
-  c.ws = new WebSocket(base + path, { headers: origin ? { Origin: origin } : {} });
+  c.ws = new WebSocket(base + path, { headers: Object.assign(origin ? { Origin: origin } : {}, extra) });
   c.ready = new Promise((res, rej) => {
     c.ws.on('open', res);
     c.ws.on('unexpected-response', (q, r) => rej(new Error('http ' + r.statusCode)));
@@ -786,8 +787,8 @@ async function apple() {
   await within(closed3, 5000, 'and every socket');
   console.log('sign-out ends one session or all of them, with the device rows and hub sockets');
 
-  const burst = await Promise.all([1, 2, 3, 4].map(async i => post('/api/apple', null, await cred({ sub: racer }, null, 'r' + i))));
   const racer = 'race.' + t.sub;
+  const burst = await Promise.all([1, 2, 3, 4].map(async i => post('/api/apple', null, await cred({ sub: racer }, null, 'r' + i))));
   assert.strictEqual(new Set(burst.map(x => x.body.id)).size, 1);
   assert.ok(row(burst[0].body.id).apple_refresh);
   assert.strictEqual(sessions(burst[0].body.id), 4);
@@ -2306,9 +2307,9 @@ const tick = async time => {
 };
 
 // the tz, in minutes behind UTC, whose clock reads h:30 at this moment
-const tzAt = (now, h) => ((Math.floor(now % DAY / 60000) - h * 60 - 30 + 720) % 1440 + 1440) % 1440 - 720;
 // the tz of a device that reads half past noon now, so a test is never inside the quiet hours of invites and messages
 const noonTz = () => tzAt(Date.now(), 12);
+const tzAt = (now, h) => ((Math.floor(now % DAY / 60000) - h * 60 - 30 + 720) % 1440 + 1440) % 1440 - 720;
 
 async function befriend(a, b) {
   await call('POST', '/api/friend', a, { id: b.id });
@@ -3364,8 +3365,8 @@ async function push() {
   // a run makes a limited number of subrequests; a small budget shows the players it does not reach staying unmarked, and the
   // next ticks, ten minutes apart inside the evening window, serve the rest
   sql('DELETE FROM devices');
-  const T2 = Date.UTC(2031, 5, 10, 12, 0);
   sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('pushbudget', '40')");
+  const T2 = Date.UTC(2031, 5, 10, 12, 0);
   const mine = acc => sql('SELECT daily_sent AS s FROM players WHERE id = ' + who(acc))[0].s;
   const crowd = [];
   for (let i = 0; i < 30; i++) {
@@ -3382,11 +3383,11 @@ async function push() {
   for (let i = 2; i <= 5; i++) await tick(T2 + i * 600000);
   assert.strictEqual(crowd.filter(c => mine(c) >= T2).length, 30, 'the ticks inside the window take the rest');
   assert.strictEqual(f.apns.length, 30, 'nobody twice');
-  // a player with ten devices costs up to 31, so the second one does not fit and is handed back
   sql("DELETE FROM settings WHERE key = 'pushbudget'");
+  // a player with ten devices costs up to 31, so the second one does not fit and is handed back
   sql('DELETE FROM devices');
-  const T3 = Date.UTC(2031, 5, 11, 12, 0);
   sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('pushbudget', '40')");
+  const T3 = Date.UTC(2031, 5, 11, 12, 0);
   const [big1, big2] = [await guest(), await guest()];
   for (const b of [big1, big2]) await mk(b, Array.from({ length: 10 }, () => ['apns', tzAt(T3, 18), 'en']));
   f.clear();
@@ -3911,6 +3912,221 @@ function chipfn() {
   console.log('chipfn: chips and tokens are set by account.js only, the computer players banks aside');
 }
 
+// each test picks its own address, so a minute's budget is never shared; only the dev server reads X-Addr
+const addr = () => '10.' + Array.from(crypto.randomBytes(3)).join('.');
+// the HTTP status a connection was refused with, or 0
+const refused = async c => {
+  try {
+    await c.ready;
+    return 0;
+  } catch (e) {
+    return +/http (\d+)/.exec(e.message)[1];
+  }
+};
+const gone = async (c, ms) => {
+  for (let t = 0; c.ws.readyState === 1; t += 100) {
+    assert(t < ms, 'the socket is still open after ' + ms + ' ms');
+    await sleep(100);
+  }
+};
+const devvars = () => Object.fromEntries(fs.readFileSync(process.env.DEV_VARS || __dirname + '/dev.vars', 'utf8').split(/\r?\n/).filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+const unknownCode = () => 'Z' + Array.from({ length: 3 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ'[crypto.randomInt(23)]).join('');
+
+async function limits() {
+  const { net } = await import('../src/peer.js');
+  assert.strictEqual(net('1.2.3.4'), '1.2.3.4');
+  assert.strictEqual(net('2001:db8:1:2:aaaa::1'), net('2001:DB8:1:2:0:0:0:ffff'));
+  assert.notStrictEqual(net('2001:db8:1:2::1'), net('2001:db8:1:3::1'));
+  assert.strictEqual(net('::ffff:9.8.7.6'), '9.8.7.6');
+  assert.strictEqual(net('::1'), '0:0:0:0');
+  assert.strictEqual(net(''), '');
+
+  // 20 sockets that say nothing per address, counted by the /64 for IPv6
+  const hold = ip => ({ 'X-Addr': ip, 'X-Hello': '30000' });
+  const held = [];
+  const A = addr();
+  for (let i = 0; i < 20; i++) {
+    const c = client('/ws/hub', null, hold(A));
+    await c.ready;
+    held.push(c);
+  }
+  assert.strictEqual(await refused(client('/ws/hub', null, hold(A))), 429, 'the 21st silent socket from one address is refused');
+  const other = client('/ws/hub', null, hold(addr()));
+  await other.ready;
+  held.push(other);
+  for (const c of held) c.ws.close();
+  const p = crypto.randomBytes(4).toString('hex');
+  const six = n => hold('2001:db8:' + p.slice(0, 4) + ':' + p.slice(4) + ':' + n + '::1');
+  const sixHeld = [];
+  for (let i = 1; i <= 20; i++) {
+    const c = client('/ws/hub', null, six(i));
+    await c.ready;
+    sixHeld.push(c);
+  }
+  assert.strictEqual(await refused(client('/ws/hub', null, six(99))), 429, 'addresses of one /64 count together');
+  const next = client('/ws/hub', null, hold('2001:db8:' + p.slice(0, 4) + ':ffff::1'));
+  await next.ready;
+  sixHeld.push(next);
+  for (const c of sixHeld) c.ws.close();
+  console.log('limits: 20 silent sockets per address, an IPv6 /64 as one');
+
+  // silent sockets are closed within a second at test pace
+  const quiet = client('/ws/hub', null, { 'X-Addr': addr() });
+  await quiet.ready;
+  await gone(quiet, 1500);
+  console.log('limits: a socket that never says hello is closed');
+
+  // a hub full of silent sockets still lets a signed-in player in: the oldest silent one goes
+  const cap = +devvars().HUB_SILENT;
+  assert(cap > 1 && cap <= 200, 'the dev server lowers the cap on silent sockets (HUB_SILENT)');
+  const silent = [];
+  for (let i = 0; i < cap; i++) {
+    const c = client('/ws/hub', null, hold(addr()));
+    await c.ready;
+    silent.push(c);
+  }
+  const acc = await guest();
+  const [c, m] = await hello({ auth: acc.auth }, m => m.t === 'hub');
+  assert.strictEqual(m.t, 'hub');
+  await gone(silent[0], 3000);
+  assert.strictEqual(silent[1].ws.readyState, 1, 'only the oldest was let go');
+  for (const s of silent) s.ws.close();
+  c.ws.close();
+  console.log('limits: a hub full of silent sockets still takes a signed-in hello');
+
+  // at a table: a socket that never joins is closed, even where no table exists; a room takes 8 of them
+  const lost = client('/ws/' + unknownCode(), null, { 'X-Addr': addr() });
+  await lost.ready;
+  await gone(lost, 4000);
+  const code = unknownCode();
+  const strays = [];
+  for (let i = 0; i < 8; i++) {
+    const s = client('/ws/' + code, null, hold(addr()));
+    await s.ready;
+    strays.push(s);
+  }
+  assert.strictEqual(await refused(client('/ws/' + code, null, hold(addr()))), 503, 'the 9th unseated socket is refused');
+  for (const s of strays) s.ws.close();
+  await sleep(300);
+  const again = client('/ws/' + code, null, { 'X-Addr': addr() });
+  await again.ready;
+  again.ws.close();
+  console.log('limits: a Room closes sockets that never join and takes 8 of them');
+
+  // three create or join tries, the fourth closes the socket
+  const t = client('/ws/new', null, { 'X-Addr': addr() });
+  await t.ready;
+  for (let i = 0; i < 3; i++) {
+    const e = t.next(m => m.t === 'error');
+    t.send({ t: 'create', auth: acc.auth, players: 9, games: 9 });
+    assert.strictEqual((await e).k, 'opts');
+  }
+  const end = new Promise(res => t.ws.on('close', (code, why) => res([code, String(why)])));
+  t.send({ t: 'create', auth: acc.auth, players: 9, games: 9 });
+  assert.deepStrictEqual(await within(end, 3000, 'the 4th try closes the socket'), [1008, 'tries']);
+  console.log('limits: the 4th join or create try closes the socket');
+
+  // /ws/new is the dearest path: 10 a minute per address
+  const N = addr();
+  for (let i = 0; i < 10; i++) {
+    const c2 = client('/ws/new', null, { 'X-Addr': N });
+    await c2.ready;
+    c2.ws.close();
+  }
+  assert.strictEqual(await refused(client('/ws/new', null, { 'X-Addr': N })), 429, 'the 11th /ws/new in a minute is refused');
+  const fresh = client('/ws/new', null, { 'X-Addr': addr() });
+  await fresh.ready;
+  fresh.ws.close();
+  // and every socket is held to 30 a minute
+  const S = addr();
+  for (let i = 0; i < 30; i++) {
+    const c2 = client('/ws/hub', null, { 'X-Addr': S });
+    await c2.ready;
+    c2.ws.close();
+  }
+  assert.strictEqual(await refused(client('/ws/hub', null, { 'X-Addr': S })), 429, 'the 31st socket in a minute is refused');
+  console.log('limits: 10 new tables and 30 sockets a minute per address');
+}
+
+async function probe() {
+  const letters = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  // a join that goes nowhere answers the same, whether the code is unknown, full or started
+  const tryJoin = async (acc, code, extra) => {
+    const c = client('/ws/' + code, null, extra);
+    await c.ready;
+    const e = c.next(m => m.t === 'error' || m.t === 'joined');
+    c.send({ t: 'join', auth: acc.auth });
+    const m = await e;
+    return [m.k || m.t, c];
+  };
+  const [host, p1, s1, s2, s3] = [await guest(), await guest(), await guest(), await guest(), await guest()];
+  const made = async (acc, n) => {
+    const a = client('/ws/new');
+    await a.ready;
+    a.send({ t: 'create', auth: acc.auth, players: n, games: n });
+    const j = await a.next(m => m.t === 'joined');
+    return [a, j.code];
+  };
+  const [a, code] = await made(host, 2);
+  const [jb, cb] = await tryJoin(p1, code);
+  assert.strictEqual(jb, 'joined');
+  assert.strictEqual((await tryJoin(s1, code))[0], 'nocode', 'a full table');
+  const st = a.next(m => m.t === 'state');
+  a.send({ t: 'start' });
+  await st;
+  assert.strictEqual((await tryJoin(s2, code))[0], 'nocode', 'a started table');
+  assert.strictEqual((await tryJoin(s3, unknownCode()))[0], 'nocode', 'a code nobody made');
+  a.ws.close();
+  cb.ws.close();
+  console.log('probe: unknown, full and started codes answer alike');
+
+  // an account's failed joins are counted: after 10 in 10 minutes even a good code is refused, another account is not affected
+  const flood = await guest();
+  for (let i = 0; i < 15; i++) assert.strictEqual((await tryJoin(flood, unknownCode()))[0], 'nocode');
+  const [h2, c2] = await made(await guest(), 5);
+  assert.strictEqual((await tryJoin(flood, c2))[0], 'nocode', 'past the budget a good code is refused as well');
+  const [r, jc] = await tryJoin(await guest(), c2);
+  assert.strictEqual(r, 'joined', 'a second account is unaffected');
+  jc.ws.close();
+  console.log('probe: 15 joins to random codes from one account are cut off');
+
+  // the address has a budget of its own: 5 failed joins a minute
+  const X = { 'X-Addr': addr() };
+  for (let i = 0; i < 8; i++) assert.strictEqual((await tryJoin(await guest(), unknownCode(), X))[0], 'nocode');
+  assert.strictEqual((await tryJoin(await guest(), c2, X))[0], 'nocode', 'an address past its budget gets nothing');
+  const [ok, jd] = await tryJoin(await guest(), c2, { 'X-Addr': addr() });
+  assert.strictEqual(ok, 'joined', 'another address is fine');
+  jd.ws.close();
+  h2.ws.close();
+  console.log('probe: an address past 5 failed joins a minute is refused');
+
+  // a table can only be made at a code /ws/new handed out
+  const acc = await guest();
+  const fake = client('/ws/' + unknownCode());
+  await fake.ready;
+  const e = fake.next(m => m.t === 'error');
+  fake.send({ t: 'create', auth: acc.auth, players: 2, games: 2 });
+  assert.strictEqual((await e).k, 'nocode');
+  const forged = client('/ws/' + unknownCode(), null, { 'X-Amk-New': '1' });
+  await forged.ready;
+  const e2 = forged.next(m => m.t === 'error');
+  forged.send({ t: 'create', auth: acc.auth, players: 2, games: 2 });
+  assert.strictEqual((await e2).k, 'nocode', 'a client cannot claim to have been handed the code');
+  console.log('probe: create at a made-up code is refused');
+
+  // codes keep their alphabet and length
+  const lead = new Set();
+  for (let i = 0; i < 6; i++) {
+    const [t, code2] = await made(await guest(), 2);
+    assert(/^[A-HJKMNP-Z]{4}$/.test(code2), code2);
+    assert(code2.split('').every(x => letters.includes(x)));
+    lead.add(code2[0]);
+    t.ws.close();
+  }
+  assert(lead.size > 1, 'the codes are not all alike');
+  console.log('probe: the code alphabet and length are unchanged');
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -3941,6 +4157,8 @@ process.on('unhandledRejection', e => {
   await sec('lobby', () => lobby());
   await sec('friends', () => friends());
   await sec('silent', () => silent());
+  await sec('limits', () => limits());
+  await sec('probe', () => probe());
   await sec('tables', () => tables());
   await sec('busy', () => busy());
   await sec('lone', () => lone());

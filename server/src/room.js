@@ -7,7 +7,8 @@ import { verify, player, award, seat, credit, grantTokens, payout, prizes, STAKE
 import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
-import { look, claim, release, giveBack, keep, spend, payoff } from './persona.js';
+import { look, claim, release, giveBack, keep, spend, payoff, grant } from './persona.js';
+import { setting } from './admin.js';
 import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -28,16 +29,30 @@ const LINES = 20;
 const TYPED = 120;
 const EVERY = 2000;
 const GAP = 5000;
+const HELLO = 4000;
+const STRAYS = 8;
+const TRIES = 3;
+const DEAL_TRIES = 5;
+const DEAL_TIME = 60000;
+const DEAL_RETRY = 2000;
 const ID = /^[0-9a-f]{32}$/;
 
 export const stub = (ns, code) => ns.get(ns.idFromName(code), hint(code));
+
+// a whole number below n that nobody can predict
+export function pick(n) {
+  const u = new Uint32Array(1);
+  const top = 2 ** 32 - 2 ** 32 % n;
+  do crypto.getRandomValues(u); while (u[0] >= top);
+  return u[0] % n;
+}
 
 // a table of a region takes a code from that region's letters, any other room from the rest
 export async function freeCode(ns, region) {
   const lead = region ? LEADS[region] : PRIVATE;
   for (let i = 0; i < 8; i++) {
-    let c = lead[Math.floor(Math.random() * lead.length)];
-    for (let j = 0; j < 3; j++) c += LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    let c = lead[pick(lead.length)];
+    for (let j = 0; j < 3; j++) c += LETTERS[pick(LETTERS.length)];
     if (await stub(ns, c).free()) return c;
   }
   return null;
@@ -82,6 +97,8 @@ export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.k = Number(env.PACE) || 1;
+    // the test clock is no shorter than this, or a busy machine would lose its clients
+    this.hello = Math.ceil(HELLO * Math.max(this.k, 0.2));
     this.bucket = {};
     this.asked = {};
     this.lines = [];
@@ -104,10 +121,36 @@ export class Room extends DurableObject {
   async fetch(request) {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected websocket', { status: 426 });
     const code = new URL(request.url).pathname.split('/')[2];
+    if (this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().seat < 0).length >= STRAYS) return new Response('busy', { status: 503 });
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ seat: -1, sent: 0, code: code });
+    const now = Date.now();
+    // only a test may ask for a longer wait
+    const wait = this.env.PACE && Number(request.headers.get('X-Hello')) || this.hello;
+    // the address and the made flag come from the Worker, which strips what a client sends under these names
+    server.serializeAttachment({ seat: -1, sent: 0, code: code, due: now + wait, tries: 0, ip: request.headers.get('X-Amk-Addr') || '', made: request.headers.has('X-Amk-New') });
+    const at = await this.ctx.storage.getAlarm();
+    if (!at || at > now + wait) await this.ctx.storage.setAlarm(now + wait);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // when the first socket that has not taken a seat is due to be closed
+  strays() {
+    let t = Infinity;
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (w.readyState === 1 && a.seat < 0) t = Math.min(t, a.due);
+    }
+    return t;
+  }
+
+  // a socket that has not joined within the hello window never will; this also runs for a room that was never made
+  sweep() {
+    const now = Date.now();
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (w.readyState === 1 && a.seat < 0 && a.due <= now) w.close(1000, 'idle');
+    }
   }
 
   // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
@@ -177,6 +220,11 @@ export class Room extends DurableObject {
     try { m = JSON.parse(data); } catch (e) { return; }
     if (!m || typeof m !== 'object') return;
     const a = ws.deserializeAttachment();
+    if ((m.t === 'create' || m.t === 'join') && a.seat < 0) {
+      a.tries = (a.tries || 0) + 1;
+      ws.serializeAttachment(a);
+      if (a.tries > TRIES) return ws.close(1008, 'tries');
+    }
     if (m.t === 'create') return this.create(ws, a, m);
     if (m.t === 'join') return this.join(ws, a, m);
     if (a.seat < 0) return this.fail(ws, 'join');
@@ -199,8 +247,13 @@ export class Room extends DurableObject {
   }
 
   async alarm() {
+    this.sweep();
     const r = this.r;
-    if (!r) return;
+    if (!r) {
+      const t = this.strays();
+      if (t < Infinity) await this.ctx.storage.setAlarm(Math.max(t, Date.now() + 1));
+      return;
+    }
     if (r.over && !r.paid) await this.settle().catch(() => {});
     if (this.owes() && r.paid) await this.sendCup().catch(() => {});
     if (r.rm) return this.tick();
@@ -241,7 +294,21 @@ export class Room extends DurableObject {
     ws.close(1000, k);
   }
 
+  hub() {
+    return this.env.HUB.get(this.env.HUB.idFromName('h'));
+  }
+
+  // A join that failed counts against the account and the address; past the budget even a good code is refused. Whatever
+  // the reason, a stranger is told the same thing.
+  async miss(ws, a, p, k) {
+    const over = !!a.ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: a.ip })).success;
+    await this.hub().miss(p ? p.id : null, a.ip, over).catch(() => {});
+    this.refuse(ws, k || 'nocode');
+  }
+
   async create(ws, a, m) {
+    // only a code handed out by /ws/new may be made, so a code cannot be tried by making it
+    if (!a.made) return this.miss(ws, a, null);
     if (this.r) return this.refuse(ws, 'taken');
     const n = m.players;
     const g = m.games;
@@ -262,28 +329,29 @@ export class Room extends DurableObject {
   }
 
   async join(ws, a, m, p) {
-    if (!this.r) return this.refuse(ws, 'nocode');
     if (a.seat >= 0) return;
-    if (this.r.pub && !m.token) return this.refuse(ws, 'nocode');
-    const rejoin = typeof m.token === 'string' && this.r.seats.some(s => s && s.token === m.token);
-    if (!rejoin && !m.token && !p) {
+    // the account is looked at first, so a code that exists and one that does not get the same answer
+    if (!m.token && !p) {
       p = await verify(this.env.DB, m.auth);
       if (ws.readyState !== 1) return;
-      if (!p) return this.refuse(ws, 'auth');
-      // an opened room takes a seat from the same pool as a public table
-      if (this.r && this.r.open && !this.r.started && await this.env.HUB.get(this.env.HUB.idFromName('h')).holds(p.id, this.r.code)) return this.refuse(ws, 'busy');
+      if (!p) return this.miss(ws, a, null, 'auth');
+      if (await this.hub().probing(p.id, a.ip).catch(() => false)) return this.refuse(ws, 'nocode');
     }
+    if (!this.r || this.r.pub && !m.token) return this.miss(ws, a, p);
+    const rejoin = typeof m.token === 'string' && this.r.seats.some(s => s && s.token === m.token);
+    // an opened room takes a seat from the same pool as a public table
+    if (!rejoin && !m.token && this.r.open && !this.r.started && await this.hub().holds(p.id, this.r.code)) return this.miss(ws, a, p, 'busy');
     const r = this.r;
-    if (!r) return this.refuse(ws, 'nocode');
+    if (!r) return this.miss(ws, a, p);
     let i = typeof m.token === 'string' ? r.seats.findIndex(s => s && s.token === m.token) : -1;
     if (i < 0) {
-      if (m.token) return this.refuse(ws, 'nocode');
+      if (m.token) return this.miss(ws, a, p);
       i = r.seats.findIndex(s => s && s.pid === p.id);
       if (i < 0) {
-        if (r.started) return this.refuse(ws, 'started');
-        if (p.chips < ENTRY * r.stake) return this.refuse(ws, 'poor');
+        if (r.started) return this.miss(ws, a, p);
+        if (p.chips < ENTRY * r.stake) return this.miss(ws, a, p, 'poor');
         i = r.seats.indexOf(null);
-        if (i < 0) return this.refuse(ws, 'full');
+        if (i < 0) return this.miss(ws, a, p);
         r.seats[i] = human(seat(p), 0);
         if (r.host < 0) r.host = i;
       }
@@ -1007,7 +1075,7 @@ export class Room extends DurableObject {
       this.save();
     }
     const dead = (r.over && !r.paid) || this.owes() ? Infinity : r.dead || Infinity;
-    const t = Math.min(this.due(), dead);
+    const t = Math.min(this.due(), dead, this.strays());
     // A lobby with no timer still gets a periodic check
     // Whole milliseconds, and never the time of the alarm that just ran: that one is dropped.
     const at = Math.max(Math.ceil(t < Infinity ? t : Date.now() + KEEP * this.k), Date.now() + 1);

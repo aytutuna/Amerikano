@@ -94,6 +94,7 @@ function devVars(p) {
     'RC_SECRET_KEY=sk_test',
     'RC_API=' + host('RC'),
     'ADMIN_KEY=' + adminKey,
+    'HUB_SILENT=30',
     '',
   ].join('\n');
 }

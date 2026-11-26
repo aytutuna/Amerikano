@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { freeCode, stub } from './room.js';
+import { freeCode, stub, pick } from './room.js';
 import { verify, player, seat, credit, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
@@ -14,7 +14,13 @@ const EVERY = 500;
 const DM_BURST = 5;
 const DM_EVERY = 3000;
 
-const HELLO = 10000;
+const HELLO = 4000;
+const SILENT = 2000;
+const PER_SILENT = 20;
+const PER_KNOWN = 50;
+const MISSES = 10;
+const MISS_SPAN = 600000;
+const SHUT = 60000;
 const CUP = 8;
 const WAIT = 20000;
 const JOIN = 4000;
@@ -28,7 +34,7 @@ const between = (lo, hi) => Math.round(lo + Math.random() * (hi - lo));
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = pick(i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -51,9 +57,14 @@ export class Hub extends DurableObject {
     this.calls = new Map();
     this.dialed = new Map();
     this.limit = new Map();
+    this.misses = new Map();
+    this.shut = new Map();
     this.rooms = {};
     this.k = Number(env.PACE) || 1;
-    this.hello = Math.ceil(HELLO * this.k);
+    // the test clock is no shorter than this, or a busy machine would lose its clients
+    this.hello = Math.ceil(HELLO * Math.max(this.k, 0.05));
+    // a test can lower the cap on silent sockets to reach it
+    this.silent = env.PACE && Number(env.HUB_SILENT) || SILENT;
     ctx.blockConcurrencyWhile(async () => {
       this.tables = (await ctx.storage.get('tables')) || {};
       this.cups = (await ctx.storage.get('cups')) || { form: {}, run: {} };
@@ -69,12 +80,23 @@ export class Hub extends DurableObject {
 
   async fetch(request) {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected websocket', { status: 426 });
-    if (this.ctx.getWebSockets().length >= MAX) return new Response('busy', { status: 503 });
+    const ip = request.headers.get('X-Amk-Addr') || '';
+    const live = this.ctx.getWebSockets().filter(w => w.readyState === 1).map(w => ({ w: w, a: w.deserializeAttachment() }));
+    const quiet = live.filter(x => !x.a.pid);
+    if (ip && quiet.filter(x => x.a.ip === ip).length >= PER_SILENT) return new Response('busy', { status: 429 });
+    // a signed-in player still gets in when the hub is full of sockets that say nothing: the oldest of those goes
+    if (quiet.length >= this.silent || live.length >= MAX) {
+      if (!quiet.length) return new Response('busy', { status: 503 });
+      quiet.reduce((o, x) => (x.a.born < o.a.born ? x : o)).w.close(1013, 'busy');
+    }
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ pid: '', stake: 0, fast: false, at: 'lobby', born: Date.now() });
+    const now = Date.now();
+    // only a test may ask for a longer wait before the hello
+    const wait = this.env.PACE && Number(request.headers.get('X-Hello')) || this.hello;
+    server.serializeAttachment({ pid: '', stake: 0, fast: false, at: 'lobby', born: now, due: now + wait, ip: ip });
     const at = await this.ctx.storage.getAlarm();
-    if (!at || at > Date.now() + this.hello) await this.ctx.storage.setAlarm(Date.now() + this.hello);
+    if (!at || at > now + wait) await this.ctx.storage.setAlarm(now + wait);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -89,7 +111,7 @@ export class Hub extends DurableObject {
     for (const w of this.ctx.getWebSockets()) {
       const a = w.deserializeAttachment();
       if (a.pid || w.readyState !== 1) continue;
-      const due = a.born + this.hello;
+      const due = a.due || a.born + this.hello;
       if (due <= now) w.close(1000, 'hello');
       else next = next ? Math.min(next, due) : due;
     }
@@ -114,6 +136,7 @@ export class Hub extends DurableObject {
       if (a.pid) return;
       const p = await verify(this.env.DB, m.auth);
       if (!p) return this.refuse(ws, 'auth');
+      if (a.ip && this.ctx.getWebSockets().filter(w => w !== ws && w.readyState === 1 && w.deserializeAttachment().ip === a.ip && w.deserializeAttachment().pid && w.deserializeAttachment().pid !== p.id).length >= PER_KNOWN) return this.refuse(ws, 'slow');
       this.ctx.waitUntil(this.env.DB.prepare('INSERT OR IGNORE INTO active (player, day) VALUES (?, ?)').bind(p.id, Math.floor(Date.now() / 86400000)).run().catch(() => {}));
       // the newest socket of an account wins
       for (const w of this.ctx.getWebSockets()) {
@@ -121,7 +144,7 @@ export class Hub extends DurableObject {
         w.send(JSON.stringify({ t: 'error', k: 'replaced' }));
         w.close(4000, 'replaced');
       }
-      ws.serializeAttachment({ pid: p.id, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
+      ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
       this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, voice: on(this.env) });
       const c = this.inCall(p.id);
       if (c) {
@@ -438,11 +461,50 @@ export class Hub extends DurableObject {
     return true;
   }
 
+  // Failed joins by account (over a few minutes) and by address, kept here because every table reports to this one object.
+  // The Room and the hub itself call it; past the budget a good code is refused too, with the answer a missing one gets.
+  miss(pid, ip, over) {
+    const now = Date.now();
+    if (over && ip) this.shut.set(ip, now + SHUT);
+    if (pid) this.misses.set(pid, (this.misses.get(pid) || []).filter(t => now - t < MISS_SPAN).concat(now));
+    if (this.misses.size > 5000) for (const [k, v] of this.misses) if (now - v[v.length - 1] >= MISS_SPAN) this.misses.delete(k);
+    if (this.shut.size > 5000) for (const [k, v] of this.shut) if (v <= now) this.shut.delete(k);
+  }
+
+  probing(pid, ip) {
+    const now = Date.now();
+    return (this.misses.get(pid) || []).filter(t => now - t < MISS_SPAN).length >= MISSES || !!ip && (this.shut.get(ip) || 0) > now;
+  }
+
+  async stray(ws, pid, k) {
+    const ip = ws.deserializeAttachment().ip;
+    const over = !!ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: ip })).success;
+    this.miss(pid, ip, over);
+    this.put(ws, { t: 'error', k: k });
+  }
+
   async sit(ws, pid, code) {
+    if (this.probing(pid, ws.deserializeAttachment().ip)) return this.put(ws, { t: 'error', k: 'nocode' });
     const t = this.tables[code];
-    if (!t || !pool(t)) return this.put(ws, { t: 'error', k: 'nocode' });
-    if (t.started) return this.put(ws, { t: 'error', k: 'full' });
-    if (await this.seated(ws, pid, t.stake, code) === false) this.put(ws, { t: 'error', k: 'full' });
+    if (!t || !pool(t)) return this.stray(ws, pid, 'nocode');
+    if (t.started) return this.stray(ws, pid, 'full');
+    if (await this.seated(ws, pid, t.stake, code) === false) await this.stray(ws, pid, 'full');
+  }
+
+  // sign-out: the sockets of that device (or of every device) are closed
+  drop(pid, session) {
+    for (const w of this.ctx.getWebSockets()) {
+      const a = w.deserializeAttachment();
+      if (a.pid === pid && (!session || a.session === session)) w.close(4001, 'signout');
+    }
+  }
+
+  // a tournament table could not deal: the whole tournament is cancelled and the buy-ins go back
+  cupFail(id) {
+    return this.queue(async () => {
+      const c = this.cups.run[id];
+      if (c && !c.aborting) await this.abort(c);
+    });
   }
 
   // the open table of the room with the most people, real ones first, else a new one
