@@ -101,7 +101,7 @@ var UI = (function () {
         inp.value = Number.isNaN(sk) ? '' : String(sk);
         inp.dataset.f = 'stake';
         inp.addEventListener('input', () => {
-          inp.value = inp.value.replace(/D/g, '');
+          inp.value = inp.value.replace(/\D/g, '');
           sk = inp.value === '' ? NaN : Number(inp.value);
         });
         stake.appendChild(inp);
@@ -123,7 +123,7 @@ var UI = (function () {
       // the text key of what is wrong with the stake, or null
       problem: () => {
         if (!room) return null;
-        if (!Number.isInteger(sk) || sk % 10 || sk > 1e9) return 'hall.stakeBad';
+        if (!Number.isInteger(sk) || sk < 0 || sk % 10 || sk > 1e9) return 'hall.stakeBad';
         if (sk && !(me && me.apple)) return 'net.err.guest';
         return me && me.chips >= at.entry * sk ? null : 'net.err.poor';
       },
