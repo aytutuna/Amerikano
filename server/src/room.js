@@ -426,6 +426,7 @@ export class Room extends DurableObject {
       }
       this.report();
     }
+    await this.record();
     const st = Game.newMatch({ players: r.n, games: r.games, level: r.level, allBots: true });
     st.players.forEach((p, i) => {
       p.name = r.seats[i].name;
@@ -435,12 +436,23 @@ export class Room extends DurableObject {
     this.moved();
   }
 
+  // one row per seat that took part, computer players too; a repeat of the deal leaves the first rows as they are
+  record() {
+    const { r } = this;
+    const at = Date.now();
+    const kind = r.cup ? 'cup' : r.pub ? 'pub' : 'friend';
+    const rows = r.seats.map((s, i) => s.esc && this.env.DB.prepare('INSERT OR IGNORE INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(r.id, r.code, kind, r.stake, s.pid, s.fake ? 1 : 0, i, at)).filter(Boolean);
+    return this.env.DB.batch(rows);
+  }
+
   leave(ws, a) {
     const r = this.r;
     if (r.seats[a.seat]) this.hush(r.seats[a.seat].pid);
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
       const s = r.seats[a.seat];
+      if (r.id && !r.over) this.ctx.waitUntil(this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ? WHERE match = ? AND player = ?').bind(Date.now(), r.id, s.pid).run());
       r.seats[a.seat] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true };
       if (this.st) this.st.players[a.seat].bot = true;
     } else {
@@ -776,6 +788,10 @@ export class Room extends DurableObject {
     if (r.cup) r.cup.order = st.final.order.map(i => ({ pid: r.seats[i].pid, left: !r.seats[i].fake && !!r.seats[i].bot, played: !!(r.res[i] && r.res[i].xp) }));
   }
 
+  net(pid, n) {
+    return this.env.DB.prepare('UPDATE match_seat SET net = ? WHERE match = ? AND player = ?').bind(n, this.r.id, pid).run();
+  }
+
   // a second call while the first is running waits for it
   settle() {
     return this.settling || (this.settling = this.pay().finally(() => { this.settling = null; }));
@@ -792,6 +808,7 @@ export class Room extends DurableObject {
         x.done = true;
         this.save();
         r.seats[i].bank = await payoff(this.env.DB, x.pid, x.pay, x);
+        await this.net(x.pid, x.net);
         continue;
       }
       let pay = x.pay;
@@ -800,6 +817,7 @@ export class Room extends DurableObject {
         pay = Math.max(pay, -(p ? p.chips : 0));
       }
       await credit(this.env.DB, x.pid, pay, 'match', r.id + ':out');
+      await this.net(x.pid, pay - r.stake);
       x.done = true;
       this.save();
       if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });

@@ -3671,6 +3671,88 @@ async function calls(f) {
   console.log('calls: friends only, busy, decline, missed, accept, SFU proxy, hang up, dropped');
   for (const x of [ha, hc, he]) x.ws.close();
 }
+const seatsOf = code => sql("SELECT * FROM match_seat WHERE code = '" + code + "' ORDER BY seat");
+const moved = (acc, match) => sql("SELECT coalesce(sum(delta), 0) AS n FROM chip_log WHERE player = " + who(acc) + " AND ref LIKE '" + match + ":%'")[0].n;
+
+// every seat of every match is written down, computer players too, with the result and who left
+async function matchlog() {
+  const [accA, accB] = [await guest(), await guest()];
+  const a = client('/ws/new');
+  await a.ready;
+  a.send({ t: 'create', auth: accA.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  const ja = await a.next(m => m.t === 'joined');
+  const b = client('/ws/' + ja.code);
+  await b.ready;
+  b.send({ t: 'join', auth: accB.auth });
+  await b.next(m => m.t === 'joined');
+  const fin = [a, b].map(c => played(c));
+  a.send({ t: 'start' });
+  await within(Promise.all(fin), 120000, 'match end');
+  await sleep(800);
+  let rows = seatsOf(ja.code);
+  assert.deepStrictEqual(rows.map(x => [x.player, x.kind, x.stake, x.fake, x.seat, x.gone]), [[accA.id, 'friend', 100, 0, 0, 0], [accB.id, 'friend', 100, 0, 1, 0]]);
+  assert.strictEqual(rows[0].match, rows[1].match);
+  for (const [i, acc] of [accA, accB].entries()) {
+    assert(rows[i].net !== null && rows[i].at > 0);
+    assert.strictEqual(rows[i].net, moved(acc, rows[0].match), 'net is what the chip log moved');
+  }
+  console.log('matchlog: a friend table writes one row per seat, net equals the chip log');
+  a.ws.close();
+  b.ws.close();
+
+  // a leave in a started match sets gone; the other seat does not
+  const [accC, accD] = [await guest(), await guest()];
+  const c = client('/ws/new');
+  await c.ready;
+  c.send({ t: 'create', auth: accC.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  const jc = await c.next(m => m.t === 'joined');
+  const d = client('/ws/' + jc.code);
+  await d.ready;
+  d.send({ t: 'join', auth: accD.auth });
+  await d.next(m => m.t === 'joined');
+  const end = played(Object.assign(c, { seat: jc.seat }));
+  c.send({ t: 'start' });
+  await d.next(m => m.t === 'state');
+  d.send({ t: 'leave' });
+  await within(end, 120000, 'match end');
+  await sleep(800);
+  rows = seatsOf(jc.code);
+  assert.deepStrictEqual(rows.map(x => [x.player, x.gone, x.gone_at > 0]), [[accC.id, 0, false], [accD.id, 1, true]]);
+  console.log('matchlog: a leave sets gone');
+  c.ws.close();
+
+  // a public table: the three computer players are rows too, flagged
+  const h = await hub(accA);
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 100 });
+  const sat = await s;
+  const r = seated(sat);
+  await within(played(r), 120000, 'match end');
+  await sleep(800);
+  rows = seatsOf(sat.code);
+  assert.deepStrictEqual(rows.map(x => [x.kind, x.fake]), [['pub', 0], ['pub', 1], ['pub', 1], ['pub', 1]]);
+  assert.strictEqual(rows[0].player, accA.id);
+  assert(rows.every(x => x.net !== null), 'computer players settle too');
+  assert.strictEqual(rows[0].net, moved(accA, rows[0].match));
+  assert.strictEqual(sql('SELECT count(*) AS n FROM chip_log WHERE player IN (' + rows.slice(1).map(x => "'" + x.player + "'").join(',') + ')')[0].n, 0);
+  r.ws.close();
+  h.ws.close();
+  console.log('matchlog: a public table writes the computer players too');
+
+  // the nightly cleanup keeps 35 days
+  const T = Date.UTC(2031, 5, 20, 3, 5);
+  const old = (m, at) => sql("INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES ('" + m + "', 'ZZZZ', 'pub', 100, " + who(accB) + ", 0, 0, " + at + ")");
+  old('old', T - 36 * DAY);
+  old('new', T - 34 * DAY);
+  await tick(T);
+  assert.deepStrictEqual(sql("SELECT match FROM match_seat WHERE code = 'ZZZZ'").map(x => x.match), ['new']);
+  console.log('matchlog: rows older than 35 days are purged');
+
+  assert.strictEqual((await call('DELETE', '/api/me', accA)).status, 200);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM match_seat WHERE player = ' + who(accA))[0].n, 0, 'deleting the account deletes its rows');
+  console.log('matchlog: account deletion removes the rows');
+}
+
 // the source scan: nothing but the one function sets chips or tokens
 function chipfn() {
   const dir = __dirname + '/../src/';
@@ -3736,6 +3818,7 @@ process.on('unhandledRejection', e => {
   await sec('calls', () => calls(sfu));
   sfu.server.close();
   await sec('purge', () => purge());
+  await sec('matchlog', () => matchlog());
   await sec('chipfn', () => chipfn());
   await sec('typedOff', () => typedOff());
   await sec('reports', () => reports());
