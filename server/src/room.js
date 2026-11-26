@@ -1149,7 +1149,7 @@ export class Room extends DurableObject {
     }
     r.seats = r.seats.map((s, i) => {
       if (!want.includes(i)) return null;
-      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'talked']) delete s[k];
+      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'talked', 'lv']) delete s[k];
       return s;
     });
     for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait']) delete r[k];
