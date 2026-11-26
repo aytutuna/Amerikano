@@ -1979,62 +1979,86 @@ async function regions() {
   console.log('regions: set from the country on the first call, changed by the player');
 
   // quick play never crosses regions and a public list shows its own region only
-  const [a, c, b, w] = [await from('DE', 'EU'), await from('FR', 'EU'), await from('TR', 'AS'), await from('TR', 'AS')];
-  const [ha, hc, hb, hw] = [await hub(a), await hub(c), await hub(b), await hub(w)];
-  const lists = [new Set(), new Set()];
-  for (const [h, set] of [[hc, lists[0]], [hw, lists[1]]]) {
-    h.handlers.push(m => m.t === 'tables' && m.tables.forEach(x => set.add(x.code)));
-    h.send({ t: 'watch', stake: 100 });
+  // the table fills with computer players after 80 to 160 ms, so on a slow machine the second one can land at the next table
+  let lists, A, B;
+  const hubs = [];
+  for (let i = 0; ; i++) {
+    const [a, c, b, w] = [await from('DE', 'EU'), await from('FR', 'EU'), await from('TR', 'AS'), await from('TR', 'AS')];
+    const [ha, hc, hb, hw] = [await hub(a), await hub(c), await hub(b), await hub(w)];
+    hubs.push(ha, hc, hb, hw);
+    lists = [new Set(), new Set()];
+    for (const [h, set] of [[hc, lists[0]], [hw, lists[1]]]) {
+      h.handlers.push(m => m.t === 'tables' && m.tables.forEach(x => set.add(x.code)));
+      h.send({ t: 'watch', stake: 100 });
+    }
+    const sa = ha.next(m => m.t === 'seated');
+    ha.send({ t: 'quick', stake: 100 });
+    A = await sa;
+    const sb = hb.next(m => m.t === 'seated');
+    hb.send({ t: 'quick', stake: 100 });
+    B = await sb;
+    assert.notStrictEqual(A.code, B.code, 'a Turkish player does not sit at a European table');
+    assert(LEADS.eu.includes(A.code[0]) && LEADS.tr.includes(B.code[0]), 'a table code carries its region');
+    const sc = hc.next(m => m.t === 'seated');
+    hc.send({ t: 'quick', stake: 100 });
+    if ((await sc).code === A.code) break;
+    assert(i < 4, 'the same region still matches');
+    console.log('regions: the second player was seated at another table, trying again');
   }
-  const sa = ha.next(m => m.t === 'seated');
-  ha.send({ t: 'quick', stake: 100 });
-  const A = await sa;
-  const sb = hb.next(m => m.t === 'seated');
-  hb.send({ t: 'quick', stake: 100 });
-  const B = await sb;
-  assert.notStrictEqual(A.code, B.code, 'a Turkish player does not sit at a European table');
-  assert(LEADS.eu.includes(A.code[0]) && LEADS.tr.includes(B.code[0]), 'a table code carries its region');
-  const sc = hc.next(m => m.t === 'seated');
-  hc.send({ t: 'quick', stake: 100 });
-  assert.strictEqual((await sc).code, A.code, 'the same region still matches');
   await sleep(300);
   assert(lists[0].has(A.code) && !lists[0].has(B.code), 'a European watcher sees European tables only');
   assert(lists[1].has(B.code) && !lists[1].has(A.code), 'a Turkish watcher sees Turkish tables only');
   console.log('regions: quick play and public lists stay inside the region');
 
   // the list and the next quick play follow a change of region
-  const [x, y] = [await from('DE', 'EU'), await from('TR', 'AS')];
-  level(4, x, y);
-  const [hx, hy] = [await hub(x), await hub(y)];
-  const sx = hx.next(m => m.t === 'seated');
-  hx.send({ t: 'quick', stake: 500 });
-  const X = await sx;
-  const empty = hy.next(m => m.t === 'tables');
-  hy.send({ t: 'watch', stake: 500 });
-  assert.strictEqual((await empty).tables.length, 0, 'the other region has no table');
-  const shown = hy.next(m => m.t === 'tables' && m.tables.some(t => t.code === X.code));
-  await call('POST', '/api/region', y, { region: 'eu' });
-  await shown;
-  const sy = hy.next(m => m.t === 'seated');
-  hy.send({ t: 'quick', stake: 500 });
-  assert.strictEqual((await sy).code, X.code, 'quick play follows the new region');
+  for (let i = 0; ; i++) {
+    const [x, y] = [await from('DE', 'EU'), await from('TR', 'AS')];
+    level(4, x, y);
+    const [hx, hy] = [await hub(x), await hub(y)];
+    hubs.push(hx, hy);
+    const sx = hx.next(m => m.t === 'seated');
+    hx.send({ t: 'quick', stake: 500 });
+    const X = await sx;
+    const empty = hy.next(m => m.t === 'tables');
+    hy.send({ t: 'watch', stake: 500 });
+    assert.strictEqual((await empty).tables.length, 0, 'the other region has no table');
+    const shown = hy.next(m => m.t === 'tables' && m.tables.some(t => t.code === X.code));
+    await call('POST', '/api/region', y, { region: 'eu' });
+    // a table that filled up in the meantime is no longer listed
+    const listed = await Promise.race([shown.then(() => true), sleep(1500).then(() => false)]);
+    const sy = hy.next(m => m.t === 'seated');
+    if (listed) {
+      hy.send({ t: 'quick', stake: 500 });
+      if ((await sy).code === X.code) break;
+    }
+    assert(i < 4, 'quick play follows the new region');
+    console.log('regions: the table filled before the second player came, trying again');
+  }
   console.log('regions: changing region moves the open lobby');
 
   // friends meet across regions: an invite, then a seat at the friend's table
-  const [f1, f2] = [await from('GB', 'EU'), await from('JP', 'AS')];
-  await befriend(f1, f2);
-  const [h1, h2] = [await hub(f1), await hub(f2)];
-  const s1 = h1.next(m => m.t === 'seated');
-  h1.send({ t: 'quick', stake: 100 });
-  const F = await s1;
-  const r1 = seated(F);
-  await r1.next(m => m.t === 'room');
-  const inv = h2.next(m => m.t === 'invited');
-  r1.send({ t: 'invite', to: f2.id });
-  assert.strictEqual((await inv).code, F.code);
-  const s2 = h2.next(m => m.t === 'seated');
-  h2.send({ t: 'sit', code: F.code });
-  assert.strictEqual((await s2).code, F.code, 'a friend from another region sits at the table');
+  const rooms = [];
+  for (let i = 0; ; i++) {
+    const [f1, f2] = [await from('GB', 'EU'), await from('JP', 'AS')];
+    await befriend(f1, f2);
+    const [h1, h2] = [await hub(f1), await hub(f2)];
+    const s1 = h1.next(m => m.t === 'seated');
+    h1.send({ t: 'quick', stake: 100 });
+    const F = await s1;
+    const r1 = seated(F);
+    rooms.push(r1);
+    hubs.push(h1, h2);
+    await r1.next(m => m.t === 'room');
+    const inv = h2.next(m => m.t === 'invited');
+    r1.send({ t: 'invite', to: f2.id });
+    assert.strictEqual((await inv).code, F.code);
+    const s2 = h2.next(m => m.t === 'seated' || m.t === 'error');
+    h2.send({ t: 'sit', code: F.code });
+    const got = await s2;
+    if (got.code === F.code) break;
+    assert(got.k === 'full' && i < 4, 'a friend from another region sits at the table: ' + JSON.stringify(got));
+    console.log('regions: the table filled before the friend came, trying again');
+  }
   console.log('regions: friends invite and join across regions');
 
   // a tournament form is per region: a player of another region starts alone, one of the same region joins
@@ -2053,8 +2077,8 @@ async function regions() {
   for (const g of [g1, g2, g3]) g.send({ t: 'cup', buy: 0 });
   await sleep(300);
   console.log('regions: tournament forms stay inside the region');
-  for (const h of [ha, hb, hc, hw, hx, hy, h1, h2, g1, g2, g3]) h.ws.close();
-  r1.ws.close();
+  for (const h of [...hubs, g1, g2, g3]) h.ws.close();
+  for (const r of rooms) r.ws.close();
 }
 
 // two humans quick-play the same table at this stake; the personas fill the rest
