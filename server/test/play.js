@@ -3718,7 +3718,9 @@ async function matchlog() {
   await sleep(800);
   rows = seatsOf(jc.code);
   assert.deepStrictEqual(rows.map(x => [x.player, x.gone, x.gone_at > 0]), [[accC.id, 0, false], [accD.id, 1, true]]);
-  console.log('matchlog: a leave sets gone');
+  assert.strictEqual(rows[1].net, -100);
+  assert.strictEqual(rows[1].net, moved(accD, rows[0].match), 'a leaver net is what the chip log moved');
+  console.log('matchlog: a leave sets gone and the lost stake');
   c.ws.close();
 
   // a public table: the three computer players are rows too, flagged
@@ -3796,7 +3798,7 @@ function chipfn() {
   const dir = __dirname + '/../src/';
   const hits = [];
   for (const f of fs.readdirSync(dir)) {
-    if (!f.endsWith('.js') || f === 'persona.js') continue;
+    if (!f.endsWith('.js')) continue;
     const text = fs.readFileSync(dir + f, 'utf8');
     for (const m of text.matchAll(/UPDATE\s+(\w+)\s+SET\s[^;`'"]*?\b(chips|tokens)\s*=|INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\([^)]*\b(chips|tokens)\b/gi)) if ((m[1] || m[3]) === 'players') hits.push(f + ' ' + (m[2] || m[4]) + (m[1] ? '' : ' column'));
   }

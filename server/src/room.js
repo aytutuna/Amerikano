@@ -437,13 +437,15 @@ export class Room extends DurableObject {
   }
 
   // one row per seat that took part, computer players too; a repeat of the deal leaves the first rows as they are
-  record() {
+  seatRow(s, i, at) {
     const { r } = this;
-    const at = Date.now();
-    const kind = r.cup ? 'cup' : r.pub ? 'pub' : 'friend';
-    const rows = r.seats.map((s, i) => s.esc && this.env.DB.prepare('INSERT OR IGNORE INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(r.id, r.code, kind, r.stake, s.pid, s.fake ? 1 : 0, i, at)).filter(Boolean);
-    return this.env.DB.batch(rows);
+    return this.env.DB.prepare('INSERT OR IGNORE INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(r.id, r.code, r.cup ? 'cup' : r.pub ? 'pub' : 'friend', r.stake, s.pid, s.fake ? 1 : 0, i, at);
+  }
+
+  record() {
+    const rows = this.r.seats.map((s, i) => s.esc && this.seatRow(s, i, Date.now())).filter(Boolean);
+    return rows.length ? this.env.DB.batch(rows) : null;
   }
 
   leave(ws, a) {
@@ -452,7 +454,14 @@ export class Room extends DurableObject {
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
       const s = r.seats[a.seat];
-      if (r.id && !r.over) this.ctx.waitUntil(this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ? WHERE match = ? AND player = ?').bind(Date.now(), r.id, s.pid).run());
+      // The stand-in has no escrow, so the stake is lost here and net is settled now. The row is made too, in case the deal had not recorded it yet.
+      if (r.id && !r.over && s.esc) {
+        const now = Date.now();
+        this.ctx.waitUntil(this.env.DB.batch([
+          this.seatRow(s, a.seat, now),
+          this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ?, net = ? WHERE match = ? AND player = ?').bind(now, -r.stake, r.id, s.pid)
+        ]));
+      }
       r.seats[a.seat] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true };
       if (this.st) this.st.players[a.seat].bot = true;
     } else {

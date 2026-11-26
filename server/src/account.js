@@ -44,17 +44,19 @@ export const levelAt = xp => {
 // claim: {set: {column: value}, where: 'sql with ? marks', args: [...]} makes a once-only grant (daily, bailout) one batch with its log row
 function creditStmts(db, id, delta, reason, ref, claim) {
   const set = claim ? Object.keys(claim.set) : [];
-  return [
+  const stmts = [
     db.prepare('UPDATE players SET chips = chips + ?' + set.map(k => ', ' + k + ' = ?').join('') + ' WHERE id = ? AND chips + ? >= 0' + (claim ? ' AND (' + claim.where + ')' : ''))
-      .bind(delta, ...set.map(k => claim.set[k]), id, delta, ...(claim ? claim.args : [])),
-    db.prepare('INSERT INTO chip_log (player, delta, reason, at, ref) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, Date.now(), ref || null)
+      .bind(delta, ...set.map(k => claim.set[k]), id, delta, ...(claim ? claim.args : []))
   ];
+  // a claim that pays nothing still sets its columns but leaves no log row
+  if (delta) stmts.push(db.prepare('INSERT INTO chip_log (player, delta, reason, at, ref) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, Date.now(), ref || null));
+  return stmts;
 }
 
 // The only way chips change. Returns false when the player is gone, would go below zero or lost the claim.
 // A ref makes the change happen once: the unique index fails the batch on a repeat, which counts as done.
 export async function credit(db, id, delta, reason, ref, claim) {
-  if (!delta) return true;
+  if (!delta && !claim) return true;
   // a retry after the balance has moved must still see the first run
   if (ref && await db.prepare('SELECT 1 FROM chip_log WHERE player = ? AND ref = ?').bind(id, ref).first()) return true;
   try {
