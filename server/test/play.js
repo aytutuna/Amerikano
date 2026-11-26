@@ -50,7 +50,7 @@ const PERSIST = process.env.PERSIST;
 const WATCHDOG = (+process.env.WATCHDOG_MIN || 60) * 60000;
 const base = process.env.URL || 'ws://localhost:' + port('WORKER', 8787);
 const http = base.replace(/^ws/, 'http');
-const TOP = new Set(['t', 'lb', 'n', 'stake', 'fee', 'hold', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
+const TOP = new Set(['t', 'lb', 'n', 'stake', 'pub', 'fee', 'hold', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
@@ -415,6 +415,12 @@ async function math() {
   assert.strictEqual(barred(p(30, false), 500, true), null);
   assert.deepStrictEqual(barred(p(9, true), 3000, false), { k: 'level', need: 10 }, 'a friend table takes the gate below its stake');
   assert.strictEqual(barred(p(1, true), 90, false), null, 'and none under the lowest table');
+  const cool = Object.assign(p(30, true), { cool_until: Date.now() + 60000, cool_stake: 500 });
+  assert.strictEqual(barred(cool, 500, true).k, 'cool');
+  assert.strictEqual(barred(cool, 2500, true).k, 'cool', 'and every larger table');
+  assert.strictEqual(barred(cool, 100, true), null, 'a smaller one is open');
+  assert.strictEqual(barred(cool, 500, false), null, 'friend tables are not covered');
+  assert.strictEqual(barred(Object.assign({}, cool, { cool_until: Date.now() - 1 }), 500, true), null, 'and it ends');
   assert.deepStrictEqual([cupBarred(p(1, true), 1000), cupBarred(p(10, true), 5000), cupBarred(p(20, true), 25000)], [null, null, null]);
   assert.deepStrictEqual(cupBarred(p(19, true), 25000), { k: 'level', need: 20 });
   assert.deepStrictEqual(cupBarred(p(30, false), 1000), { k: 'guest' });
@@ -4688,6 +4694,164 @@ async function fee() {
   console.log('fee: a public 500 table takes 25 from every seat');
 }
 
+// leaving a started public match counts, costs chips from the third in a week and cools the table down
+async function leaves() {
+  const stamp = Date.now();
+  sql('DELETE FROM personas WHERE created = 1');
+  sql('UPDATE personas SET chips = 100, topup = ' + stamp + ', busy = NULL');
+  sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 29) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(hex(randomblob(16))), i, '1,1,1,0', 1, 0, 0, 0, 10000000, " + stamp + ', NULL, 0, 1 FROM n');
+  const mk = async (lv, chips) => {
+    const acc = level(lv, link(await guest()));
+    sql('UPDATE players SET chips = ' + chips + ' WHERE id = ' + who(acc));
+    return acc;
+  };
+  const count = acc => sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(acc))[0].n;
+  const row = acc => sql('SELECT chips, cool_until, cool_stake FROM players WHERE id = ' + who(acc))[0];
+  const old = (acc, n, ago) => {
+    for (let i = 0; i < n; i++) sql('INSERT INTO leaves (player, match, at, code, stake, kind) VALUES (' + who(acc) + ", 'seed-" + crypto.randomUUID() + "', " + (Date.now() - ago) + ", 'ZZZZ', 500, 'pub')");
+  };
+  const matchOf = (acc, code) => sql('SELECT match FROM match_seat WHERE player = ' + who(acc) + " AND code = '" + code + "'")[0].match;
+  // sits at a public table, waits for the deal and presses Leave
+  const quit = async (acc, stake) => {
+    const h = await hub(acc);
+    const sat = h.next(m => m.t === 'seated' || m.t === 'error');
+    h.send({ t: 'quick', stake: stake });
+    const s = await sat;
+    assert.strictEqual(s.t, 'seated', 'quick at ' + stake + ': ' + s.k);
+    const r = seated(s);
+    const st = await r.next(m => m.t === 'state');
+    r.send({ t: 'leave' });
+    await sleep(700);
+    r.ws.close();
+    h.ws.close();
+    return Object.assign({ code: s.code }, st);
+  };
+  const refusal = async (acc, stake) => {
+    const h = await hub(acc);
+    const e = h.next(m => m.t === 'seated' || m.t === 'error');
+    h.send({ t: 'quick', stake: stake });
+    const m = await e;
+    h.ws.close();
+    return m;
+  };
+  const penalties = acc => sql('SELECT delta, ref FROM chip_log WHERE player = ' + who(acc) + " AND reason = 'leave'");
+
+  // the first two leaves cost nothing
+  const a = await mk(10, 100000);
+  await quit(a, 500);
+  await quit(a, 500);
+  assert.strictEqual(count(a), 2);
+  assert.deepStrictEqual(penalties(a), []);
+  assert.strictEqual(row(a).cool_until, 0);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'leave' AND a = " + who(a))[0].n, 0);
+  console.log('leaves: the first two cost nothing');
+
+  // the third costs one more stake, flags the account and cools 500 and above for 15 minutes
+  sql('UPDATE players SET chips = 100000 WHERE id = ' + who(a));
+  const t3 = Date.now();
+  const third = await quit(a, 500);
+  const match = matchOf(a, third.code);
+  assert.strictEqual(count(a), 3);
+  assert.deepStrictEqual(penalties(a), [{ delta: -500, ref: match + ':leave' }], 'one more stake, once');
+  assert.deepStrictEqual(sql("SELECT x, y FROM flags WHERE kind = 'leave' AND a = " + who(a)), [{ x: 3, y: 500 }]);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE who = 'auto' AND action = 'leave' AND target = " + who(a))[0].n, 1);
+  const c = row(a);
+  assert(c.cool_until > t3 + 14 * 60000 && c.cool_until < Date.now() + 16 * 60000, 'cooling for 15 minutes');
+  assert.strictEqual(c.cool_stake, 500);
+  assert.strictEqual((await call('GET', '/api/me', a)).body.cool.stake, 500);
+  for (const stake of [500, 2500]) {
+    sql('UPDATE players SET chips = 100000 WHERE id = ' + who(a));
+    const e = await refusal(a, stake);
+    assert.strictEqual(e.k, 'cool', 'sit at ' + stake);
+    assert(e.left > 14 * 60000 - 5000 && e.left <= 15 * 60000, 'the time left comes with it');
+  }
+  assert.strictEqual((await refusal(a, 100)).t, 'seated', 'a smaller table is open');
+  assert.strictEqual((await adm('GET', 'leavers', ADMIN)).body.leavers.find(x => x.id === a.id).n, 3);
+  console.log('leaves: the third pays one stake, is flagged, and 500 and above cool for 15 minutes');
+
+  // a table of friends is not covered
+  const f = await pair(3, 3, [await mk(10, 100000), await mk(10, 100000)], 500);
+  const going = f.a.next(m => m.t === 'state');
+  f.a.send({ t: 'start' });
+  await going;
+  f.b.send({ t: 'leave' });
+  await sleep(600);
+  assert.strictEqual(count(f.accB), 0, 'friend table leaves count nothing');
+  f.a.ws.close();
+  f.b.ws.close();
+
+  // the sixth in a week cools for an hour
+  const b = await mk(10, 100000);
+  old(b, 5, 3600000);
+  const t6 = Date.now();
+  await quit(b, 500);
+  assert.strictEqual(count(b), 6);
+  const cb = row(b);
+  assert(cb.cool_until > t6 + 59 * 60000 && cb.cool_until < Date.now() + 61 * 60000, 'an hour');
+  assert.deepStrictEqual(penalties(b).map(x => x.delta), [-500]);
+  console.log('leaves: the sixth cools for an hour');
+
+  // a week old leave does not count
+  const d = await mk(10, 100000);
+  old(d, 4, 8 * 86400000);
+  old(d, 1, 3600000);
+  await quit(d, 500);
+  assert.deepStrictEqual(penalties(d), [], 'two leaves in the week, so nothing to pay');
+  assert.strictEqual(row(d).cool_until, 0);
+
+  // the penalty is at most 2,500, and at most what the player has
+  const g = await mk(30, 700000);
+  old(g, 2, 3600000);
+  await quit(g, 50000);
+  assert.deepStrictEqual(penalties(g).map(x => x.delta), [-2500], 'the 50,000 table charges 2,500');
+  console.log('leaves: older ones do not count, the penalty is capped at 2,500');
+
+  // a seat gone for the window counts, once; one that is back in time counts nothing
+  const h1 = await mk(4, 100000);
+  const hh = await hub(h1);
+  const sa = hh.next(m => m.t === 'seated');
+  hh.send({ t: 'quick', stake: 100 });
+  const seat1 = await sa;
+  let r1 = seated(seat1);
+  const s1 = await r1.next(m => m.t === 'state');
+  assert(s1.pub, 'the table says it is a public one');
+  r1.ws.close();
+  await sleep(300);
+  r1 = client('/ws/' + seat1.code);
+  await r1.ready;
+  r1.send({ t: 'join', token: seat1.token });
+  await r1.next(m => m.t === 'joined');
+  await sleep(6500);
+  assert.strictEqual(count(h1), 0, 'back in time, so nothing counted');
+  r1.ws.close();
+  for (let i = 0; i < 60 && !count(h1); i++) await sleep(300);
+  assert.strictEqual(count(h1), 1, 'gone past the window counts');
+  await sleep(3000);
+  assert.strictEqual(count(h1), 1, 'and only once');
+  assert.strictEqual(sql('SELECT gone FROM match_seat WHERE player = ' + who(h1) + " AND code = '" + seat1.code + "'")[0].gone, 1);
+  hh.ws.close();
+  console.log('leaves: a seat gone for the window counts once, a quick return counts nothing');
+
+  // the nightly cleanup keeps 35 days, and deleting the account takes its rows
+  const T = Date.UTC(2031, 5, 21, 3, 5);
+  const seed = (m, at) => sql('INSERT INTO leaves (player, match, at, code, stake, kind) VALUES (' + who(d) + ", '" + m + "', " + at + ", 'PURG', 500, 'pub')");
+  seed('old', T - 36 * DAY);
+  seed('new', T - 34 * DAY);
+  await tick(T);
+  assert.deepStrictEqual(sql("SELECT match FROM leaves WHERE code = 'PURG'").map(x => x.match), ['new']);
+  assert.strictEqual((await call('DELETE', '/api/me', d)).status, 200);
+  assert.strictEqual(count(d), 0, 'deleting the account deletes its leaves');
+  console.log('leaves: purged after 35 days, removed with the account');
+}
+
+// no leave from a friend table or a tournament was counted anywhere in the run
+function leaveKinds() {
+  const n = sql("SELECT count(*) AS n FROM leaves l JOIN match_seat m ON m.match = l.match WHERE m.kind <> 'pub'")[0].n;
+  assert.strictEqual(n, 0, 'only public tables count leaves');
+  console.log('leaves: none counted from friend tables or cups');
+}
+
 // a seat is kept for a player who is slow to open the table's socket, as a phone on a poor connection or a loaded browser is
 async function slowJoin() {
   const acc = await guest();
@@ -4867,6 +5031,7 @@ process.on('unhandledRejection', e => {
   await sec('slowJoin', () => slowJoin());
   await sec('fee', () => fee());
   await sec('gates', () => gates());
+  await sec('leaves', () => leaves());
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
   await sec('board', () => board());
@@ -4888,6 +5053,7 @@ process.on('unhandledRejection', e => {
   await sec('cupRetry', () => cupRetry());
   await sec('cupRun', () => cupRun(2));
   await sec('cupRun', () => cupRun(6));
+  await sec('leaveKinds', () => leaveKinds());
   await sec('metrics', () => metrics());
   const rc = fakeRc();
   await rc.server.listening$;

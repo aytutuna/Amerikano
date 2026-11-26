@@ -48,6 +48,13 @@ async function log(env) {
   return json({ log: rows.results });
 }
 
+// who left public tables over the last week, most first, with what is still on them
+async function leavers(env) {
+  const now = Date.now();
+  const rows = await env.DB.prepare('SELECT l.player AS id, count(*) AS n, max(l.at) AS last, p.name_seed AS seed, p.cool_until AS cool, p.cool_stake AS stake FROM leaves l LEFT JOIN players p ON p.id = l.player WHERE l.at > ? GROUP BY l.player ORDER BY n DESC, last DESC LIMIT 100').bind(now - 7 * 86400000).all();
+  return json({ leavers: rows.results });
+}
+
 export async function admin(request, env) {
   if (!env.ADMIN_KEY) return new Response('not set up', { status: 503 });
   const path = new URL(request.url).pathname;
@@ -58,6 +65,7 @@ export async function admin(request, env) {
   if (!await same((request.headers.get('Authorization') || '').replace(/^Bearer /, ''), env.ADMIN_KEY)) return fail('auth', 401);
   if (path === '/admin/api/settings') return settings(request, env);
   if (path === '/admin/api/log' && request.method === 'GET') return log(env);
+  if (path === '/admin/api/leavers' && request.method === 'GET') return leavers(env);
   return fail('nope', 404);
 }
 
@@ -78,6 +86,7 @@ td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:to
 <div id="in"><input id="key" type="password" placeholder="Key"><button id="go">Open</button></div>
 <div id="main" hidden>
 <h2>Settings</h2><div id="settings"></div>
+<h2>Leavers, last 7 days</h2><table id="leavers"></table>
 <h2>Log</h2><table id="log"></table>
 </div>
 <script>
@@ -94,6 +103,8 @@ async function show() {
   $('msg').textContent = '';
   const s = (await api('settings')).settings;
   $('settings').innerHTML = Object.keys(s).map(k => '<div><b>' + esc(k) + '</b><textarea rows="2" data-k="' + esc(k) + '">' + esc(s[k]) + '</textarea><button data-save="' + esc(k) + '">Save</button></div>').join('');
+  const v = (await api('leavers')).leavers;
+  $('leavers').innerHTML = '<tr><th>Player</th><th>Leaves</th><th>Last</th><th>Cooling until</th></tr>' + v.map(x => '<tr><td>' + esc(x.id) + '</td><td>' + x.n + '</td><td>' + new Date(x.last).toISOString().slice(0, 16).replace('T', ' ') + '</td><td>' + (x.cool > Date.now() ? new Date(x.cool).toISOString().slice(0, 16).replace('T', ' ') + ' from ' + x.stake : '') + '</td></tr>').join('');
   const l = (await api('log')).log;
   $('log').innerHTML = '<tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr>' + l.map(x => '<tr><td>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td>' + esc(x.who) + '</td><td>' + esc(x.action) + '</td><td>' + esc(x.target) + '</td><td>' + esc(x.detail) + '</td></tr>').join('');
 }

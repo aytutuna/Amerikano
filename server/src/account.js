@@ -42,7 +42,9 @@ export function barred(p, stake, pub) {
   if (!stake) return null;
   if (!signedIn(p) && !(pub && stake <= 500)) return { k: 'guest' };
   const need = GATES[tier(stake)] || 1;
-  return p.level < need ? { k: 'level', need: need } : null;
+  if (p.level < need) return { k: 'level', need: need };
+  // a cooldown from leaving public tables covers the stake it was earned at and every larger one
+  return pub && p.cool_until > Date.now() && stake >= p.cool_stake ? { k: 'cool', left: p.cool_until - Date.now() } : null;
 }
 
 export function cupBarred(p, buy) {
@@ -116,6 +118,31 @@ export async function charge(db, id, held, fee, match) {
     if (/UNIQUE/.test(e.message)) return true;
     throw e;
   }
+}
+
+// A leave from a started public match: counted once per match, and from the third in a rolling week the player pays one more
+// stake (at most 2,500, destroyed), is flagged for the admin page and may not sit at that stake or a larger one for a while.
+// Safe to run again for the same match.
+export async function strike(db, id, match, code, stake, now = Date.now()) {
+  await db.prepare('INSERT OR IGNORE INTO leaves (player, match, at, code, stake, kind) VALUES (?, ?, ?, ?, ?, ?)').bind(id, match, now, code, stake, 'pub').run();
+  const { n } = await db.prepare('SELECT count(*) AS n FROM leaves WHERE player = ? AND at > ?').bind(id, now - 7 * DAY).first();
+  if (n < 3) return n;
+  const cost = Math.min(stake, 2500);
+  let paid = 0;
+  for (let i = 0; i < 2 && cost; i++) {
+    const p = await player(db, id);
+    if (!p) return n;
+    paid = Math.min(cost, p.chips);
+    if (!paid || await credit(db, id, -paid, 'leave', match + ':leave')) break;
+  }
+  const mins = n >= 6 ? 60 : 15;
+  const until = now + mins * 60000;
+  await db.batch([
+    db.prepare('UPDATE players SET cool_until = CASE WHEN cool_until > ?1 THEN max(cool_until, ?2) ELSE ?2 END, cool_stake = CASE WHEN cool_until > ?1 THEN min(cool_stake, ?3) ELSE ?3 END WHERE id = ?4').bind(now, until, stake, id),
+    db.prepare("INSERT INTO flags (kind, a, b, x, y, at) SELECT 'leave', ?1, ?2, ?3, ?4, ?5 WHERE NOT EXISTS (SELECT 1 FROM flags WHERE kind = 'leave' AND a = ?1 AND b = ?2)").bind(id, match, n, paid, now),
+    db.prepare("INSERT INTO admin_log (at, who, action, target, detail) SELECT ?1, 'auto', 'leave', ?2, ?3 WHERE changes() > 0").bind(now, id, JSON.stringify({ match: match, leaves: n, paid: paid, minutes: mins }))
+  ]);
+  return n;
 }
 
 // The only way tokens change, with the same ref rule as credit(). A cap makes it an earning: the day's total may not pass it.
@@ -199,6 +226,7 @@ function profile(p) {
     daily: { ready: last < now, streak: last >= now - 1 ? p.streak : 0, reward: reward(p) },
     bailout: p.chips < MIN_ROOM && Math.floor(p.bail_at / DAY) < now,
     apple: !!p.apple,
+    cool: p.cool_until > Date.now() ? { until: p.cool_until, stake: p.cool_stake } : null,
     typed: !!p.typed,
     voice: !!p.voice,
     lang: p.lang,
@@ -447,6 +475,7 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
       db.prepare('DELETE FROM reports WHERE reporter = ?').bind(p.id),
       db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion

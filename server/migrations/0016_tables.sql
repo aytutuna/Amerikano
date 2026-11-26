@@ -1,0 +1,14 @@
+CREATE TABLE leaves (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player TEXT NOT NULL,
+  match TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  stake INTEGER NOT NULL,
+  kind TEXT NOT NULL
+);
+CREATE UNIQUE INDEX leaves_match ON leaves (player, match);
+CREATE INDEX leaves_at ON leaves (at);
+
+ALTER TABLE players ADD COLUMN cool_until INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE players ADD COLUMN cool_stake INTEGER NOT NULL DEFAULT 0;

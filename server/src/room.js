@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, award, seat, credit, charge, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, ENTRY } from './account.js';
+import { verify, player, award, seat, credit, charge, strike, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -15,6 +15,8 @@ import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
 const GRACE = 8000;
+// a seat gone this long from a started public match counts as a leave
+const LAPSE = 90000;
 // at the fast test pace a browser or a phone needs longer than the grace to open a socket to the table it was just seated at
 const SLOW = 1500;
 const NEXT = 20000;
@@ -254,6 +256,7 @@ export class Room extends DurableObject {
       if (t < Infinity) await this.ctx.storage.setAlarm(Math.max(t, Date.now() + 1));
       return;
     }
+    await this.lapse();
     if (r.over && !r.paid) await this.settle().catch(() => {});
     if (this.owes() && r.paid) await this.sendCup().catch(() => {});
     if (r.rm) return this.tick();
@@ -628,7 +631,7 @@ export class Room extends DurableObject {
         this.st.players[a.seat].bot = true;
         this.st.players[a.seat].level = 'relaxed';
       }
-      if (live) this.ctx.waitUntil(this.gone(r.seats[a.seat], a.seat).catch(e => console.error('leave', e)));
+      if (live) this.ctx.waitUntil(this.gone(r.seats[a.seat], a.seat, r.pub && !r.cup).catch(e => console.error('leave', e)));
     } else {
       r.seats[a.seat] = null;
       if (r.host === a.seat) r.host = this.firstHuman();
@@ -637,14 +640,39 @@ export class Room extends DurableObject {
     this.left(ws);
   }
 
-  // The row is made too, in case the deal had not recorded it yet.
-  async gone(s, i) {
+  // The row is made too, in case the deal had not recorded it yet. A leave from a public table is counted and may cost chips.
+  async gone(s, i, count) {
     const { r } = this;
     const now = Date.now();
     await this.env.DB.batch([
       this.seatRow(s, i, now),
       this.env.DB.prepare('UPDATE match_seat SET gone = 1, gone_at = ? WHERE match = ? AND player = ?').bind(now, r.id, s.pid)
     ]);
+    if (count) await strike(this.env.DB, s.pid, r.id, r.code, r.stake, now);
+  }
+
+  // the test pace keeps a floor, so a slow machine can still come back in time
+  lapseMs() {
+    return LAPSE * Math.max(this.k, 0.05);
+  }
+
+  // a human seat gone from a started public match for that long
+  lapseAt() {
+    const { r } = this;
+    if (!r.pub || r.cup || !r.started || r.over || !this.st) return Infinity;
+    const due = r.seats.filter(s => s && s.gone && !s.bot && !s.lv && s.esc).map(s => s.gone + this.lapseMs());
+    return due.length ? Math.min(...due) : Infinity;
+  }
+
+  async lapse() {
+    const { r } = this;
+    if (!r || this.lapseAt() > Date.now()) return;
+    for (const [i, s] of r.seats.entries()) {
+      if (!s || !s.gone || s.bot || s.lv || !s.esc || Date.now() < s.gone + this.lapseMs()) continue;
+      s.lv = true;
+      this.save();
+      await this.gone(s, i, true).catch(e => console.error('lapse', e));
+    }
   }
 
   left(ws) {
@@ -975,7 +1003,7 @@ export class Room extends DurableObject {
         console.error('loss past the hold', r.code, s.pid, pay);
         pay = 0;
       }
-      const played = !free && !s.left && (s.fake || (s.acts || 0) > (s.autos || 0));
+      const played = !free && !s.left && !s.lv && (s.fake || (s.acts || 0) > (s.autos || 0));
       const xp = played ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
       return { pid: s.pid, pay: pay, net: pay - held - fee, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > held ? pay - held : 0, fake: s.fake, done: false };
     });
@@ -1188,7 +1216,7 @@ export class Room extends DurableObject {
       this.save();
     }
     const dead = (r.over && !r.paid) || this.owes() ? Infinity : r.dead || Infinity;
-    const t = Math.min(this.due(), dead, this.strays());
+    const t = Math.min(this.due(), dead, this.strays(), this.lapseAt());
     // A lobby with no timer still gets a periodic check
     // Whole milliseconds, and never the time of the alarm that just ran: that one is dropped.
     const at = Math.max(Math.ceil(t < Infinity ? t : Date.now() + KEEP * this.k), Date.now() + 1);
@@ -1265,7 +1293,7 @@ export class Room extends DurableObject {
     const place = st.final ? st.final.order.indexOf(me) + 1 : 0;
     return {
       t: 'state', lb: sent,
-      n: n, stake: r.stake, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, stake: r.stake, pub: r.pub && !r.cup, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),
