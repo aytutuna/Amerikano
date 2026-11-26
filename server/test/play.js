@@ -2297,6 +2297,8 @@ async function cupRun(n) {
   const buy = 1000;
   const prizes = [4000, 2000, 1200, 800];
   const hs = [];
+  const finals = new Set();
+  const probes = [];
   let snap = null;
   for (const acc of await Promise.all(Array.from({ length: n }, guest))) {
     const h = await hub(acc);
@@ -2309,6 +2311,20 @@ async function cupRun(n) {
       assert.strictEqual(m.cup, x.round ? 'final' : 'first');
       assert(x.rooms.every(r => r.ws.readyState === 1), 'the first table is kept until the final opens');
       x.round = m.cup;
+      // the leaver may have qualified and sit at the final as a stand-in; a join without a token must not take the seat back
+      if (m.cup === 'final' && n === 6 && !x.leaver && !finals.has(m.code)) {
+        finals.add(m.code);
+        const lv = hs[5].acc;
+        probes.push((async () => {
+          const t = client('/ws/' + m.code);
+          await t.ready;
+          const got = t.next(z => z.t === 'error' || z.t === 'joined');
+          t.send({ t: 'join', auth: lv.auth });
+          const z = await got;
+          t.ws.close();
+          return z;
+        })());
+      }
       for (const r of x.rooms) r.ws.close();
       const r = seated(m);
       play(r, { finish: c => {
@@ -2362,6 +2378,11 @@ async function cupRun(n) {
   assert.strictEqual(sql("SELECT count(*) AS n FROM personas WHERE busy = '" + snap.id + "'")[0].n, 0, 'the personas are free again');
   await sleep(500);
 
+  if (n === 6) {
+    const got = await Promise.all(probes);
+    assert(got.length && got.every(z => z.t === 'error'), 'the leaver cannot join a final table');
+    console.log('tournament: the leaver was turned away from the final: ' + got.map(z => z.k).join(','));
+  }
   let paid = 0;
   for (const x of hs) {
     assert(!x.msgs.some(m => /bot|fake|persona/i.test(JSON.stringify(m))), 'no hub message says bot');
