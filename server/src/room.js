@@ -435,7 +435,7 @@ export class Room extends DurableObject {
     const { r } = this;
     const hs = r.seats.filter(s => s && !s.fake);
     const avg = hs.length ? Math.round(hs.reduce((n, s) => n + s.level, 0) / hs.length) : 1;
-    const p = await claim(this.env.DB, r.code, avg, r.stake, r.seats.filter(Boolean).map(s => s.seed));
+    const p = await claim(this.env.DB, r.code, avg, r.stake, r.seats.filter(Boolean).map(s => s.seed), feeFor(r.stake));
     return { pid: p.id, name: Names.text(p.name_seed, 'en'), seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, bank: p.chips, bot: true, fake: true, gone: 0, ...look(p) };
   }
 
@@ -1123,7 +1123,7 @@ export class Room extends DurableObject {
     const now = Date.now();
     const p = {};
     r.seats.forEach((s, i) => {
-      if (s.fake) p[i] = { at: now + between(2000, 12000) * this.k, stay: Math.random() < STAYS && s.bank >= ENTRY * r.stake };
+      if (s.fake) p[i] = { at: now + between(2000, 12000) * this.k, stay: Math.random() < STAYS && s.bank >= ENTRY * r.stake + feeFor(r.stake) };
     });
     r.rm = { end: now + REMATCH * this.k, want: [], p: p };
     this.report();

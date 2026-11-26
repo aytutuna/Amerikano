@@ -1650,6 +1650,7 @@ async function silent() {
 
 // personas are shared by id: busy at one table, chips and stats settled, only the ones who can cover the stake
 async function pool() {
+  fairPlay();
   const day = 86400000;
   const now = Date.now();
   sql('DELETE FROM personas WHERE created = 1');
@@ -1711,6 +1712,72 @@ async function pool() {
   }
   sql('DELETE FROM personas WHERE created = 1');
   console.log('personas: busy while seated, topped up by day, chips games wins and xp settled');
+
+  // entry plus the table fee: a computer player 5 chips short of it is passed over, one with exactly enough is taken
+  sql("UPDATE personas SET busy = 'hold', busy_at = " + Date.now() + ' WHERE busy IS NULL');
+  const each = (chips, mark) => sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(hex(randomblob(16))), " + mark + " + i, '1,1,1,0', 1, 0, 0, 0, " + chips + ', ' + Date.now() + ', NULL, 0, 3 FROM n');
+  each(1000, 700);
+  each(1005, 800);
+  const short = sql('SELECT id FROM personas WHERE created = 3 AND chips = 1000').map(x => x.id);
+  const fit = sql('SELECT id FROM personas WHERE created = 3 AND chips = 1005').map(x => x.id);
+  const poor = await guest();
+  const hp = await hub(poor);
+  const sp = hp.next(m => m.t === 'seated');
+  hp.send({ t: 'quick', stake: 100 });
+  const rp = seated(await sp);
+  const first = rp.next(m => m.t === 'state');
+  const done = played(rp);
+  const st0 = await first;
+  const seats = st0.players.slice(1);
+  assert(seats.every(x => fit.includes(x.pid)) && !seats.some(x => short.includes(x.pid)), 'only computer players who cover entry and fee are picked');
+  assert(seats.every(x => x.bank === 1005 - hold(100, 4) - feeFor(100)), 'their bank pays the stake held and the fee: ' + seats.map(x => x.bank));
+  await within(done, 120000, 'match end');
+  await sleep(500);
+  const after = sql("SELECT chips FROM personas WHERE id IN ('" + seats.map(x => x.pid).join("','") + "')");
+  assert(after.every(x => x.chips >= 0), 'a bank does not floor at zero, it simply never needs to');
+  sql('DELETE FROM personas WHERE created = 3');
+  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
+  rp.ws.close();
+  hp.ws.close();
+  console.log('personas: entry plus fee decides who is picked, the bank pays what is held and the fee');
+}
+
+// A sharp seat decides from what it can see: its own hand, the discard, the melds and the task. Cards that are hidden from it, the
+// stock and the other hands, are shuffled between them and the move must come out the same.
+function fairPlay() {
+  const lcg = seed => () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  let steps = 0;
+  const kinds = new Set();
+  for (let seed = 1; seed <= 12; seed++) {
+    const rnd = lcg(seed);
+    const st = Game.newMatch({ players: 4, games: 4, level: 'sharp', allBots: true, rnd: rnd });
+    for (let i = 0; i < 1500 && st.phase !== 'matchend'; i++) {
+      if (st.phase === 'gameend') {
+        Game.nextGame(st);
+        continue;
+      }
+      const alt = Game.load(Game.dump(st), { rnd: lcg(seed + 1000) });
+      const me = st.phase === 'claim' ? Game.claimer(st) : st.turn;
+      const hidden = [...alt.stock];
+      const others = alt.players.filter((p, k) => k !== me);
+      for (const p of others) hidden.push(...p.hand);
+      for (let k = hidden.length - 1; k > 0; k--) {
+        const j = Math.floor(lcg(seed * 7919 + k + i)() * (k + 1));
+        [hidden[k], hidden[j]] = [hidden[j], hidden[k]];
+      }
+      alt.stock = hidden.splice(0, alt.stock.length);
+      for (const p of others) p.hand = hidden.splice(0, p.hand.length);
+      const n = st.log.length;
+      Game.botStep(st);
+      Game.botStep(alt);
+      assert.deepStrictEqual(alt.log.slice(n), st.log.slice(n), 'the move does not depend on cards the seat cannot see (phase ' + st.phase + ')');
+      steps++;
+      kinds.add(st.log.slice(n).map(e => e.k).join());
+    }
+  }
+  assert(steps > 1000 && kinds.size >= 5, 'enough different moves were compared: ' + steps + ' steps, ' + kinds.size + ' kinds');
+  console.log('fair play: ' + steps + ' sharp moves identical with the hidden cards shuffled');
 }
 
 // a private room whose host starts with empty seats is found by quick play, and the match counts for both humans
