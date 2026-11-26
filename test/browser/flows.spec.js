@@ -111,3 +111,44 @@ test('a 1,000 cup from joining to the result', async ({ page }) => {
   await page.locator('.sw .sh-acts .btn.primary').click();
   await expect(page.locator('[data-k=tabcups]')).toBeVisible();
 });
+
+// a second player in a browser of their own, from an address of their own
+async function otherGuest(browser, path) {
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, reducedMotion: 'reduce' });
+  const page = await ctx.newPage();
+  const ip = '10.8.' + Math.floor(Math.random() * 250) + '.' + Math.floor(Math.random() * 250);
+  await page.route('**/api/guest', route => route.continue({ headers: Object.assign({}, route.request().headers(), { 'cf-connecting-ip': ip }) }));
+  await page.addInitScript(() => localStorage.setItem('amerikano.settings', JSON.stringify({ lang: 'en', speed: 'fast' })));
+  await page.goto(process.env.AMK_WEB + path);
+  await page.click('[data-k=guest]');
+  await page.waitForSelector('[data-k=quick]');
+  return { ctx, page };
+}
+
+async function makeTable(page) {
+  await page.click('[data-k=friends]');
+  await page.locator('.sheet .sh-acts .btn.primary').click();
+  const code = page.locator('.wt-mid .code');
+  await expect(code).toBeVisible({ timeout: 30000 });
+  return (await code.textContent()).trim();
+}
+
+test('a friend table: join by a typed code and by a /t/CODE link', async ({ page, browser }) => {
+  await guest(page);
+  const code = await makeTable(page);
+  expect(code).toMatch(/^[A-Z]{4}$/);
+
+  const typed = await otherGuest(browser, '/');
+  await typed.page.click('[data-k=friends]');
+  await typed.page.fill('[data-k=code]', code);
+  await typed.page.keyboard.press('Enter');
+  await expect(typed.page.locator('.wt-mid .code')).toHaveText(code, { timeout: 30000 });
+  await expect(page.locator('.wt-table .ws:not(.free)')).toHaveCount(2, { timeout: 30000 });
+  await typed.ctx.close();
+
+  const linked = await otherGuest(browser, '/t/' + code);
+  await linked.page.locator('.sheet .sh-acts .btn.primary').click();
+  await expect(linked.page.locator('.wt-mid .code')).toHaveText(code, { timeout: 30000 });
+  await expect(page.locator('.wt-table .ws:not(.free)')).toHaveCount(2, { timeout: 30000 });
+  await linked.ctx.close();
+});

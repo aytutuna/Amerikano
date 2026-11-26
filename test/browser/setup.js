@@ -13,7 +13,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function site(api) {
   return http.createServer((q, s) => {
     let p = decodeURIComponent(q.url.split('?')[0]);
-    if (p === '/') p = '/index.html';
+    if (p === '/' || /^\/t\/[A-Za-z]{4}$/.test(p)) p = '/index.html';
     const f = path.join(www, p);
     if (!f.startsWith(www) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) {
       s.writeHead(404);
