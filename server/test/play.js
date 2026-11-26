@@ -3994,6 +3994,40 @@ async function limits() {
   c.ws.close();
   console.log('limits: a hub full of silent sockets still takes a signed-in hello');
 
+  // the whole hub at its cap: a signed-in hello still gets in, as the oldest silent socket goes
+  await sleep(1500);
+  const old = client('/ws/hub', null, hold(addr()));
+  await old.ready;
+  const young = client('/ws/hub', null, hold(addr()));
+  await young.ready;
+  const full = client('/ws/hub', null, Object.assign(hold(addr()), { 'X-Max': '1' }));
+  await full.ready;
+  await gone(old, 3000);
+  assert.strictEqual(young.ws.readyState, 1, 'only the oldest silent socket was let go');
+  for (const x of [young, full]) x.ws.close();
+  console.log('limits: a hub at its cap lets the oldest silent socket go');
+
+  // signed-in sockets per address: a sixth account from one address is turned away (HUB_KNOWN is 5 here)
+  const K = addr();
+  const known = [];
+  for (let i = 0; i < +devvars().HUB_KNOWN; i++) {
+    const a = await guest();
+    const c = client('/ws/hub', null, { 'X-Addr': K });
+    await c.ready;
+    const w = c.next(m => m.t === 'hub');
+    c.send({ t: 'hello', auth: a.auth });
+    await w;
+    known.push(c);
+  }
+  const extra = await guest();
+  const over = client('/ws/hub', null, { 'X-Addr': K });
+  await over.ready;
+  const err = over.next(m => m.t === 'error');
+  over.send({ t: 'hello', auth: extra.auth });
+  assert.strictEqual((await err).k, 'slow', 'one address holds at most 5 signed-in accounts here');
+  for (const c of known) c.ws.close();
+  console.log('limits: signed-in sockets per address are capped');
+
   // at a table: a socket that never joins is closed, even where no table exists; a room takes 8 of them
   const lost = client('/ws/' + unknownCode(), null, { 'X-Addr': addr() });
   await lost.ready;

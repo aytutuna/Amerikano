@@ -95,6 +95,7 @@ function devVars(p) {
     'RC_API=' + host('RC'),
     'ADMIN_KEY=' + adminKey,
     'HUB_SILENT=30',
+    'HUB_KNOWN=5',
     '',
   ].join('\n');
 }

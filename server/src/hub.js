@@ -65,6 +65,7 @@ export class Hub extends DurableObject {
     this.hello = Math.ceil(HELLO * Math.max(this.k, 0.05));
     // a test can lower the cap on silent sockets to reach it
     this.silent = env.PACE && Number(env.HUB_SILENT) || SILENT;
+    this.known = env.PACE && Number(env.HUB_KNOWN) || PER_KNOWN;
     ctx.blockConcurrencyWhile(async () => {
       this.tables = (await ctx.storage.get('tables')) || {};
       this.cups = (await ctx.storage.get('cups')) || { form: {}, run: {} };
@@ -85,7 +86,9 @@ export class Hub extends DurableObject {
     const quiet = live.filter(x => !x.a.pid);
     if (ip && quiet.filter(x => x.a.ip === ip).length >= PER_SILENT) return new Response('busy', { status: 429 });
     // a signed-in player still gets in when the hub is full of sockets that say nothing: the oldest of those goes
-    if (quiet.length >= this.silent || live.length >= MAX) {
+    // only a test may lower the whole-hub cap for one request
+    const max = this.env.PACE && Number(request.headers.get('X-Max')) || MAX;
+    if (quiet.length >= this.silent || live.length >= max) {
       if (!quiet.length) return new Response('busy', { status: 503 });
       quiet.reduce((o, x) => (x.a.born < o.a.born ? x : o)).w.close(1013, 'busy');
     }
@@ -136,7 +139,7 @@ export class Hub extends DurableObject {
       if (a.pid) return;
       const p = await verify(this.env.DB, m.auth);
       if (!p) return this.refuse(ws, 'auth');
-      if (a.ip && this.ctx.getWebSockets().filter(w => w !== ws && w.readyState === 1 && w.deserializeAttachment().ip === a.ip && w.deserializeAttachment().pid && w.deserializeAttachment().pid !== p.id).length >= PER_KNOWN) return this.refuse(ws, 'slow');
+      if (a.ip && this.ctx.getWebSockets().filter(w => w !== ws && w.readyState === 1 && w.deserializeAttachment().ip === a.ip && w.deserializeAttachment().pid && w.deserializeAttachment().pid !== p.id).length >= this.known) return this.refuse(ws, 'slow');
       this.ctx.waitUntil(this.env.DB.prepare('INSERT OR IGNORE INTO active (player, day) VALUES (?, ?)').bind(p.id, Math.floor(Date.now() / 86400000)).run().catch(() => {}));
       // the newest socket of an account wins
       for (const w of this.ctx.getWebSockets()) {
