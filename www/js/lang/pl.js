@@ -256,6 +256,11 @@
       pubNote: 'Opuszczenie publicznego stołu może kosztować żetony, a po kilku wyjściach w ciągu tygodnia musisz poczekać, zanim znów usiądziesz.'
     },
 
+    idle: {
+      note: 'Skończył ci się czas, więc ktoś gra za ciebie.',
+      back: 'Jestem z powrotem'
+    },
+
     choice: {
       pick: 'Wybierz zadanie',
       hint: 'Najpierw te najbliższe twoim kartom.',

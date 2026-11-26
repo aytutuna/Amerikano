@@ -255,6 +255,11 @@
       pubNote: 'Quitter une table publique peut coûter des jetons, et après quelques départs dans la semaine, tu dois attendre avant de te rasseoir.'
     },
 
+    idle: {
+      note: 'Ton temps est écoulé, ta place est jouée pour toi.',
+      back: 'Me revoilà'
+    },
+
     choice: {
       pick: 'Choisis un contrat',
       hint: 'D’abord les plus proches de ta main.',

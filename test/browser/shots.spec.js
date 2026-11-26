@@ -64,6 +64,11 @@ for (const v of variants) {
     await page.locator('.sheet .tk').first().click();
     await expect(page.locator('.sw')).toHaveCount(0);
     await shot('table');
+    // an online table the player does not touch: the banner that says the seat is being played for them
+    await page.evaluate(() => App.leave(false));
+    await page.click('[data-k=quick]');
+    await expect(page.locator('#idle')).toBeVisible({ timeout: 90000 });
+    await shot('away');
 
     fs.appendFileSync(path.join(out, 'cutoff.txt'), lines.map(l => l + '\n').join(''));
     expect(await page.locator('html').getAttribute('class')).toContain('rtl');

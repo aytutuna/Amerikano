@@ -106,6 +106,7 @@ var Input = (function () {
     if (el.id === 'sort') return App.sort();
     if (el.id === 'mvl' || el.id === 'mvr') return App.move(el.id === 'mvl' ? -1 : 1);
     if (el.id === 'score') return UI.score();
+    if (el.id === 'here') return App.here();
     if (el.id === 'menu') return UI.pause();
   });
 

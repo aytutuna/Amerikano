@@ -255,6 +255,11 @@
       pubNote: 'Sair de uma mesa pública pode custar fichas, e depois de algumas saídas numa semana você precisa esperar antes de se sentar de novo.'
     },
 
+    idle: {
+      note: 'Seu tempo acabou, então estão jogando por você.',
+      back: 'Voltei'
+    },
+
     choice: {
       pick: 'Escolha um objetivo',
       hint: 'Primeiro os mais próximos das suas cartas.',

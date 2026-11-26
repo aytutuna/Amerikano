@@ -256,6 +256,9 @@ var Table = (function () {
       $('cupt').textContent = t('cup.table');
       $('cupr').textContent = t('cup.round.' + st.cup.round) + ', ' + st.cup.buy.toLocaleString(I18n.loc());
     }
+    $('idle').hidden = !(App.online() && st.auto);
+    $('idle').firstChild.textContent = t('idle.note');
+    $('here').textContent = t('idle.back');
     $('chat').hidden = !App.online();
     $('chat').setAttribute('aria-label', t('chat.open'));
     Voice.draw();

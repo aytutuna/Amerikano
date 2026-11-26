@@ -254,6 +254,11 @@
       pubNote: 'Wer einen öffentlichen Tisch verlässt, kann Chips verlieren, und nach ein paar Austritten in einer Woche musst du warten, bevor du dich wieder setzt.'
     },
 
+    idle: {
+      note: 'Deine Zeit ist abgelaufen, deshalb wird dein Platz für dich gespielt.',
+      back: 'Ich bin zurück'
+    },
+
     choice: {
       pick: 'Wähle eine Aufgabe',
       hint: 'Zuerst die, die am besten zu deinem Blatt passen.',

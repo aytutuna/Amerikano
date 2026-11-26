@@ -256,6 +256,11 @@
       pubNote: 'Een openbare tafel verlaten kan fiches kosten, en na een paar keer weggaan in een week moet je wachten voordat je weer gaat zitten.'
     },
 
+    idle: {
+      note: 'Je tijd is op, dus er wordt voor je gespeeld.',
+      back: 'Ik ben terug'
+    },
+
     choice: {
       pick: 'Kies een opdracht',
       hint: 'Eerst die het dichtst bij je hand liggen.',

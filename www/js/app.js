@@ -651,7 +651,7 @@ var App = (function () {
     return {
       n: m.n, stake: m.stake, pub: m.pub, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
       task: m.task ? task(m.task) : null, tasksLeft: m.tasksLeft.map(task),
-      turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
+      auto: !!m.auto, turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
       // other hands and the stock are only counts, so those arrays stay holes with a length
       stock: new Array(m.stock), discard: m.discard.map(card),
       clock: m.clock && { p: m.clock.p, due: Date.now() + m.clock.left, span: m.clock.span },
@@ -721,6 +721,9 @@ var App = (function () {
     } else render(deal ? { deal: true } : { reveal: touched() });
     if (first && !$('game').contains(document.activeElement)) land();
   };
+
+  // the stand-in has been playing this seat; the server hands it back on this message
+  A.here = () => Net.send({ t: 'back' });
 
   A.fail = (k, more) => {
     askKey = claimKey = '';

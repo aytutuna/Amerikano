@@ -255,6 +255,11 @@
       pubNote: 'Lasciare un tavolo pubblico può costare fiches, e dopo qualche uscita in una settimana devi aspettare prima di sederti di nuovo.'
     },
 
+    idle: {
+      note: 'Il tuo tempo è scaduto, quindi si gioca al tuo posto.',
+      back: 'Eccomi di nuovo'
+    },
+
     choice: {
       pick: 'Scegli un obiettivo',
       hint: 'Prima i più vicini alle tue carte.',

@@ -255,6 +255,11 @@
       pubNote: 'Irte de una mesa pública puede costarte fichas, y tras varias salidas en una semana tendrás que esperar para volver a sentarte.'
     },
 
+    idle: {
+      note: 'Se te acabó el tiempo, así que juegan tu lugar por ti.',
+      back: 'Ya volví'
+    },
+
     choice: {
       pick: 'Elige un contrato',
       hint: 'Primero los más cercanos a tu mano.',

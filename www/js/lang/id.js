@@ -252,6 +252,11 @@
       pubNote: 'Keluar dari meja publik bisa mengurangi chip, dan setelah beberapa kali keluar dalam seminggu, kamu harus menunggu sebelum duduk lagi.'
     },
 
+    idle: {
+      note: 'Waktumu habis, jadi tempatmu dimainkan untukmu.',
+      back: 'Aku kembali'
+    },
+
     choice: {
       pick: 'Pilih tantangan',
       hint: 'Yang paling dekat dengan kartumu di atas.',

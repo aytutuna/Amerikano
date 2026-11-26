@@ -245,6 +245,11 @@ var I18n = (function () {
       pubNote: 'Leaving a public table can cost chips, and after a few leaves in a week you wait before sitting down again.'
     },
 
+    idle: {
+      note: 'Your time ran out, so your seat is being played for you.',
+      back: 'I\'m back'
+    },
+
     choice: {
       pick: 'Pick a task',
       hint: 'Closest to your hand first.',
@@ -921,6 +926,11 @@ var I18n = (function () {
       note: 'Maçın kaydedildi. Lobiden devam edebilirsin.',
       onlineNote: 'Maç sensiz devam eder. Ayrılırsan senin yerine oynanır.',
       pubNote: 'Herkese açık masadan ayrılmak çipe mal olabilir; bir haftada birkaç kez ayrılırsan yeniden oturmak için beklemen gerekir.'
+    },
+
+    idle: {
+      note: 'Süren doldu, senin yerine oynanıyor.',
+      back: 'Geri döndüm'
     },
 
     choice: {

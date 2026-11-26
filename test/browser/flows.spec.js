@@ -58,6 +58,21 @@ test('quick play to the end of an online match', async ({ page }) => {
   await expect(page.locator('.sw.paper .hero')).toBeVisible();
 });
 
+test('after two missed turns the seat shows away with a button to take it back', async ({ page }) => {
+  await guest(page);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('#game')).toBeVisible({ timeout: 60000 });
+  const idle = page.locator('#idle');
+  await expect(idle).toBeHidden();
+  // the clock runs fast on the test server: the first missed turn is played for the person, the second sets the seat away
+  await expect(idle).toBeVisible({ timeout: 90000 });
+  await expect(idle).toContainText('Your time ran out');
+  await page.click('#here');
+  await expect(idle).toBeHidden();
+  // the count starts over, so it takes two more missed turns to show again
+  await expect(idle).toBeVisible({ timeout: 90000 });
+});
+
 test('shop: buy a token pack and wear a cosmetic', async ({ page }) => {
   await fakeStore(page);
   await guest(page);
