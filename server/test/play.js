@@ -12,7 +12,7 @@ const Names = require('../../www/js/names.js');
 const crypto = require('crypto');
 const Catalog = require('../../www/js/catalog.js');
 const httpServer = require('http');
-let payout, hold, feeFor, maxLoss, barred, cupBarred;
+let payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor;
 // what a seat's chips change by over a whole match: the payout less what was held and the fee
 const change = (stake, games, chips) => payout(stake, games, chips) - hold(stake, games) - feeFor(stake);
 
@@ -50,7 +50,7 @@ const PERSIST = process.env.PERSIST;
 const WATCHDOG = (+process.env.WATCHDOG_MIN || 60) * 60000;
 const base = process.env.URL || 'ws://localhost:' + port('WORKER', 8787);
 const http = base.replace(/^ws/, 'http');
-const TOP = new Set(['t', 'lb', 'n', 'auto', 'stake', 'pub', 'fee', 'hold', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
+const TOP = new Set(['t', 'lb', 'n', 'auto', 'stake', 'pub', 'fee', 'hold', 'res', 'games', 'gameNo', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
@@ -355,7 +355,7 @@ async function friends() {
 }
 
 async function math() {
-  ({ payout, hold, feeFor, maxLoss, barred, cupBarred } = await import('../src/account.js'));
+  ({ payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
   // what is held is the stake plus a tenth of it for each chip the match can cost: 10 + 4 per game
   assert.strictEqual(maxLoss(4), 26);
   assert.strictEqual(maxLoss(15), 70);
@@ -1780,6 +1780,167 @@ function fairPlay() {
   console.log('fair play: ' + steps + ' sharp moves identical with the hidden cards shuffled');
 }
 
+// a quick match at this stake, played to the end by one human against computer players
+async function quickAt(acc, stake) {
+  const h = await hub(acc);
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: stake });
+  const sat = await s;
+  const r = seated(sat);
+  const first = r.next(m => m.t === 'state');
+  return { h: h, r: r, code: sat.code, first: first, done: played(r) };
+}
+
+// a friend room the host opens to the pool with its empty seats and plays to the end
+async function friendAt(acc, players, stake) {
+  const c = client('/ws/new');
+  await c.ready;
+  const room = c.next(m => m.t === 'room');
+  c.send({ t: 'create', auth: acc.auth, players: players, games: players, stake: stake });
+  const j = await c.next(m => m.t === 'joined');
+  assert(!('level' in await room), 'the table sheet carries no table level');
+  const first = c.next(m => m.t === 'state');
+  Object.assign(c, { seat: j.seat });
+  const done = played(c);
+  c.send({ t: 'start' });
+  return { r: c, code: j.code, first: first, done: done };
+}
+
+const sharpRows = acc => sql('SELECT kind, stake, sharp, fakes, humans, net, units, won, fake_net, day FROM persona_flow WHERE player = ' + who(acc));
+
+// which computer seats play sharp comes from the ladder in the settings, by stake, buy-in or friend table stake
+async function strong() {
+  // the ladder as a function: a public table by its stake, a cup by its buy-in, a friend table by the stake at or below it
+  const ladder = { 100: 0, 500: 1, 2500: 2, 10000: 9, 50000: 9, cup1000: 1, cup5000: 2, cup25000: 9 };
+  const want = [[[0], 0], [[50], 0], [[100], 0], [[499], 0], [[500], 1], [[700], 1], [[3000], 2], [[20000], 9], [[60000], 9], [[0, 1000], 1], [[0, 5000], 2], [[0, 25000], 9]];
+  for (const [args, n] of want) assert.strictEqual(strongFor(ladder, ...args), n, 'ladder at ' + args);
+  assert.strictEqual(strongFor({}, 500), 0, 'a ladder with no entry gives none');
+
+  // one seat of a match has its own level: only a relaxed seat slips, and the level survives a dump and a load
+  let calls = 0;
+  const rnd = () => { calls++; return Math.random(); };
+  const st = Game.newMatch({ players: 4, games: 2, level: 'sharp', allBots: true, rnd: rnd });
+  st.players.forEach((p, i) => { p.level = i === 1 ? 'relaxed' : 'sharp'; });
+  const slipped = { sharp: 0, relaxed: 0 };
+  for (let i = 0; i < 3000 && st.phase !== 'matchend'; i++) {
+    if (st.phase === 'gameend') {
+      Game.nextGame(st);
+      continue;
+    }
+    const me = st.phase === 'claim' ? Game.claimer(st) : st.turn;
+    const before = calls;
+    const copy = Game.load(Game.dump(st));
+    assert.deepStrictEqual(copy.players.map(p => p.level), st.players.map(p => p.level), 'a seat keeps its level through dump and load');
+    Game.botStep(st);
+    slipped[st.players[me].level] += calls - before;
+  }
+  assert.strictEqual(slipped.sharp, 0, 'a sharp seat never asks for a chance');
+  assert(slipped.relaxed > 5, 'a relaxed seat among sharp ones does: ' + slipped.relaxed);
+  console.log('strong: the ladder reads right, a relaxed seat slips among sharp ones');
+
+  // a human alone at each table gets the computer seats the ladder asks for
+  const mk = async () => {
+    const a = link(level(30, await guest()));
+    sql('UPDATE players SET chips = 300000 WHERE id = ' + who(a));
+    return a;
+  };
+  // the accounts come first: sql() blocks this process, and a socket that waits to join is closed after a moment
+  const accs = [];
+  for (let i = 0; i < 7; i++) accs.push(await mk());
+  const quick = [];
+  for (const stake of [100, 500, 2500, 10000]) quick.push({ acc: accs[quick.length], stake: stake, want: quick.length, run: await quickAt(accs[quick.length], stake) });
+  const f3000 = { acc: accs[4], stake: 3000, want: 2 };
+  f3000.run = await friendAt(f3000.acc, 4, 3000);
+  const f50 = { acc: accs[5], stake: 50, want: 0 };
+  f50.run = await friendAt(f50.acc, 3, 50);
+  const all = [...quick, f3000, f50];
+  const states = await Promise.all(all.map(x => x.run.first));
+  for (const m of states) {
+    leakCheck(m);
+    assert(!('level' in m), 'the table state carries no table level');
+  }
+  // the ladder is edited on the admin page and the next table reads it
+  const rung = JSON.parse(sql("SELECT value FROM settings WHERE key = 'strong'")[0].value);
+  assert.strictEqual((await adm('POST', 'settings', ADMIN, { key: 'strong', value: JSON.stringify(Object.assign({}, rung, { 100: 9 })) })).status, 200);
+  const edited = { acc: accs[6], stake: 100, want: 3 };
+  edited.run = await friendAt(edited.acc, 4, 100);
+  const room = await edited.run.first;
+  assert(!('level' in room));
+  assert.strictEqual((await adm('POST', 'settings', ADMIN, { key: 'strong', value: JSON.stringify(rung) })).status, 200);
+  const ran = [...all, edited];
+  await Promise.all(ran.map(x => within(x.run.done, 240000, 'match end at ' + x.stake)));
+  await sleep(800);
+  for (const x of ran) {
+    const [row] = sharpRows(x.acc);
+    assert(row, 'a flow row at ' + x.stake);
+    assert.strictEqual(row.sharp, x.want, 'sharp seats at ' + x.stake + ': ' + row.sharp);
+    assert.strictEqual(row.fakes, x.run.r.st.players.filter(p => personaIds([p.pid]) === 1).length);
+  }
+  console.log('strong: 0, 1, 2 and all computer seats sharp at 100, 500, 2,500 and 10,000, by stake at a friend table, and the ladder is editable');
+  for (const x of ran) {
+    x.run.r.ws.close();
+    if (x.run.h) x.run.h.ws.close();
+  }
+}
+
+// what each human's match against computer players is worth is written down, with daily totals that outlive the rows
+async function flow() {
+  const mk = async () => {
+    const a = link(level(4, await guest()));
+    sql('UPDATE players SET chips = 50000 WHERE id = ' + who(a));
+    return a;
+  };
+  const [a, b] = [await mk(), await mk()];
+  const full = await quickAt(a, 100);
+  const early = await quickAt(b, 500);
+  await Promise.all([early.first, full.first]);
+  // a seat that leaves a started match is not counted
+  early.r.send({ t: 'leave' });
+  await within(full.done, 120000, 'match end');
+  for (let i = 0; i < 240 && sql("SELECT count(*) AS n FROM personas WHERE busy = '" + early.code + "'")[0].n; i++) await sleep(500);
+  await sleep(1500);
+  const rows = sharpRows(a);
+  assert.strictEqual(rows.length, 1, 'one row for the match');
+  const st = full.r.st;
+  const net = st.res.net;
+  const fakeNet = st.players.slice(1).reduce((n, p) => n + change(100, 4, p.chips), 0);
+  assert.deepStrictEqual(rows[0], { kind: 'pub', stake: 100, sharp: 0, fakes: 3, humans: 1, net: net, units: net / 100, won: st.final.low === 0 ? 1 : 0, fake_net: fakeNet, day: Math.floor(Date.now() / DAY) });
+  assert.strictEqual(net, change(100, 4, st.players[0].chips), 'the net is what the chips show, fee included');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM persona_flow WHERE player = " + who(a))[0].n, 1, 'settling again writes nothing more');
+  assert.strictEqual(sharpRows(b).length, 0, 'a match left early writes none');
+  console.log('flow: a match with three computer players wrote one row with the right net and sharp count, a left match none');
+
+  // the daily total appears once the day is over, and stays when the rows go
+  sql('UPDATE persona_flow SET day = day - 1 WHERE player = ' + who(a));
+  const hour = Math.floor(Date.now() / 3600000) * 3600000;
+  await tick(hour);
+  const day = Math.floor(Date.now() / DAY) - 1;
+  const total = sql("SELECT matches, units, wins, fake_net FROM persona_day WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0];
+  assert(total && total.matches >= 1, 'the total is there after the rollup');
+  const mine = sql("SELECT count(*) AS n, sum(units) AS u, sum(won) AS w, sum(fake_net) AS f FROM persona_flow WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0];
+  assert.deepStrictEqual([total.matches, total.units, total.wins, total.fake_net], [mine.n, mine.u, mine.w, mine.f]);
+  await tick(hour);
+  assert.strictEqual(sql("SELECT matches FROM persona_day WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0].matches, mine.n, 'a second run leaves it as it is');
+  assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM persona_flow WHERE player = " + who(a))[0].n, 0, 'the account takes its rows with it');
+  assert.strictEqual(sql("SELECT matches FROM persona_day WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0].matches, mine.n, 'the day total stays');
+  console.log('flow: the day total is written once and outlives the rows and the account');
+
+  // rows are kept 90 days
+  const T = (Math.floor(Date.now() / DAY) + 1) * DAY + 3 * 3600000 + 5 * 60000;
+  const old = (id, at) => sql("INSERT INTO persona_flow (match, player, day, kind, stake, sharp, fakes, humans, net, units, won, fake_net, at) VALUES ('" + id + "', 'purge', " + Math.floor(at / DAY) + ", 'pub', 100, 0, 3, 1, 0, 0, 0, 0, " + at + ')');
+  old('old', T - 91 * DAY);
+  old('new', T - 89 * DAY);
+  await tick(T);
+  assert.deepStrictEqual(sql("SELECT match FROM persona_flow WHERE player = 'purge'").map(x => x.match), ['new'], 'rows older than 90 days go');
+  sql("DELETE FROM persona_flow WHERE player = 'purge'");
+  console.log('flow: kept 90 days');
+  for (const x of [full, early]) {
+    x.r.ws.close();
+    x.h.ws.close();
+  }
+}
+
 // a private room whose host starts with empty seats is found by quick play, and the match counts for both humans
 async function openRoom() {
   const [host, x] = [await guest(), await guest()];
@@ -1922,7 +2083,7 @@ async function pace() {
   c.send({ t: 'create', auth: host.auth, players: 3, games: 3, stake: 100, fast: true, level: 'sharp' });
   const room = await c.next(m => m.t === 'room');
   assert(!('fast' in room));
-  assert.strictEqual(room.level, 'relaxed', 'the server stops reading the level a client asks for');
+  assert(!('level' in room), 'the server stops reading the level a client asks for, and a table has none');
   for (const x of [ra, rb, c, ha, hb]) x.ws.close();
 }
 
@@ -2592,6 +2753,7 @@ async function cupRun(n) {
     console.log('tournament: the leaver was turned away from the final: ' + got.map(z => z.k).join(','));
   }
   let paid = 0;
+  let flowRows = 0;
   for (const x of hs) {
     assert(!x.msgs.some(m => /bot|fake|persona/i.test(JSON.stringify(m))), 'no hub message says bot');
     const rows = cupIn(x.acc);
@@ -2616,6 +2778,9 @@ async function cupRun(n) {
       assert.strictEqual(rows.length, 1);
       assert(x.msgs.some(m => m.t === 'cupout'));
       assert.strictEqual(week, 0);
+      const fl = sharpRows(x.acc);
+      assert(fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === -buy && r.won === 0 && r.sharp === 1), 'a human knocked out is logged at the buy-in');
+      flowRows += fl.length;
       console.log('tournament: a human went out after the first round and paid only the buy-in');
       continue;
     }
@@ -2628,9 +2793,13 @@ async function cupRun(n) {
     assert.strictEqual(st.stake, 0);
     assert.deepStrictEqual(st.cup.prizes, prizes);
     assert.strictEqual(week, Math.max(0, end.prize - buy));
+    const fl = sharpRows(x.acc);
+    assert(fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === end.prize - buy && r.won === (end.place === 1 ? 1 : 0) && r.sharp === 1), 'a finalist is logged by place');
+    flowRows += fl.length;
     paid += end.prize;
     console.log('tournament: a human placed ' + end.place + ' at the final and got ' + end.prize);
   }
+  assert(n === 6 || flowRows >= 1, 'the tournament wrote its flow rows');
   const after = sql('SELECT sum(chips) AS n FROM personas WHERE id IN (' + ids() + ')')[0].n;
   paid += after - snap.rows.reduce((n, r) => n + r.chips, 0);
   const unpaid = 8 * buy - paid;
@@ -5776,7 +5945,7 @@ process.on('unhandledRejection', e => {
   process.exit(1);
 });
 (async () => {
-  ({ payout, hold, feeFor, maxLoss, barred, cupBarred } = await import('../src/account.js'));
+  ({ payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
   await sec('schema', () => schema());
   await sec('math', () => math());
   await sec('accounts', () => accounts());
@@ -5818,6 +5987,8 @@ process.on('unhandledRejection', e => {
   await sec('reportMail', () => reportMail(rs));
   await sec('personas', () => personas());
   await sec('pool', () => pool());
+  await sec('strong', () => strong());
+  await sec('flow', () => flow());
   await sec('slowJoin', () => slowJoin());
   await sec('fee', () => fee());
   await sec('gates', () => gates());

@@ -37,6 +37,13 @@ const tier = stake => STAKES.filter(s => s <= stake).pop() || 0;
 // the table fee, taken from every seat at the deal; under the lowest table it is the same 5 % of the stake
 export const feeFor = stake => !stake ? 0 : tier(stake) ? FEES[tier(stake)] : Math.floor(stake * 5 / 100);
 
+// How many computer seats play sharp at a table, from the ladder in the settings: a public table by its stake, a cup by its buy-in,
+// a friend table by the highest public stake at or below its own and none below the lowest.
+export function strongFor(ladder, stake, buy) {
+  const key = buy ? 'cup' + buy : tier(stake) && String(tier(stake));
+  return key ? Number(ladder[key]) || 0 : 0;
+}
+
 // Why an account may not sit at a table with this stake, or null. Guests take the 100 and 500 tables and no friend table with a stake.
 export function barred(p, stake, pub) {
   if (!stake) return null;
@@ -479,6 +486,7 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM reports WHERE reporter = ?1 OR reported = ?1').bind(p.id),
       db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM persona_flow WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion

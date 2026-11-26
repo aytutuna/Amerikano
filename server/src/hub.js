@@ -4,6 +4,7 @@ import { verify, player, seat, credit, barred, cupBarred, gates, STAKES, ENTRY, 
 import { rel, won } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
+import { flowRow } from './flow.js';
 import { DEFAULT } from './region.js';
 import { on, act, slow, may, shut } from './voice.js';
 
@@ -823,14 +824,21 @@ export class Hub extends DurableObject {
       const done = c.done[code];
       if (c.tabs[code] === 'final') await this.pay(c, done);
       else {
-        for (const e of done.slice(2)) await this.out(c, e.pid);
+        for (const e of done.slice(2)) await this.out(c, e, done.slice(2));
         await this.advance(c);
       }
       return true;
     });
   }
 
-  async out(c, pid) {
+  // a human's result against the computer players of the table, when it had any; the computer players' own net is the sum of those paid with it
+  cupRow(c, e, net, won, fakeNet) {
+    if (!e.fakes) return;
+    return flowRow(this.env.DB, { match: c.id, player: e.pid, at: Date.now(), kind: 'cup', stake: c.buy, sharp: e.sharp || 0, fakes: e.fakes, humans: 4 - e.fakes, net: net, won: won, fakeNet: fakeNet }).run();
+  }
+
+  async out(c, e, outs) {
+    const pid = e.pid;
     const m = c.mem.find(x => x.pid === pid);
     if (m.fake) {
       // once: by a repeat the persona may already sit at another table
@@ -841,6 +849,7 @@ export class Hub extends DurableObject {
       return;
     }
     if (!c.held.includes(pid)) return;
+    await this.cupRow(c, e, -c.buy, 0, -c.buy * outs.filter(o => c.mem.find(x => x.pid === o.pid).fake).length);
     c.held = c.held.filter(x => x !== pid);
     this.save();
     this.to(pid, { t: 'cupout', buy: c.buy });
@@ -862,6 +871,7 @@ export class Hub extends DurableObject {
   async pay(c, order) {
     const db = this.env.DB;
     const prize = prizes(c.buy);
+    const fakeNet = order.reduce((n, e, i) => n + (c.mem.find(x => x.pid === e.pid).fake ? prize[i] - c.buy : 0), 0);
     for (const [i, e] of order.entries()) {
       const m = c.mem.find(x => x.pid === e.pid);
       if (m.paid || m.left || e.left) continue;
@@ -872,6 +882,7 @@ export class Hub extends DurableObject {
         continue;
       }
       await credit(db, m.pid, prize[i], 'cup', c.id + ':out');
+      await this.cupRow(c, e, prize[i] - c.buy, i === 0 ? 1 : 0, fakeNet);
       m.paid = true;
       this.save();
       if (e.played && prize[i] > c.buy) await won(db, m.pid, prize[i] - c.buy);

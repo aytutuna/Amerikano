@@ -1,4 +1,5 @@
 import { json, fail, credit } from './account.js';
+import { middle } from './flow.js';
 
 const KEYS = ['strong', 'chipsoff'];
 const STRONG = ['100', '500', '2500', '10000', '50000', 'cup1000', 'cup5000', 'cup25000'];
@@ -64,9 +65,15 @@ async function reports(env) {
   return json({ reports: rows.results });
 }
 
+// what tables gave people against computer players, so the ladder can be moved by hand; the daily totals keep rematch counts too
+async function flow(env) {
+  const days = await env.DB.prepare('SELECT * FROM persona_day ORDER BY day DESC, kind, stake LIMIT 100').all();
+  return json({ flow: await middle(env, Date.now()), days: days.results });
+}
+
 // what the page shows, in one call: its tries are limited per address
 async function overview(request, env) {
-  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env)]);
+  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env), flow(env)]);
   return json(Object.assign({}, ...await Promise.all(parts.map(r => r.json()))));
 }
 
@@ -152,6 +159,7 @@ export async function admin(request, env) {
   if (path === '/admin/api/log' && request.method === 'GET') return log(env);
   if (path === '/admin/api/leavers' && request.method === 'GET') return leavers(env);
   if (path === '/admin/api/reports' && request.method === 'GET') return reports(env);
+  if (path === '/admin/api/flow' && request.method === 'GET') return flow(env);
   if (path === '/admin/api/overview' && request.method === 'GET') return overview(request, env);
   if (request.method === 'POST') {
     const act = { mute: b => mute(env, b, true), unmute: b => mute(env, b, false), ban: b => ban(env, b), unban: b => unban(env, b), unsay: b => unsay(env, b), balance: b => balance(env, b) }[path.slice(11)];
@@ -186,6 +194,8 @@ td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:to
 <input id="mid" placeholder="Message id" inputmode="numeric">
 <button data-do="unsay">Delete message</button>
 <h2>Settings</h2><div id="settings"></div>
+<h2>Computer players, last 14 days</h2><table id="flow"></table>
+<h2>Rematches by day</h2><table id="days"></table>
 <h2>Leavers, last 7 days</h2><table id="leavers"></table>
 <h2>Log</h2><table id="log"></table>
 </div>
@@ -208,6 +218,8 @@ async function show() {
   $('reports').innerHTML = '<tr><th>Report</th><th>Reporter</th><th>Reported</th><th>Where</th><th>Counted</th></tr>' + rp.map(x => '<tr><td>' + x.id + '<br>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '<br>' + esc(x.text) + '</td><td data-id="' + esc(x.reporter) + '">' + esc(x.reporter) + '<br>' + (x.games == null ? 'gone' : x.games + ' matches') + '</td><td data-id="' + esc(x.reported) + '">' + esc(x.reported) + (x.fake ? '<br>computer player' : '') + (x.banned ? '<br>banned' : x.mute > Date.now() ? '<br>muted' : '') + '</td><td>' + esc(x.ctx) + '</td><td>' + (x.counts ? 'yes' : 'no') + '</td></tr>').join('');
   const v = o.leavers;
   $('leavers').innerHTML = '<tr><th>Player</th><th>Leaves</th><th>Last</th><th>Cooling until</th></tr>' + v.map(x => '<tr><td>' + esc(x.id) + '</td><td>' + x.n + '</td><td>' + new Date(x.last).toISOString().slice(0, 16).replace('T', ' ') + '</td><td>' + (x.cool > Date.now() ? new Date(x.cool).toISOString().slice(0, 16).replace('T', ' ') + ' from ' + x.stake : '') + '</td></tr>').join('');
+  $('flow').innerHTML = '<tr><th>Table</th><th>Matches</th><th>Players</th><th>Middle half, units of the stake</th><th>Sharp seats</th></tr>' + o.flow.map(x => '<tr><td>' + esc(x.kind) + ' ' + x.stake + '</td><td>' + x.matches + '</td><td>' + x.players + '</td><td>' + (x.mid == null ? '' : x.mid.toFixed(2)) + '</td><td>' + x.sharp.toFixed(1) + '</td></tr>').join('');
+  $('days').innerHTML = '<tr><th>Day</th><th>Table</th><th>Matches</th><th>Units</th><th>Wins</th><th>People stayed</th><th>Computer players stayed</th></tr>' + o.days.map(x => '<tr><td>' + new Date(x.day * 86400000).toISOString().slice(0, 10) + '</td><td>' + esc(x.kind) + ' ' + x.stake + '</td><td>' + x.matches + '</td><td>' + x.units.toFixed(2) + '</td><td>' + x.wins + '</td><td>' + x.rm_human_yes + ' of ' + x.rm_human + '</td><td>' + x.rm_fake_yes + ' of ' + x.rm_fake + '</td></tr>').join('');
   const l = o.log;
   $('log').innerHTML = '<tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr>' + l.map(x => '<tr><td>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td>' + esc(x.who) + '</td><td>' + esc(x.action) + '</td><td>' + esc(x.target) + '</td><td>' + esc(x.detail) + '</td></tr>').join('');
 }

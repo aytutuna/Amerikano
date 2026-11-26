@@ -3,12 +3,13 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, award, seat, credit, charge, strike, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, ENTRY } from './account.js';
+import { verify, player, award, seat, credit, charge, strike, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
 import { look, claim, release, giveBack, keep, spend, payoff, grant } from './persona.js';
 import { setting } from './admin.js';
+import { flowRow } from './flow.js';
 import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -158,7 +159,7 @@ export class Room extends DurableObject {
   openTable(code, stake, region, scale) {
     if (this.r) return false;
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, region: region, scale: scale, host: -1, seats: Array(4).fill(null),
+      code: code, n: 4, games: 4, pub: true, stake: stake, region: region, scale: scale, host: -1, seats: Array(4).fill(null),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
     this.save();
@@ -173,7 +174,7 @@ export class Room extends DurableObject {
     if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
     const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true }, more);
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, host: -1, cup: cup,
+      code: code, n: 4, games: 4, pub: false, stake: 0, host: -1, cup: cup,
       seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
@@ -329,7 +330,7 @@ export class Room extends DurableObject {
     if (no) return this.refuse(ws, no.k, no);
     if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, level: 'relaxed', pub: false, stake: stake, region: p.region || DEFAULT, host: -1,
+      code: a.code, n: n, games: g, pub: false, stake: stake, region: p.region || DEFAULT, host: -1,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
     this.join(ws, a, m, p);
@@ -575,7 +576,7 @@ export class Room extends DurableObject {
     for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
     r.seats = r.seats.map((s, i) => gone[i] ? null : s);
     for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover']) delete s[k];
-    for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted', 'sharp']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
     if (r.open) this.window();
     if (!r.seats.some(s => s && s.pid && !s.fake)) r.dead = Date.now() + KEEP * this.k;
@@ -634,13 +635,29 @@ export class Room extends DurableObject {
       this.report();
     }
     await this.record();
-    const st = Game.newMatch({ players: r.n, games: r.games, level: r.level, allBots: true });
+    const sharp = await this.sharpSeats();
+    const st = Game.newMatch({ players: r.n, games: r.games, level: 'relaxed', allBots: true });
     st.players.forEach((p, i) => {
       p.name = r.seats[i].name;
       p.bot = !!r.seats[i].bot;
+      p.level = sharp.includes(i) ? 'sharp' : 'relaxed';
     });
     this.st = st;
     this.moved();
+  }
+
+  // Which computer seats play sharp: as many as the ladder gives this table, picked at random once per match. Only the stake, the
+  // buy-in and the number of computer seats count, never anything about the people seated.
+  async sharpSeats() {
+    const { r } = this;
+    if (!r.sharp) {
+      const ladder = JSON.parse(await setting(this.env.DB, 'strong') || '{}');
+      const fakes = r.seats.map((s, i) => s.fake ? i : -1).filter(i => i >= 0);
+      r.sharp = [];
+      for (let n = Math.min(strongFor(ladder, r.stake, r.cup && r.cup.buy), fakes.length); n > 0; n--) r.sharp.push(fakes.splice(pick(fakes.length), 1)[0]);
+      this.save();
+    }
+    return r.sharp;
   }
 
   // one row per seat that took part, computer players too; a repeat of the deal leaves the first rows as they are
@@ -1059,7 +1076,7 @@ export class Room extends DurableObject {
       return { pid: s.pid, pay: pay, net: pay - held - fee, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > held ? pay - held : 0, fake: s.fake, done: false };
     });
     // taken now: a seat that leaves after the end must not change what the Hub is told
-    if (r.cup) r.cup.order = st.final.order.map(i => ({ pid: r.seats[i].pid, left: !r.seats[i].fake && !!r.seats[i].bot, played: !!(r.res[i] && r.res[i].xp) }));
+    if (r.cup) r.cup.order = st.final.order.map(i => ({ pid: r.seats[i].pid, left: !r.seats[i].fake && !!r.seats[i].bot, played: !!(r.res[i] && r.res[i].xp), sharp: (r.sharp || []).length, fakes: r.seats.filter(q => q.fake).length }));
   }
 
   net(pid, n) {
@@ -1095,6 +1112,7 @@ export class Room extends DurableObject {
       const p = await player(this.env.DB, x.pid);
       if (p) r.seats[i].bank = p.chips;
     }
+    await this.flow();
     if (r.cup) r.paid = true;
     else if (this.humans().length) {
       r.paid = true;
@@ -1107,6 +1125,21 @@ export class Room extends DurableObject {
     this.save();
     this.send();
     if (r.cup) await this.sendCup();
+  }
+
+  // What each human got against computer players at a table with a stake, for the admin page; a seat that left is not counted.
+  async flow() {
+    const { r } = this;
+    const fakes = r.seats.filter(s => s.fake).length;
+    if (!r.stake || r.cup || !fakes) return;
+    const at = Date.now();
+    const fakeNet = r.res.reduce((n, x) => n + (x && x.fake ? x.net : 0), 0);
+    const humans = r.seats.filter(s => !s.fake).length;
+    const rows = r.seats.map((s, i) => {
+      const x = r.res[i];
+      return x && !x.fake && !s.left && !s.lv && flowRow(this.env.DB, { match: r.id, player: x.pid, at: at, kind: r.pub ? 'pub' : 'friend', stake: r.stake, sharp: (r.sharp || []).length, fakes: fakes, humans: humans, net: x.net, won: x.win ? 1 : 0, fakeNet: fakeNet });
+    }).filter(Boolean);
+    if (rows.length) await this.env.DB.batch(rows);
   }
 
   // The Hub gets the finishing order, and again on the next alarm until it has taken it.
@@ -1203,7 +1236,7 @@ export class Room extends DurableObject {
       for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv']) delete s[k];
       return s;
     });
-    for (const k of ['id', 'res', 'paid', 'wait']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'sharp']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: r.pub ? Date.now() + KEEP * this.k : 0 });
     this.st = null;
     this.ctx.storage.delete('st');
@@ -1324,7 +1357,7 @@ export class Room extends DurableObject {
   lobby(me) {
     const r = this.r;
     return {
-      t: 'room', code: r.code, n: r.n, games: r.games, level: r.level, host: r.host, you: me,
+      t: 'room', code: r.code, n: r.n, games: r.games, host: r.host, you: me,
       stake: r.stake, fee: feeFor(r.stake), hold: hold(r.stake, r.games), pub: r.pub, cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy) }, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
       seats: r.seats.map(s => s && { name: s.name, seed: s.seed, av: s.av, level: s.level })
     };
@@ -1344,7 +1377,7 @@ export class Room extends DurableObject {
     const place = st.final ? st.final.order.indexOf(me) + 1 : 0;
     return {
       t: 'state', lb: sent,
-      n: n, auto: !!r.seats[me].auto, stake: r.stake, pub: r.pub && !r.cup, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, auto: !!r.seats[me].auto, stake: r.stake, pub: r.pub && !r.cup, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),
