@@ -5248,6 +5248,66 @@ async function startWindow() {
   await sleep(500);
 }
 
+// a tournament that is cancelled gives each buy-in back once, to everyone who paid it, knocked out or not
+async function cupAbort() {
+  const t0 = Date.now();
+  const buy = 1000;
+  // one withdraws before the start and so never pays
+  const w = link(await guest());
+  const hw = await hub(w);
+  const reg = hw.next(m => m.t === 'cup' && m.buy === buy);
+  hw.send({ t: 'cup', buy: buy });
+  await reg;
+  const out = hw.next(m => m.t === 'cup' && m.buy === 0);
+  hw.send({ t: 'cup', buy: 0 });
+  await out;
+  const hs = [];
+  for (let i = 0; i < 4; i++) {
+    const acc = link(await guest());
+    const h = await hub(acc);
+    const x = { acc, h, msgs: [], rooms: [] };
+    x.off = h.next(m => m.t === 'error' && m.k === 'cupoff');
+    h.handlers.push(m => {
+      x.msgs.push(m);
+      if (m.t !== 'seated' || !m.cup) return;
+      for (const r of x.rooms) r.ws.close();
+      const r = seated(m);
+      play(r, { finish: () => {} });
+      x.rooms = [r];
+    });
+    hs.push(x);
+  }
+  for (const x of hs) {
+    x.h.send({ t: 'cup', buy: buy });
+    await sleep(20);
+  }
+  // both first-round tables deal, then every table that tries to deal fails: the final cannot be seated
+  for (let i = 0; i < 400 && sql("SELECT count(*) AS n FROM match_seat WHERE kind = 'cup' AND at >= " + t0)[0].n < 8; i++) await sleep(50);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM match_seat WHERE kind = 'cup' AND at >= " + t0)[0].n, 8, 'the first round is dealt: ' + JSON.stringify(hs.map(x => x.msgs.map(m => m.t + (m.k || '') + (m.n || '')))));
+  breakDeal({ kind: 'cup', n: 99, seat: 0 });
+  await within(Promise.all(hs.map(x => x.off)), 400000, 'the tournament is cancelled');
+  mendDeal();
+  await sleep(1500);
+  const id = cupIn(hs[0].acc)[0].ref.split(':')[0];
+  let knocked = 0;
+  for (const x of hs) {
+    const rows = cupIn(x.acc);
+    assert.deepStrictEqual(rows.map(r => [r.delta, r.ref]), [[-buy, id + ':in'], [buy, id + ':back']], 'one buy-in and one refund');
+    assert.strictEqual((await call('GET', '/api/me', x.acc)).body.chips, 5000);
+    if (x.msgs.some(m => m.t === 'cupout')) knocked++;
+  }
+  assert.strictEqual(cupIn(w).length, 0, 'the player who withdrew paid and got nothing');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE ref = '" + id + ":back'")[0].n, 4, 'nobody was refunded twice');
+  for (let i = 0; i < 100 && sql("SELECT count(*) AS n FROM personas WHERE busy = '" + id + "'")[0].n; i++) await sleep(100);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM personas WHERE busy = '" + id + "'")[0].n, 0, 'the computer players are free');
+  console.log('cupAbort: all four buy-ins came back once (' + knocked + ' of them from players who were out), nothing for the one who withdrew');
+  for (const x of hs) {
+    for (const r of x.rooms) r.ws.close();
+    x.h.ws.close();
+  }
+  hw.ws.close();
+}
+
 const sec = async (name, fn) => {
   names.add(name);
   if (only.length && !only.includes(name)) return;
@@ -5331,6 +5391,7 @@ process.on('unhandledRejection', e => {
   await sec('cupRetry', () => cupRetry());
   await sec('cupRun', () => cupRun(2));
   await sec('cupRun', () => cupRun(6));
+  await sec('cupAbort', () => cupAbort());
   await sec('leaveKinds', () => leaveKinds());
   await sec('metrics', () => metrics());
   const rc = fakeRc();
