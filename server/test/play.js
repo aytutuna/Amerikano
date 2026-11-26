@@ -1270,7 +1270,7 @@ async function personas() {
   const mid = gaps.sort((x, y) => x - y)[gaps.length >> 1];
   assert(gaps.length > 8 && mid >= 15, 'bot moves are paced: ' + mid + ' (smallest ' + gaps[0] + ')');
   const said = all.filter(m => m.t === 'said');
-  for (const m of said) assert(m.p >= 1 && m.p < 4 && (Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k)));
+  for (const m of said) assert(m.p >= 1 && m.p < 4 && (Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k) || Catalog.pack(m.k)));
   assert(said.length <= 4, 'chat is capped per match');
   await sleep(600);
   const me = (await call('GET', '/api/me', acc)).body;
