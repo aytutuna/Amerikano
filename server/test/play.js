@@ -856,6 +856,17 @@ async function apple() {
   assert.deepStrictEqual(row(web.body.id).apple_refresh, 'rt.w1');
   console.log('apple sign-in makes an account, the same subject gets it back, every device stays signed in');
 
+  // a banned account cannot sign in again, and can once it is unbanned
+  const bn = await post('/api/apple', null, await cred({}, null, 'ban1'));
+  assert.strictEqual(bn.status, 200);
+  assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bn.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await call('GET', '/api/me', bn.body)).status, 401);
+  const barred = await post('/api/apple', null, await cred({ sub: row(bn.body.id).apple }, null, 'ban2'));
+  assert.deepStrictEqual([barred.status, barred.body.error], [403, 'banned']);
+  assert.strictEqual(sessions(bn.body.id), 0, 'no session was made');
+  assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: bn.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await post('/api/apple', null, await cred({ sub: row(bn.body.id).apple }, null, 'ban3'))).status, 200);
+  console.log('apple: a banned account is refused until it is unbanned');
 
   // sign-out ends that device's session, its device row and its hub socket, and nothing else
   const so = 'out.' + t.sub;
@@ -4371,6 +4382,153 @@ async function admin() {
   assert(codes.some(x => x.status === 429), 'tries are limited per address');
   assert.strictEqual((await adm('GET', 'log', ADMIN)).status, 200, 'another address is not affected');
   console.log('admin: repeated tries are refused');
+  await adminActions();
+}
+
+// mute, ban, balance and the rest of what the admin page does to an account; each part has its own address, as the page's tries are limited
+async function adminActions() {
+  const act = (path, body, ip, key) => adm('POST', path, key === undefined ? ADMIN : key, body, ip);
+  const rows = (action, target) => sql("SELECT who, detail FROM admin_log WHERE action = '" + action + "' AND target = '" + target + "' ORDER BY id");
+
+  // mute and unmute
+  const ip1 = '10.9.1.1';
+  const a = await guest();
+  const b = await guest();
+  assert.strictEqual((await act('mute', { id: a.id }, ip1, 'wrong')).status, 401);
+  assert.strictEqual((await act('mute', { id: 'x' }, ip1)).status, 404);
+  assert.strictEqual((await act('mute', { id: '0'.repeat(32) }, ip1)).status, 404);
+  assert.strictEqual((await act('mute', { id: a.id, hours: 0 }, ip1)).status, 400);
+  assert.strictEqual((await act('mute', { id: a.id }, ip1)).status, 200);
+  const left = sql('SELECT mute_until FROM players WHERE id = ' + who(a))[0].mute_until - Date.now();
+  assert(left > 23 * 3600000 && left <= DAY, 'a day by default');
+  const dm = await call('POST', '/api/dm', a, { to: b.id, text: 'hi' });
+  assert.deepStrictEqual([dm.status, dm.body.error], [403, 'mute'], 'the muted player cannot type');
+  assert.strictEqual((await act('unmute', { id: a.id }, ip1)).status, 200);
+  assert.strictEqual(sql('SELECT mute_until FROM players WHERE id = ' + who(a))[0].mute_until, 0);
+  assert.strictEqual((await call('POST', '/api/dm', a, { to: b.id, text: 'hi' })).body.error, 'nodm', 'the mute is over');
+  assert.deepStrictEqual([rows('mute', a.id).length, rows('unmute', a.id).length, rows('mute', a.id)[0].who], [1, 1, 'admin']);
+  console.log('admin: mute and unmute, logged');
+
+  // a balance correction goes through the chip function
+  const ip2 = '10.9.1.2';
+  const chips = acc => sql('SELECT chips FROM players WHERE id = ' + who(acc))[0].chips;
+  assert.strictEqual((await act('balance', { id: b.id, delta: 0, ref: 'r0' }, ip2)).status, 400);
+  assert.strictEqual((await act('balance', { id: b.id, delta: 1.5, ref: 'r0' }, ip2)).status, 400);
+  assert.strictEqual((await act('balance', { id: b.id, delta: 5, ref: 'no good' }, ip2)).status, 400, 'a reference is required');
+  assert.strictEqual((await act('balance', { id: b.id, delta: 700, ref: 'r1' }, ip2)).status, 200);
+  assert.strictEqual(chips(b), 5700);
+  assert.deepStrictEqual(sql("SELECT delta, reason, ref FROM chip_log WHERE player = " + who(b) + " AND reason = 'admin'"), [{ delta: 700, reason: 'admin', ref: 'admin:r1' }]);
+  assert.strictEqual((await act('balance', { id: b.id, delta: 700, ref: 'r1' }, ip2)).status, 200);
+  assert.strictEqual(chips(b), 5700, 'the same reference changes nothing the second time');
+  const below = await act('balance', { id: b.id, delta: -6000, ref: 'r2' }, ip2);
+  assert.deepStrictEqual([below.status, below.body.error, chips(b)], [409, 'below', 5700], 'not below zero');
+  assert.strictEqual((await act('balance', { id: b.id, delta: -700, ref: 'r3' }, ip2)).status, 200);
+  assert.strictEqual(chips(b), 5000);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player = " + who(b) + " AND reason = 'admin'")[0].n, 2, 'one chip_log row per correction');
+  assert.deepStrictEqual(rows('balance', b.id).map(x => JSON.parse(x.detail).delta), [700, -700], 'logged once each');
+  console.log('admin: balance corrections write one chip_log row each, a repeat is a no-op, below zero is refused');
+
+  // a message can be deleted by its id
+  const ip3 = '10.9.1.3';
+  await befriend(a, b);
+  const sent = await call('POST', '/api/dm', a, { to: b.id, text: 'nasty' });
+  assert.strictEqual(sent.status, 200);
+  assert.strictEqual((await call('GET', '/api/dm/' + a.id, b)).body.messages.length, 1);
+  assert.strictEqual((await act('unsay', { id: 'x' }, ip3)).status, 400);
+  assert.strictEqual((await act('unsay', { id: sent.body.message.id }, ip3)).status, 200);
+  assert.strictEqual((await call('GET', '/api/dm/' + a.id, b)).body.messages.length, 0);
+  assert.strictEqual((await act('unsay', { id: sent.body.message.id }, ip3)).status, 404);
+  assert.strictEqual(rows('unsay', String(sent.body.message.id)).length, 1);
+  console.log('admin: a message is deleted by its id');
+
+  // the report list says whether each counted, what the reporter has played and which reported seat is a computer player
+  const ip4 = '10.9.1.4';
+  const reporter = await agedGuest(12);
+  const bot = sql('SELECT id FROM personas LIMIT 1')[0];
+  assert.strictEqual((await call('POST', '/api/report', reporter, { pid: b.id, ctx: 'profile', text: 'one' })).status, 200);
+  if (bot) assert.strictEqual((await call('POST', '/api/report', reporter, { pid: bot.id, ctx: 'profile', text: 'two' })).status, 200);
+  const list = (await adm('GET', 'reports', ADMIN, null, ip4)).body.reports;
+  const mine = list.filter(x => x.reporter === reporter.id);
+  assert.deepStrictEqual(mine.map(x => [x.text, x.games, x.counts, x.fake]), bot ? [['two', 12, 0, 1], ['one', 12, 0, 0]] : [['one', 12, 0, 0]], 'newest first');
+  assert.strictEqual((await adm('GET', 'reports', null, null, ip4)).status, 401);
+  console.log('admin: the report list');
+
+  // a ban shuts the account out of everything, takes its seat at a public table without a leave and can be undone
+  const ip5 = '10.9.1.5';
+  const stamp = Date.now();
+  sql('DELETE FROM personas WHERE created = 1');
+  sql('UPDATE personas SET chips = 100, topup = ' + stamp + ', busy = NULL');
+  sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 29) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(hex(randomblob(16))), i, '1,1,1,0', 1, 0, 0, 0, 10000000, " + stamp + ', NULL, 0, 1 FROM n');
+  const c = await guest();
+  const h = await hub(c);
+  const sat = h.next(m => m.t === 'seated' || m.t === 'error');
+  h.send({ t: 'quick', stake: 100 });
+  const s = await sat;
+  assert.strictEqual(s.t, 'seated', 'quick: ' + s.k);
+  const r = seated(s);
+  await r.next(m => m.t === 'state');
+  const before = chips(c);
+  assert.strictEqual((await act('ban', { id: c.id, why: 'test ban' }, ip5)).status, 200);
+  await gone(h, 5000);
+  await gone(r, 5000);
+  const row = sql('SELECT banned, banned_why, banned_at FROM players WHERE id = ' + who(c))[0];
+  assert.deepStrictEqual([row.banned, row.banned_why, row.banned_at > Date.now() - 60000], [1, 'test ban', true]);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM sessions WHERE player = ' + who(c))[0].n, 0, 'the sessions are gone');
+  for (const [method, path] of [['GET', '/api/me'], ['POST', '/api/daily'], ['GET', '/api/friends'], ['GET', '/api/shop'], ['POST', '/api/report']]) assert.strictEqual((await call(method, path, c, method === 'POST' ? {} : undefined)).status, 401, path);
+  const [h2, e] = await hello({ auth: c.auth }, m => m.t === 'error');
+  assert.strictEqual(e.k, 'auth', 'the hub refuses it');
+  h2.ws.close();
+  const n = client('/ws/new');
+  await n.ready;
+  const refusal = n.next(m => m.t === 'error');
+  n.send({ t: 'create', auth: c.auth, players: 3, games: 3 });
+  assert.strictEqual((await refusal).k, 'auth', 'so does a room');
+  n.ws.close();
+  assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(c))[0].n, 0, 'no leave penalty');
+  assert.strictEqual(sql('SELECT gone FROM match_seat WHERE player = ' + who(c))[0].gone, 1, 'the seat is marked left');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player = " + who(c) + " AND reason = 'leave'")[0].n, 0);
+  assert(chips(c) <= before, 'nothing was paid back to the banned account early');
+  assert.strictEqual(rows('ban', c.id).length, 1);
+  assert.strictEqual((await act('ban', { id: c.id }, ip5)).status, 200, 'banning twice is fine');
+  assert.strictEqual(rows('ban', c.id).length, 1);
+  assert.strictEqual((await act('unban', { id: c.id }, ip5)).status, 200);
+  assert.strictEqual(sql('SELECT banned FROM players WHERE id = ' + who(c))[0].banned, 0);
+  // signing in again makes a session; Apple's case is in the apple section
+  sql("INSERT INTO sessions (player, secret_hash, created) VALUES (" + who(c) + ", '" + crypto.createHash('sha256').update(c.secret).digest('hex') + "', " + Date.now() + ')');
+  assert.strictEqual((await call('GET', '/api/me', c)).status, 200, 'unbanned');
+  assert.strictEqual(rows('unban', c.id).length, 1);
+  console.log('admin: a ban closes every way in, frees the seat without a leave and can be undone');
+
+  // a started match settles a banned player's seat by its real result, as for a leaver
+  const ip6 = '10.9.1.6';
+  const accA = level(4, link(await guest()));
+  const accB = level(4, link(await guest()));
+  const x = client('/ws/new');
+  await x.ready;
+  x.send({ t: 'create', auth: accA.auth, players: 3, games: 3, stake: 500 });
+  const jx = await x.next(m => m.t === 'joined');
+  const y = client('/ws/' + jx.code);
+  await y.ready;
+  y.send({ t: 'join', auth: accB.auth });
+  await y.next(m => m.t === 'joined');
+  const fin = played(Object.assign(x, { seat: jx.seat }));
+  x.send({ t: 'start' });
+  await y.next(m => m.t === 'state');
+  const kept = sql('SELECT xp, tokens, games, wins, week_won FROM players WHERE id = ' + who(accB))[0];
+  assert.strictEqual((await act('ban', { id: accB.id }, ip6)).status, 200);
+  await gone(y, 5000);
+  await within(fin, 120000, 'match end');
+  await sleep(800);
+  const seatB = x.st.players.find(p => p.pid === accB.id);
+  const back = payout(500, 3, seatB.chips);
+  assert.strictEqual(chips(accB), 5000 - 1100 - 25 + back, 'the banned seat gets its real payout');
+  assert.deepStrictEqual(sql('SELECT xp, tokens, games, wins, week_won FROM players WHERE id = ' + who(accB))[0], kept, 'and no xp, tokens or wins');
+  const seat = seatsOf(jx.code).find(z => z.player === accB.id);
+  assert.deepStrictEqual([seat.gone, seat.net], [1, back - 1125]);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(accB))[0].n, 0);
+  console.log('admin: a banned player in a running match is replaced and settled by the real result');
+  x.ws.close();
 }
 
 // the source scan: nothing but the one function sets chips or tokens

@@ -170,7 +170,7 @@ export async function verify(db, token) {
   const m = TOKEN.exec(token || '');
   if (!m) return null;
   const h = await hash(m[2]);
-  const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2').bind(m[1], h).first();
+  const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2 AND p.banned = 0').bind(m[1], h).first();
   return p && Object.assign(p, { session: h });
 }
 
@@ -295,8 +295,9 @@ async function signIn(env, request) {
 
 async function enter(env, request, a) {
   const db = env.DB;
-  const old = await db.prepare('SELECT id FROM players WHERE apple = ?').bind(a.sub).first();
+  const old = await db.prepare('SELECT id, banned FROM players WHERE apple = ?').bind(a.sub).first();
   if (old) {
+    if (old.banned) return fail('banned', 403);
     const secret = random(32);
     await db.batch([
       db.prepare('UPDATE players SET apple_refresh = COALESCE(?1, apple_refresh), apple_client = CASE WHEN ?1 IS NULL THEN apple_client ELSE ?2 END WHERE id = ?3').bind(a.token, a.aud, old.id),

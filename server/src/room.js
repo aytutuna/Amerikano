@@ -659,21 +659,40 @@ export class Room extends DurableObject {
     const r = this.r;
     if (r.seats[a.seat]) this.hush(r.seats[a.seat].pid);
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
-    if (r.started) {
-      const { token, gone, auto, misses, cover, ...s } = r.seats[a.seat];
-      const live = !!r.id && !r.over && !!s.esc && !!this.st;
-      r.seats[a.seat] = Object.assign(s, { bot: true, left: live || undefined });
-      if (this.st) {
-        this.st.players[a.seat].bot = true;
-        this.st.players[a.seat].level = 'relaxed';
-      }
-      if (live) this.ctx.waitUntil(this.gone(r.seats[a.seat], a.seat, r.pub && !r.cup).catch(e => console.error('leave', e)));
-    } else {
-      r.seats[a.seat] = null;
-      if (r.host === a.seat) r.host = this.firstHuman();
-    }
+    this.release(a.seat, r.pub && !r.cup);
     ws.close(1000, 'left');
     this.left(ws);
+  }
+
+  // the seat of a started match becomes a relaxed stand-in that settles by the real result; count says whether it is a counted leave
+  release(i, count) {
+    const r = this.r;
+    if (r.started) {
+      const { token, gone, auto, misses, cover, ...s } = r.seats[i];
+      const live = !!r.id && !r.over && !!s.esc && !!this.st;
+      r.seats[i] = Object.assign(s, { bot: true, left: live || undefined });
+      if (this.st) {
+        this.st.players[i].bot = true;
+        this.st.players[i].level = 'relaxed';
+      }
+      if (live) this.ctx.waitUntil(this.gone(r.seats[i], i, count).catch(e => console.error('leave', e)));
+    } else {
+      r.seats[i] = null;
+      if (r.host === i) r.host = this.firstHuman();
+    }
+  }
+
+  // a banned player is taken out like a leaver, at no cost
+  ban(pid) {
+    const r = this.r;
+    const i = r ? r.seats.findIndex(s => s && s.pid === pid && !s.bot) : -1;
+    if (i < 0) return;
+    this.hush(pid);
+    const mine = this.socks().filter(w => w.deserializeAttachment().seat === i);
+    for (const w of mine) w.serializeAttachment(Object.assign({}, w.deserializeAttachment(), { seat: -1 }));
+    this.release(i, false);
+    for (const w of mine) w.close(4002, 'banned');
+    this.left(mine[0]);
   }
 
   // The row is made too, in case the deal had not recorded it yet. A leave from a public table is counted and may cost chips.
@@ -714,7 +733,7 @@ export class Room extends DurableObject {
   left(ws) {
     const r = this.r;
     if (!r) return;
-    const i = ws.deserializeAttachment().seat;
+    const i = ws ? ws.deserializeAttachment().seat : -1;
     const rest = this.socks().filter(w => w !== ws);
     if (i >= 0 && !rest.some(w => w.deserializeAttachment().seat === i)) {
       r.seats[i].gone = Date.now();
