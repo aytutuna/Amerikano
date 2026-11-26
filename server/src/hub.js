@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { freeCode, stub, pick } from './room.js';
-import { verify, player, seat, credit, STAKES, ENTRY, BUYINS, prizes } from './account.js';
+import { verify, player, seat, credit, signedIn, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
@@ -44,7 +44,7 @@ function shuffle(a) {
 const pool = t => t.pub || t.open;
 const reg = p => p.region || DEFAULT;
 const slot = (r, buy) => r + ':' + buy;
-const people = (tables, stake, fast) => tables.filter(t => pool(t) && t.stake === stake && !!t.fast === fast).reduce((n, t) => n + t.seats.filter(Boolean).length, 0);
+const people = (tables, stake) => tables.filter(t => pool(t) && t.stake === stake).reduce((n, t) => n + t.seats.filter(Boolean).length, 0);
 
 // One instance for everyone. Every open app keeps a socket here, so it knows where each player is:
 // the lobby, training or a table. The tables themselves are Room objects that report here when their seats change.
@@ -97,7 +97,7 @@ export class Hub extends DurableObject {
     const now = Date.now();
     // only a test may ask for a longer wait before the hello
     const wait = this.env.PACE && Number(request.headers.get('X-Hello')) || this.hello;
-    server.serializeAttachment({ pid: '', stake: 0, fast: false, at: 'lobby', born: now, due: now + wait, ip: ip });
+    server.serializeAttachment({ pid: '', stake: 0, at: 'lobby', born: now, due: now + wait, ip: ip });
     const at = await this.ctx.storage.getAlarm();
     if (!at || at > now + wait) await this.ctx.storage.setAlarm(now + wait);
     return new Response(null, { status: 101, webSocket: client });
@@ -147,7 +147,7 @@ export class Hub extends DurableObject {
         w.send(JSON.stringify({ t: 'error', k: 'replaced' }));
         w.close(4000, 'replaced');
       }
-      ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, stake: 0, fast: false, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
+      ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, stake: 0, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
       this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, voice: on(this.env) });
       const c = this.inCall(p.id);
       if (c) {
@@ -163,12 +163,12 @@ export class Hub extends DurableObject {
     }
     if (!a.pid) return;
     if (m.t === 'watch') {
-      ws.serializeAttachment(Object.assign({}, a, { stake: STAKES.includes(m.stake) ? m.stake : 0, fast: m.fast === true }));
+      ws.serializeAttachment(Object.assign({}, a, { stake: STAKES.includes(m.stake) ? m.stake : 0 }));
       return this.tell();
     }
     if (m.t === 'at') return ws.serializeAttachment(Object.assign({}, a, { at: m.at === 'training' ? 'training' : 'lobby' }));
     if (m.t === 'sit') return this.queue(() => this.sit(ws, a.pid, m.code));
-    if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake, m.fast === true));
+    if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake));
     if (m.t === 'cup') return this.queue(() => this.enter(ws, a.pid, m.buy));
     if (m.t === 'call') return this.queue(() => this.dial(ws, a.pid, m.to));
     if (m.t === 'accept') return this.accept(a.pid, m.id);
@@ -242,7 +242,7 @@ export class Hub extends DurableObject {
       if (w.readyState !== 1 || a.pid !== pid) continue;
       w.serializeAttachment(Object.assign({}, a, { region: r }));
       w.send(JSON.stringify(this.counts(r)));
-      if (a.stake) w.send(JSON.stringify({ t: 'tables', stake: a.stake, fast: !!a.fast, tables: this.list(a.stake, !!a.fast, r) }));
+      if (a.stake) w.send(JSON.stringify({ t: 'tables', stake: a.stake, tables: this.list(a.stake, r) }));
     }
   }
 
@@ -405,19 +405,18 @@ export class Hub extends DurableObject {
     return Object.entries(this.tables).filter(([, t]) => pool(t) && !t.started && t.seats.some(x => !x));
   }
 
-  list(stake, fast, r) {
-    return this.open().filter(([, t]) => t.region === r && t.stake === stake && !!t.fast === fast).map(([code, t]) => ({ code: code, seats: t.seats }));
+  list(stake, r) {
+    return this.open().filter(([, t]) => t.region === r && t.stake === stake).map(([code, t]) => ({ code: code, seats: t.seats }));
   }
 
   // Seated people count too, and a table fills its empty seats on its own, so these include those.
   counts(r) {
     const all = Object.values(this.tables).filter(t => t.region === r);
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().region === r);
-    const out = { t: 'rooms', n: {}, f: {} };
+    const out = { t: 'rooms', n: {} };
     for (const s of STAKES) {
       const here = socks.map(w => w.deserializeAttachment()).filter(a => a.stake === s);
-      out.n[s] = people(all, s, false) + here.filter(a => !a.fast).length;
-      out.f[s] = people(all, s, true) + here.filter(a => a.fast).length;
+      out.n[s] = people(all, s) + here.length;
     }
     return out;
   }
@@ -426,10 +425,10 @@ export class Hub extends DurableObject {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid);
     const now = {};
     for (const w of socks) {
-      const { stake, fast, region } = w.deserializeAttachment();
+      const { stake, region } = w.deserializeAttachment();
       const n = now[region] || (now[region] = JSON.stringify(this.counts(region)));
       if (n !== this.rooms[region]) w.send(n);
-      if (stake) w.send(JSON.stringify({ t: 'tables', stake: stake, fast: !!fast, tables: this.list(stake, !!fast, region) }));
+      if (stake) w.send(JSON.stringify({ t: 'tables', stake: stake, tables: this.list(stake, region) }));
     }
     this.rooms = now;
   }
@@ -453,6 +452,9 @@ export class Hub extends DurableObject {
   async seated(ws, pid, stake, code) {
     const p = await this.afford(ws, pid, stake, code);
     if (!p) return;
+    // a table made by a friend keeps its kind when it is opened to others
+    const t = this.tables[code];
+    if (t && !t.pub && t.stake && !signedIn(p)) return this.put(ws, { t: 'error', k: 'guest' });
     const got = await this.room(code).sit(seat(p));
     if (!got) {
       this.table(code, null);
@@ -511,14 +513,14 @@ export class Hub extends DurableObject {
   }
 
   // the open table of the room with the most people, real ones first, else a new one
-  async quick(ws, pid, stake, fast) {
+  async quick(ws, pid, stake) {
     if (!STAKES.includes(stake)) return;
     const p = await this.afford(ws, pid, stake);
     if (!p) return;
     const r = reg(p);
     const fill = t => t.seats.filter(Boolean).length;
     const real = t => t.pids.filter(Boolean).length;
-    const open = this.open().filter(([, t]) => t.region === r && t.stake === stake && !!t.fast === fast).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
+    const open = this.open().filter(([, t]) => t.region === r && t.stake === stake && (t.pub || signedIn(p))).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
     for (const [code] of open) {
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
@@ -526,7 +528,7 @@ export class Hub extends DurableObject {
     for (let i = 0; i < 3; i++) {
       const code = await freeCode(this.env.ROOM, r);
       if (!code) break;
-      if (!await this.room(code).openTable(code, stake, fast, r)) continue;
+      if (!await this.room(code).openTable(code, stake, r)) continue;
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
     }

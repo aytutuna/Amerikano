@@ -12,6 +12,9 @@ export const STAKES = [100, 500, 2500, 10000, 50000];
 export const ENTRY = 10;
 export const BUYINS = [1000, 5000, 25000];
 
+// a friend table's stake: payouts are counted in tenths of it; the top is a bound for the arithmetic, not a policy
+export const stakeOk = s => Number.isInteger(s) && s >= 0 && s <= 1e9 && s % 10 === 0;
+
 // what the final table of a tournament shares out, from first place down: half, a quarter, 15 % and 10 % of the buy-ins
 export const prizes = buy => [50, 25, 15, 10].map(x => 8 * buy * x / 100);
 
@@ -108,6 +111,9 @@ export async function who(db, id) {
 }
 
 export const isVip = (p, now = Date.now()) => p.vip_until > now;
+
+// a guest has no Apple account behind the key
+export const signedIn = p => !!p.apple;
 
 // the items a player wears, by slot; the felt is only for their own table. VIP items come off when the subscription ends.
 export function worn(p, slots = Catalog.WORN, now = Date.now()) {

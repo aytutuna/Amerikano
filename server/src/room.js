@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, award, seat, credit, grantTokens, payout, prizes, STAKES, ENTRY } from './account.js';
+import { verify, player, award, seat, credit, grantTokens, payout, prizes, signedIn, stakeOk, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -16,9 +16,6 @@ const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
 const GRACE = 8000;
 const NEXT = 20000;
-const QUICK = 0.5;
-const FAST = 15000;
-const FAST_NEXT = 8000;
 const REMATCH = 15000;
 const STAYS = 0.6;
 const TALK = 4;
@@ -154,10 +151,10 @@ export class Room extends DurableObject {
   }
 
   // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
-  openTable(code, stake, fast, region) {
+  openTable(code, stake, region) {
     if (this.r) return false;
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, fast: !!fast, region: region, host: -1, seats: Array(4).fill(null),
+      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, region: region, host: -1, seats: Array(4).fill(null),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
     this.save();
@@ -172,7 +169,7 @@ export class Room extends DurableObject {
     if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
     const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, owns: s.owns, bot: true }, more);
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, fast: false, host: -1, cup: cup,
+      code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, host: -1, cup: cup,
       seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
@@ -312,17 +309,19 @@ export class Room extends DurableObject {
     if (this.r) return this.refuse(ws, 'taken');
     const n = m.players;
     const g = m.games;
-    const stake = m.stake === undefined ? STAKES[0] : m.stake;
-    if (!STAKES.includes(stake)) return this.fail(ws, 'opts');
-    if (!Number.isInteger(n) || n < 2 || n > 5) return this.fail(ws, 'opts');
+    // a stake left out means no chips
+    const stake = m.stake === undefined ? 0 : m.stake;
+    if (!stakeOk(stake)) return this.fail(ws, 'opts');
+    if (!Number.isInteger(n) || n < 3 || n > 5) return this.fail(ws, 'opts');
     if (!Number.isInteger(g) || g < n || g > 16 || g % n) return this.fail(ws, 'opts');
     const p = await verify(this.env.DB, m.auth);
     if (ws.readyState !== 1) return;
     if (!p) return this.refuse(ws, 'auth');
     if (this.r) return this.refuse(ws, 'taken');
+    if (stake && !signedIn(p)) return this.refuse(ws, 'guest');
     if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, level: m.level === 'sharp' ? 'sharp' : 'relaxed', pub: false, stake: stake, fast: m.fast === true, region: p.region || DEFAULT, host: -1,
+      code: a.code, n: n, games: g, level: 'relaxed', pub: false, stake: stake, region: p.region || DEFAULT, host: -1,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
     this.join(ws, a, m, p);
@@ -349,6 +348,7 @@ export class Room extends DurableObject {
       i = r.seats.findIndex(s => s && s.pid === p.id);
       if (i < 0) {
         if (r.started) return this.miss(ws, a, p);
+        if (r.stake && !signedIn(p)) return this.miss(ws, a, p, 'guest');
         if (p.chips < ENTRY * r.stake) return this.miss(ws, a, p, 'poor');
         i = r.seats.indexOf(null);
         if (i < 0) return this.miss(ws, a, p);
@@ -394,12 +394,11 @@ export class Room extends DurableObject {
   }
 
   idle() {
-    return this.r.fast ? FAST : IDLE;
+    return IDLE;
   }
 
-  // the wait before a table looks for players, halved at a fast one
   lag(lo, hi) {
-    return between(lo, hi) * (this.r.fast ? QUICK : 1) * this.k;
+    return between(lo, hi) * this.k;
   }
 
   pooled() {
@@ -940,11 +939,13 @@ export class Room extends DurableObject {
   outcome() {
     const { r, st } = this;
     const fin = st.stats.map(x => x.fin);
+    // a friend table for no chips is a place to play with friends, not a way to earn
+    const free = !r.stake && !r.cup;
     r.res = r.seats.map((s, i) => {
       if (!s.pid || !s.esc) return null;
       const win = st.final.low === i;
       const pay = payout(r.stake, st.players[i].chips);
-      const played = s.fake || (s.acts || 0) > (s.autos || 0);
+      const played = !free && (s.fake || (s.acts || 0) > (s.autos || 0));
       const xp = played ? 10 * st.stats.length + (win ? 30 : 0) + 5 * fin.filter(f => f === i).length : 0;
       return { pid: s.pid, pay: pay, net: pay - r.stake, xp: xp, from: s.from, win: win, won: !s.fake && played && pay > r.stake ? pay - r.stake : 0, fake: s.fake, done: false };
     });
@@ -971,7 +972,7 @@ export class Room extends DurableObject {
         // set first: a repeat would pay the persona twice, and nobody can see the difference
         x.done = true;
         this.save();
-        r.seats[i].bank = await payoff(this.env.DB, x.pid, x.pay, x);
+        if (r.stake) r.seats[i].bank = await payoff(this.env.DB, x.pid, x.pay, x);
         await this.net(x.pid, x.net);
         continue;
       }
@@ -1135,7 +1136,7 @@ export class Room extends DurableObject {
       return r.paid && !this.owes() ? Infinity : Date.now() + 5000 * k;
     }
     if (!this.humans().length && !this.owes()) return Infinity;
-    if (st.phase === 'gameend') return r.since + (r.fast ? FAST_NEXT : NEXT) * k;
+    if (st.phase === 'gameend') return r.since + NEXT * k;
     const i = this.actor();
     const s = r.seats[i];
     const wait = r.wait || 1000 * k;
@@ -1204,7 +1205,7 @@ export class Room extends DurableObject {
   summary() {
     const r = this.r;
     return {
-      pub: r.pub, open: !!r.open, region: r.region || codeRegion(r.code), stake: r.stake, fast: !!r.fast, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
+      pub: r.pub, open: !!r.open, region: r.region || codeRegion(r.code), stake: r.stake, started: r.started, over: r.over, cup: r.cup ? r.cup.id : null,
       seats: r.seats.map(s => s && { seed: s.seed, av: s.av, level: s.level }),
       pids: r.seats.map(s => s && !s.bot ? s.pid : null)
     };
@@ -1221,7 +1222,7 @@ export class Room extends DurableObject {
     const r = this.r;
     return {
       t: 'room', code: r.code, n: r.n, games: r.games, level: r.level, host: r.host, you: me,
-      stake: r.stake, fast: !!r.fast, pub: r.pub, cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy) }, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
+      stake: r.stake, pub: r.pub, cup: r.cup && { round: r.cup.round, buy: r.cup.buy, prizes: prizes(r.cup.buy) }, finding: this.pooled() ? r.seats.filter(s => !s).length : 0,
       seats: r.seats.map(s => s && { name: s.name, seed: s.seed, av: s.av, level: s.level })
     };
   }
@@ -1240,7 +1241,7 @@ export class Room extends DurableObject {
     const place = st.final ? st.final.order.indexOf(me) + 1 : 0;
     return {
       t: 'state', lb: sent,
-      n: n, stake: r.stake, fast: !!r.fast, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, stake: r.stake, games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),

@@ -48,7 +48,7 @@ const PERSIST = process.env.PERSIST;
 const WATCHDOG = (+process.env.WATCHDOG_MIN || 60) * 60000;
 const base = process.env.URL || 'ws://localhost:' + port('WORKER', 8787);
 const http = base.replace(/^ws/, 'http');
-const TOP = new Set(['t', 'lb', 'n', 'stake', 'fast', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
+const TOP = new Set(['t', 'lb', 'n', 'stake', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
@@ -57,6 +57,8 @@ const SEAT = new Set(['name', 'pid', 'seed', 'av', 'level', 'bank', 'away', 'n',
 let ips = 0;
 
 async function call(method, path, acc, body, origin, extra) {
+  // an account link() made has no Apple token to answer with, so it goes back to a guest before it is deleted
+  if (method === 'DELETE' && path === '/api/me' && acc) sql("UPDATE players SET apple = NULL WHERE id = '" + acc.id + "' AND apple LIKE 'test-%'");
   const headers = Object.assign({ 'Content-Type': 'application/json' }, extra);
   if (acc) headers.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
   if (origin) headers.Origin = origin;
@@ -72,6 +74,12 @@ async function guest() {
   const r = await call('POST', '/api/guest');
   assert.strictEqual(r.status, 200, 'guest ' + r.status);
   return Object.assign(r.body, { auth: r.body.id + '.' + r.body.secret });
+}
+
+// friend tables with a stake are for accounts with an Apple identity; this gives each of these one
+function link(...accs) {
+  sql("UPDATE players SET apple = 'test-' || id WHERE apple IS NULL AND id IN (" + accs.map(a => "'" + a.id + "'").join(', ') + ')');
+  return accs[0];
 }
 
 // the dev server and this script share the local database
@@ -238,10 +246,11 @@ async function friends() {
 
   const accA = await guest();
   const accB = await guest();
+  link(accA, accB);
   sql("UPDATE players SET xp = 95 WHERE id = '" + accA.id + "'");
   const a = client('/ws/new', 'https://amerikano.pages.dev');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: 5, games: 5, level: 'sharp' });
+  a.send({ t: 'create', auth: accA.auth, players: 5, games: 5, stake: 100 });
   const ja = await a.next(m => m.t === 'joined');
   const code = ja.code;
   assert(/^[A-HJKMNP-Z]{4}$/.test(code), 'code ' + code);
@@ -503,15 +512,16 @@ async function busy() {
 async function forfeit() {
   const accA = await guest();
   const accB = await guest();
+  link(accA, accB);
   const a = client('/ws/new');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: 2, games: 2, level: 'relaxed', stake: 500 });
+  a.send({ t: 'create', auth: accA.auth, players: 3, games: 3, stake: 500 });
   const ja = await a.next(m => m.t === 'joined');
   const b = client('/ws/' + ja.code);
   await b.ready;
   b.send({ t: 'join', auth: accB.auth });
   await b.next(m => m.t === 'joined');
-  const poor = await guest();
+  const poor = link(await guest());
   sql("UPDATE players SET chips = 4999 WHERE id = '" + poor.id + "'");
   const c = client('/ws/' + ja.code);
   await c.ready;
@@ -566,10 +576,10 @@ async function races() {
 }
 
 async function solo() {
-  const acc = await guest();
+  const acc = link(await guest());
   const c = client('/ws/new');
   await c.ready;
-  c.send({ t: 'create', auth: acc.auth, players: 2, games: 2, level: 'relaxed' });
+  c.send({ t: 'create', auth: acc.auth, players: 3, games: 3, stake: 100 });
   await c.next(m => m.t === 'joined');
   const rooms = [];
   c.handlers.push(m => { if (m.t === 'room') rooms.push(m); });
@@ -579,7 +589,7 @@ async function solo() {
   const p = (await call('GET', '/api/me', acc)).body;
   assert.strictEqual(p.games + p.xp + p.tokens, 0, 'a player who never moved earns nothing');
   assert.strictEqual(sql("SELECT week_won AS n FROM players WHERE id = '" + acc.id + "'")[0].n, 0, 'nor weekly chips');
-  assert(rooms.some(m => m.finding === 1), 'the waiting view says one seat is being filled');
+  assert(rooms.some(m => m.finding === 2), 'the waiting view says two seats are being filled');
   c.ws.close();
   console.log('solo room: the empty seat is looked for, an idle player earns nothing');
 }
@@ -883,12 +893,13 @@ const WEEK = () => Math.floor((Date.now() - 4 * 86400000) / (7 * 86400000));
 const who = acc => "'" + acc.id + "'";
 
 // two humans in a private room; begin() starts it
-async function pair(n, games, accs) {
+async function pair(n, games, accs, stake = 100) {
   const accA = accs ? accs[0] : await guest();
   const accB = accs ? accs[1] : await guest();
+  if (stake) link(accA, accB);
   const a = client('/ws/new');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: n, games: games, level: 'relaxed' });
+  a.send({ t: 'create', auth: accA.auth, players: n, games: games, stake: stake });
   const ja = await a.next(m => m.t === 'joined');
   const b = client('/ws/' + ja.code);
   await b.ready;
@@ -1409,9 +1420,10 @@ async function whereabouts() {
   sql("UPDATE players SET chips = 5000 WHERE id IN ('" + a.id + "', '" + f.id + "')");
 
   // a private room is joined by its code, with the same chip check
+  link(a, f, poor);
   const host = client('/ws/new');
   await host.ready;
-  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, level: 'relaxed', stake: 500 });
+  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, stake: 500 });
   const ja = await host.next(m => m.t === 'joined');
   await sleep(100);
   const w = (await call('GET', '/api/friends', f)).body.friends.find(x => x.id === a.id).at;
@@ -1480,7 +1492,7 @@ async function board() {
   console.log('leaderboard: ordered by chips won this week and by level, last week left out, own rank');
 
   // two humans: the winner's net is counted, and a player from an earlier week starts again
-  const g = await pair(2, 2);
+  const g = await pair(3, 3);
   sql('UPDATE players SET week = ' + (w - 1) + ', week_won = 999 WHERE id IN (' + who(g.accA) + ', ' + who(g.accB) + ')');
   const fin = [];
   const finished = new Promise(res => { fin.res = res; });
@@ -1587,9 +1599,10 @@ async function pool() {
 // a private room whose host starts with empty seats is found by quick play, and the match counts for both humans
 async function openRoom() {
   const [host, x] = [await guest(), await guest()];
+  link(host, x);
   const c = client('/ws/new');
   await c.ready;
-  c.send({ t: 'create', auth: host.auth, players: 4, games: 4, level: 'relaxed', stake: 500 });
+  c.send({ t: 'create', auth: host.auth, players: 4, games: 4, stake: 500 });
   const ja = await c.next(m => m.t === 'joined');
   const rooms = [];
   c.handlers.push(m => { if (m.t === 'room') rooms.push(m); });
@@ -1639,9 +1652,10 @@ async function fixes() {
   h.send({ t: 'quick', stake: 100 });
   const mine = seated(await s);
   await mine.next(m => m.t === 'room');
+  link(a, b);
   const host = client('/ws/new');
   await host.ready;
-  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, level: 'relaxed', stake: 100 });
+  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, stake: 100 });
   const ja = await host.next(m => m.t === 'joined');
   const open = host.next(m => m.t === 'room' && m.finding === 3);
   host.send({ t: 'start' });
@@ -1662,9 +1676,10 @@ async function held() {
   h.send({ t: 'quick', stake: 100 });
   const mine = seated(await s);
   await mine.next(m => m.t === 'room');
+  link(a, b);
   const host = client('/ws/new');
   await host.ready;
-  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, level: 'relaxed', stake: 100 });
+  host.send({ t: 'create', auth: b.auth, players: 4, games: 4, stake: 100 });
   const ja = await host.next(m => m.t === 'joined');
   const guestSock = client('/ws/' + ja.code);
   await guestSock.ready;
@@ -1682,7 +1697,7 @@ async function held() {
   for (const c of [mine, host, guestSock, h]) c.ws.close();
 
   // a started private room holds its players too
-  const g = await pair(2, 2);
+  const g = await pair(3, 3);
   await begin(g);
   const hx = await hub(g.accB);
   const busy = hx.next(m => m.t === 'error');
@@ -1692,36 +1707,134 @@ async function held() {
   for (const c of [g.a, g.b, hx]) c.ws.close();
 }
 
-// fast tables are their own pool with a shorter turn clock; a friend table takes the switch too
-async function fast() {
-  const [a, b, c] = [await guest(), await guest(), await guest()];
-  const span = async (acc, fastOn) => {
-    const h = await hub(acc);
+// the pace switch is gone: a stray fast flag makes an ordinary table, and nothing says fast or counts it apart
+async function pace() {
+  const [a, b] = [await guest(), await guest()];
+  const [ha, hb] = [await hub(a), await hub(b)];
+  const sit = async (h, fastOn) => {
     const s = h.next(m => m.t === 'seated');
     h.send({ t: 'quick', stake: 100, fast: fastOn });
     const sat = await s;
     const r = seated(sat);
     const room = await r.next(m => m.t === 'room');
-    assert.strictEqual(room.fast, fastOn);
-    const st = await r.next(m => m.t === 'state' && m.clock);
-    leakCheck(st);
-    assert.strictEqual(st.fast, fastOn);
-    return { code: sat.code, span: st.clock.span, close: () => { r.ws.close(); h.ws.close(); } };
+    assert(!('fast' in room), 'the table sheet has no fast flag');
+    return [sat, r];
   };
-  const f = await span(a, true);
-  const n = await span(b, false);
-  assert.notStrictEqual(f.code, n.code, 'a normal quick play does not sit at a fast table');
-  const k = n.span / 30000;
-  assert.strictEqual(f.span, 15000 * k);
-  const f2 = await span(c, true);
-  assert.notStrictEqual(f2.code, n.code);
-  const host = client('/ws/new');
-  await host.ready;
-  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, level: 'relaxed', stake: 100, fast: true });
-  assert.strictEqual((await host.next(m => m.t === 'room')).fast, true);
-  console.log('fast: own pool, clock span ' + f.span + ' against ' + n.span + ', friend table fast');
-  for (const x of [f, n, f2]) x.close();
-  host.ws.close();
+  const rooms = ha.next(m => m.t === 'rooms' && m.n[100] > 0, 10000);
+  const [sa, ra] = await sit(ha, true);
+  const [sb, rb] = await sit(hb, false);
+  assert.strictEqual(sa.code, sb.code, 'a stray fast flag sits at the same table as everybody');
+  assert(!('f' in await rooms), 'the room counts are one list');
+  const st = await ra.next(m => m.t === 'state' && m.clock);
+  leakCheck(st);
+  assert(!('fast' in st));
+  const k = st.clock.span / 30000;
+  assert(k > 0 && k < 1, 'the clock is the normal one');
+  console.log('pace: a fast flag from an old client is ignored, one table pool, normal clock');
+  const host = link(await guest());
+  const c = client('/ws/new');
+  await c.ready;
+  c.send({ t: 'create', auth: host.auth, players: 3, games: 3, stake: 100, fast: true, level: 'sharp' });
+  const room = await c.next(m => m.t === 'room');
+  assert(!('fast' in room));
+  assert.strictEqual(room.level, 'relaxed', 'the server stops reading the level a client asks for');
+  for (const x of [ra, rb, c, ha, hb]) x.ws.close();
+}
+
+// friend tables: 3 to 5 players, any stake in tens (0 moves no chips), guests only for nothing
+async function friendTables() {
+  const host = link(await guest());
+  const visitor = await guest();
+  const made = async (acc, o) => {
+    const c = client('/ws/new');
+    await c.ready;
+    const r = c.next(m => m.t === 'joined' || m.t === 'error');
+    c.send(Object.assign({ t: 'create', auth: acc.auth }, o));
+    return [await r, c];
+  };
+  const refused = async (acc, o, k) => {
+    const [m, c] = await made(acc, o);
+    assert.strictEqual(m.k, k, JSON.stringify(o) + ' gave ' + (m.k || m.t));
+    c.ws.close();
+  };
+  const allowed = async (acc, o) => {
+    const [m, c] = await made(acc, o);
+    assert.strictEqual(m.t, 'joined', JSON.stringify(o) + ' gave ' + m.k);
+    return c;
+  };
+  for (const n of [2, 6]) await refused(host, { players: n, games: n === 2 ? 2 : 6, stake: 0 }, 'opts');
+  for (const n of [3, 4, 5]) (await allowed(host, { players: n, games: n, stake: 0 })).ws.close();
+  (await allowed(host, { players: 3, games: 3, stake: 10 })).ws.close();
+  for (const stake of [15, -10, 5, 1e9 + 10, 1.5, '100']) await refused(host, { players: 3, games: 3, stake: stake }, 'opts');
+  await refused(host, { players: 3, games: 3, stake: 1e9 }, 'poor');
+  await refused(host, { players: 3, games: 3, stake: 3000 }, 'poor');
+  (await allowed(host, { players: 3, games: 3, stake: 500 })).ws.close();
+  console.log('friend tables: 3 to 5 players, stakes in tens from 0, nothing else');
+
+  // a guest sits at a table for nothing, never at one with a stake
+  await refused(visitor, { players: 3, games: 3, stake: 10 }, 'guest');
+  (await allowed(visitor, { players: 3, games: 3 })).ws.close();
+  const [paid, pc] = await made(host, { players: 5, games: 5, stake: 500 });
+  const g1 = client('/ws/' + paid.code);
+  await g1.ready;
+  const no = g1.next(m => m.t === 'error' || m.t === 'joined');
+  g1.send({ t: 'join', auth: visitor.auth });
+  assert.strictEqual((await no).k, 'guest', 'a guest cannot join a table with a stake');
+  const [free, fc] = await made(host, { players: 3, games: 3, stake: 0 });
+  const g2 = client('/ws/' + free.code);
+  await g2.ready;
+  g2.send({ t: 'join', auth: visitor.auth });
+  assert.strictEqual((await g2.next(m => m.t === 'joined' || m.t === 'error')).t, 'joined', 'but can join one for nothing');
+  console.log('friend tables: a guest is refused a stake, plays for nothing');
+  for (const c of [g1, g2, fc]) c.ws.close();
+
+  // the table stays a friend table when it is opened to others: a guest is not seated through quick play or the hub
+  const hv = await hub(visitor);
+  const hg = await hub(await guest());
+  const hs = await hub(link(await guest()));
+  const open = pc.next(m => m.t === 'room' && m.finding === 4);
+  pc.send({ t: 'start' });
+  await open;
+  // all three at once, while the computer players are still arriving
+  const sat = hv.next(m => m.t === 'seated');
+  const e = hg.next(m => m.t === 'error');
+  const sat2 = hs.next(m => m.t === 'seated');
+  hg.send({ t: 'sit', code: paid.code });
+  hs.send({ t: 'quick', stake: 500 });
+  hv.send({ t: 'quick', stake: 500 });
+  assert.strictEqual((await e).k, 'guest', 'a guest cannot sit at an opened table with a stake by its code');
+  assert.strictEqual((await sat2).code, paid.code, 'a signed-in account lands in it');
+  assert.notStrictEqual((await sat).code, paid.code, 'and quick play does not seat a guest there');
+  console.log('friend tables: an opened table keeps its kind on every way in');
+  for (const x of [pc, hv, hg, hs]) x.ws.close();
+
+  // for nothing: no chips move, no xp, no tokens, even with a computer player in the third seat
+  const [a, b] = [link(await guest()), await guest()];
+  const ca = client('/ws/new');
+  await ca.ready;
+  ca.send({ t: 'create', auth: a.auth, players: 3, games: 3, stake: 0 });
+  const ja = await ca.next(m => m.t === 'joined');
+  const cb = client('/ws/' + ja.code);
+  await cb.ready;
+  cb.send({ t: 'join', auth: b.auth });
+  await cb.next(m => m.t === 'joined');
+  const fin = [played(Object.assign(ca, { seat: ja.seat })), played(cb)];
+  ca.send({ t: 'start' });
+  await within(Promise.all(fin), 120000, 'match end');
+  await sleep(800);
+  assert.strictEqual(personaIds(ca.st.players.map(p => p.pid)), 1, 'a computer player filled the third seat');
+  for (const acc of [a, b]) {
+    const p = (await call('GET', '/api/me', acc)).body;
+    assert.deepStrictEqual([p.chips, p.xp, p.games, p.wins, p.tokens], [5000, 0, 0, 0, 0], 'nothing earned');
+    assert.deepStrictEqual(sql('SELECT reason FROM chip_log WHERE player = ' + who(acc)).map(x => x.reason), ['start'], 'no chip rows');
+    assert.strictEqual(sql('SELECT week_won AS n FROM players WHERE id = ' + who(acc))[0].n, 0);
+  }
+  assert.strictEqual(ca.st.res.xp, 0);
+  const rows = seatsOf(ja.code);
+  assert.deepStrictEqual(rows.map(x => [x.kind, x.stake, x.net]), [['friend', 0, 0], ['friend', 0, 0], ['friend', 0, 0]]);
+  console.log('friend tables: a table for nothing moves no chips and earns nothing');
+  ca.ws.close();
+  cb.ws.close();
 }
 
 const within = (p, ms, what) => {
@@ -1985,9 +2098,10 @@ async function rematchNone() {
 async function rematchFriends() {
   const accA = await guest();
   const accB = await guest();
+  link(accA, accB);
   const a = client('/ws/new');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  a.send({ t: 'create', auth: accA.auth, players: 3, games: 3, stake: 100 });
   const ja = await a.next(m => m.t === 'joined');
   const b = client('/ws/' + ja.code);
   await b.ready;
@@ -2485,13 +2599,14 @@ async function shop(rc) {
   await hook(event('NON_RENEWING_PURCHASE', x, PACK(6500), 'tx-x'));
   for (const item of ['emo-cafe', 'frame-royal', 'back-sultan', 'felt-kilim', 'plate-gilt']) assert.strictEqual((await call('POST', '/api/shop/buy', x, { item: item })).status, 200, item);
   for (const [slot, item] of [['frame', 'frame-royal'], ['back', 'back-sultan'], ['felt', 'felt-kilim'], ['plate', 'plate-gilt']]) await wear(x, slot, item);
-  const g = await pair(2, 2, [x, y]);
+  const g = await pair(3, 3, [x, y]);
   const [sx, sy] = await begin(g);
   const seen = { a: [], b: [] };
-  g.a.handlers.push(m => { if (m.t === 'said') seen.a.push(m.k); });
-  g.b.handlers.push(m => { if (m.t === 'said') seen.b.push(m.k); });
+  // the third seat is a computer player, who may answer with an emote of its own
+  g.a.handlers.push(m => { if (m.t === 'said' && m.p !== 2) seen.a.push(m.k); });
+  g.b.handlers.push(m => { if (m.t === 'said' && m.p !== 1) seen.b.push(m.k); });
   assert.deepStrictEqual(sx.players[0].wear, { frame: 'frame-royal', plate: 'plate-gilt', back: 'back-sultan' }, 'worn items travel in the seat, the felt stays private');
-  assert.deepStrictEqual(sy.players[1].wear, sx.players[0].wear);
+  assert.deepStrictEqual(sy.players[2].wear, sx.players[0].wear);
   assert.deepStrictEqual(sy.players[0].wear, {});
   assert.deepStrictEqual((await call('GET', '/api/player/' + x.id, y)).body.wear, { frame: 'frame-royal', plate: 'plate-gilt', back: 'back-sultan' }, 'and the profile card');
   g.b.send({ t: 'say', k: 'tea' });
@@ -2587,10 +2702,10 @@ async function vip(rc) {
   assert.deepStrictEqual((await shopOf(plain)).owned, []);
 
   // seats and the card say vip as a boolean for everybody
-  const g = await pair(2, 2, [a, plain]);
+  const g = await pair(3, 3, [a, plain]);
   const [sa, sp] = await begin(g);
-  assert.deepStrictEqual([sa.players[0].vip, sa.players[1].vip, sp.players[0].vip, sp.players[1].vip], [true, false, false, true]);
-  assert.deepStrictEqual(sp.players[1].wear, gold, 'the others see the VIP items');
+  assert.deepStrictEqual([sa.players[0].vip, sa.players[1].vip, sp.players[0].vip, sp.players[2].vip], [true, false, false, true]);
+  assert.deepStrictEqual(sp.players[2].wear, gold, 'the others see the VIP items');
   const card = async (by, acc) => (await call('GET', '/api/player/' + acc.id, by)).body;
   assert.deepStrictEqual([(await card(plain, a)).vip, (await card(a, plain)).vip, (await card(a, a)).vip], [true, false, true]);
   // a closed socket keeps the seat, and a started table holds its players; leaving frees them for the next table
@@ -2608,7 +2723,7 @@ async function vip(rc) {
   assert.strictEqual((await wear(a, 'back', 'back-vip')).status, 403);
   assert.strictEqual((await card(plain, a)).vip, false);
   assert.deepStrictEqual((await card(plain, a)).wear, {});
-  const g2 = await pair(2, 2, [a, plain]);
+  const g2 = await pair(3, 3, [a, plain]);
   const [sl] = await begin(g2);
   assert.deepStrictEqual([sl.players[0].vip, sl.players[0].wear], [false, {}], 'a lapsed player sits down without them');
   g2.a.ws.close();
@@ -2663,12 +2778,12 @@ async function vip(rc) {
 
 // the day's earnings stop at the cap, and a new UTC day starts again
 async function cap() {
-  const acc = await guest();
+  const acc = link(await guest());
   const day = Math.floor(Date.now() / DAY);
   const match = async () => {
     const c = client('/ws/new');
     await c.ready;
-    c.send({ t: 'create', auth: acc.auth, players: 2, games: 2, level: 'relaxed' });
+    c.send({ t: 'create', auth: acc.auth, players: 3, games: 3, stake: 100 });
     const done = played(c);
     await c.next(m => m.t === 'joined');
     c.send({ t: 'start' });
@@ -3779,35 +3894,42 @@ const moved = (acc, match) => sql("SELECT coalesce(sum(delta), 0) AS n FROM chip
 
 // every seat of every match is written down, computer players too, with the result and who left
 async function matchlog() {
-  const [accA, accB] = [await guest(), await guest()];
+  const [accA, accB, accE] = [await guest(), await guest(), await guest()];
+  link(accA, accB, accE);
   const a = client('/ws/new');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  a.send({ t: 'create', auth: accA.auth, players: 3, games: 3, stake: 100 });
   const ja = await a.next(m => m.t === 'joined');
   const b = client('/ws/' + ja.code);
   await b.ready;
   b.send({ t: 'join', auth: accB.auth });
   await b.next(m => m.t === 'joined');
-  const fin = [a, b].map(c => played(c));
+  const e = client('/ws/' + ja.code);
+  await e.ready;
+  e.send({ t: 'join', auth: accE.auth });
+  await e.next(m => m.t === 'joined');
+  const fin = [a, b, e].map(c => played(c));
   a.send({ t: 'start' });
   await within(Promise.all(fin), 120000, 'match end');
   await sleep(800);
   let rows = seatsOf(ja.code);
-  assert.deepStrictEqual(rows.map(x => [x.player, x.kind, x.stake, x.fake, x.seat, x.gone]), [[accA.id, 'friend', 100, 0, 0, 0], [accB.id, 'friend', 100, 0, 1, 0]]);
+  assert.deepStrictEqual(rows.map(x => [x.player, x.kind, x.stake, x.fake, x.seat, x.gone]), [[accA.id, 'friend', 100, 0, 0, 0], [accB.id, 'friend', 100, 0, 1, 0], [accE.id, 'friend', 100, 0, 2, 0]]);
   assert.strictEqual(rows[0].match, rows[1].match);
-  for (const [i, acc] of [accA, accB].entries()) {
+  for (const [i, acc] of [accA, accB, accE].entries()) {
     assert(rows[i].net !== null && rows[i].at > 0);
     assert.strictEqual(rows[i].net, moved(acc, rows[0].match), 'net is what the chip log moved');
   }
   console.log('matchlog: a friend table writes one row per seat, net equals the chip log');
   a.ws.close();
   b.ws.close();
+  e.ws.close();
 
   // a leave in a started match sets gone; the other seat does not
   const [accC, accD] = [await guest(), await guest()];
+  link(accC, accD);
   const c = client('/ws/new');
   await c.ready;
-  c.send({ t: 'create', auth: accC.auth, players: 2, games: 2, level: 'relaxed', stake: 100 });
+  c.send({ t: 'create', auth: accC.auth, players: 3, games: 3, stake: 100 });
   const jc = await c.next(m => m.t === 'joined');
   const d = client('/ws/' + jc.code);
   await d.ready;
@@ -3819,7 +3941,7 @@ async function matchlog() {
   d.send({ t: 'leave' });
   await within(end, 120000, 'match end');
   await sleep(800);
-  rows = seatsOf(jc.code);
+  rows = seatsOf(jc.code).filter(x => !x.fake);
   assert.deepStrictEqual(rows.map(x => [x.player, x.gone, x.gone_at > 0]), [[accC.id, 0, false], [accD.id, 1, true]]);
   assert.strictEqual(rows[1].net, -100);
   assert.strictEqual(rows[1].net, moved(accD, rows[0].match), 'a leaver net is what the chip log moved');
@@ -4093,7 +4215,7 @@ async function probe() {
     const m = await e;
     return [m.k || m.t, c];
   };
-  const [host, p1, s1, s2, s3] = [await guest(), await guest(), await guest(), await guest(), await guest()];
+  const [host, p1, p2, s1, s2, s3] = [await guest(), await guest(), await guest(), await guest(), await guest(), await guest()];
   const made = async (acc, n) => {
     const a = client('/ws/new');
     await a.ready;
@@ -4101,9 +4223,11 @@ async function probe() {
     const j = await a.next(m => m.t === 'joined');
     return [a, j.code];
   };
-  const [a, code] = await made(host, 2);
+  const [a, code] = await made(host, 3);
   const [jb, cb] = await tryJoin(p1, code);
   assert.strictEqual(jb, 'joined');
+  const [jb2, cb2] = await tryJoin(p2, code);
+  assert.strictEqual(jb2, 'joined');
   assert.strictEqual((await tryJoin(s1, code))[0], 'nocode', 'a full table');
   const st = a.next(m => m.t === 'state');
   a.send({ t: 'start' });
@@ -4112,6 +4236,7 @@ async function probe() {
   assert.strictEqual((await tryJoin(s3, unknownCode()))[0], 'nocode', 'a code nobody made');
   a.ws.close();
   cb.ws.close();
+  cb2.ws.close();
   console.log('probe: unknown, full and started codes answer alike');
 
   // an account's failed joins are counted: after 10 in 10 minutes even a good code is refused, another account is not affected
@@ -4139,19 +4264,19 @@ async function probe() {
   const fake = client('/ws/' + unknownCode());
   await fake.ready;
   const e = fake.next(m => m.t === 'error');
-  fake.send({ t: 'create', auth: acc.auth, players: 2, games: 2 });
+  fake.send({ t: 'create', auth: acc.auth, players: 3, games: 3 });
   assert.strictEqual((await e).k, 'nocode');
   const forged = client('/ws/' + unknownCode(), null, { 'X-Amk-New': '1' });
   await forged.ready;
   const e2 = forged.next(m => m.t === 'error');
-  forged.send({ t: 'create', auth: acc.auth, players: 2, games: 2 });
+  forged.send({ t: 'create', auth: acc.auth, players: 3, games: 3 });
   assert.strictEqual((await e2).k, 'nocode', 'a client cannot claim to have been handed the code');
   console.log('probe: create at a made-up code is refused');
 
   // codes keep their alphabet and length
   const lead = new Set();
   for (let i = 0; i < 6; i++) {
-    const [t, code2] = await made(await guest(), 2);
+    const [t, code2] = await made(await guest(), 3);
     assert(/^[A-HJKMNP-Z]{4}$/.test(code2), code2);
     assert(code2.split('').every(x => letters.includes(x)));
     lead.add(code2[0]);
@@ -4170,8 +4295,19 @@ async function dealfail() {
   const chips = async acc => (await call('GET', '/api/me', acc)).body.chips;
   const state = m => m.t === 'state';
 
+  // a third human fills the table, so it is not opened to computer players and does not start over by itself
+  const full = async g => {
+    const acc = link(await guest());
+    const x = client('/ws/' + g.code);
+    await x.ready;
+    x.send({ t: 'join', auth: acc.auth });
+    await x.next(m => m.t === 'joined');
+    g.x = x;
+    return g;
+  };
+
   // one failure, then the retry deals, and nobody is charged twice
-  let g = await pair(2, 2);
+  let g = await full(await pair(3, 3));
   breakDeal({ kind: 'friend', n: 1, seat: 0 });
   const dealt = Promise.all([g.a.next(state), g.b.next(state)]);
   g.a.send({ t: 'start' });
@@ -4181,10 +4317,11 @@ async function dealfail() {
   mendDeal();
   g.a.ws.close();
   g.b.ws.close();
+  g.x.ws.close();
   console.log('dealfail: a failure is retried and deals');
 
   // a failure that stays, after the first seat was taken: both get the error, everything is returned, the table can start again
-  g = await pair(2, 2);
+  g = await full(await pair(3, 3));
   breakDeal({ kind: 'friend', n: 99, seat: 1 });
   const off = [g.a, g.b].map(c => c.next(m => m.t === 'error' && m.k === 'dealfail'));
   g.a.send({ t: 'start' });
@@ -4198,6 +4335,7 @@ async function dealfail() {
   assert.deepStrictEqual([rows(g.accA, ':in').length, rows(g.accA, ':back').length], [2, 1], 'the second match has its own refs');
   g.a.ws.close();
   g.b.ws.close();
+  g.x.ws.close();
   console.log('dealfail: a deal that never works returns every stake and leaves the table usable');
 
   // a public table with computer players: the human is refunded, the computer players' banks come back, the table is gone
@@ -4304,7 +4442,8 @@ process.on('unhandledRejection', e => {
   await sec('board', () => board());
   await sec('fixes', () => fixes());
   await sec('held', () => held());
-  await sec('fast', () => fast());
+  await sec('pace', () => pace());
+  await sec('friendTables', () => friendTables());
   await sec('regions', () => regions());
   await sec('rematchBoth', () => rematchBoth());
   await sec('rematchOne', () => rematchOne());
