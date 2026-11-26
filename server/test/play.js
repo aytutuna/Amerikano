@@ -534,8 +534,10 @@ async function lone() {
   const s = h.next(m => m.t === 'seated');
   h.send({ t: 'quick', stake: 500 });
   const sat = await s;
+  const began = Date.now();
   const r = seated(sat);
   const st = await r.next(m => m.t === 'state');
+  assert(Date.now() - began <= 8000 * 0.02 + 1500, 'a lone player starts inside the window: ' + (Date.now() - began) + 'ms');
   leakCheck(st);
   assert.strictEqual(st.players.filter(p => p.pid && personaIds([p.pid]) === 1).length, 3);
   assert.strictEqual(st.stake, 500);
@@ -1373,9 +1375,9 @@ async function personas() {
   await Promise.race([fin, new Promise((x, j) => setTimeout(() => j(new Error('timeout')), 120000))]);
   assert(!all.some(m => /bot|fake|persona/i.test(JSON.stringify(m))), 'nothing at the table says bot');
   const steps = counts.map(x => x[1]);
-  assert.deepStrictEqual(steps.filter((n, i) => i === 0 || n !== steps[i - 1]), [1, 2, 3], 'seats fill one at a time before the table starts');
+  assert.deepStrictEqual(steps.filter((n, i) => i === 0 || n !== steps[i - 1]), [1, 2, 3, 4], 'seats fill one at a time, the last one when the window ends');
   const two = counts.find(x => x[1] === 2)[0];
-  assert(two - t0 >= 60, 'the first fill waits a while: ' + (two - t0) + 'ms');
+  assert(two - t0 <= 8000 * 0.02 + 1500, 'the first fill comes inside the window: ' + (two - t0) + 'ms');
   const st = r.st;
   assert.strictEqual(st.players.length, 4);
   const others = st.players.slice(1);
@@ -2124,26 +2126,18 @@ async function regions() {
 
 // two humans quick-play the same table at this stake; the personas fill the rest
 async function seatTwo(stake) {
-  let accA, accB, a, b, A, B;
-  // the table fills with computer players after 80 to 160 ms, so on a slow machine the second one can land at the next table
-  for (let i = 0; ; i++) {
-    accA = await guest();
-    accB = await guest();
-    if (stake > 100) level(4, accA, accB);
-    a = await hub(accA);
-    b = await hub(accB);
-    const sa = a.next(m => m.t === 'seated');
-    a.send({ t: 'quick', stake: stake });
-    A = await sa;
-    const sb = b.next(m => m.t === 'seated');
-    b.send({ t: 'quick', stake: stake });
-    B = await sb;
-    if (B.code === A.code) break;
-    assert(i < 4, 'two quick players share a table: ' + A.code + ' ' + B.code);
-    console.log('seatTwo: the second player was seated at another table, trying again');
-    a.ws.close();
-    b.ws.close();
-  }
+  const accA = await guest();
+  const accB = await guest();
+  if (stake > 100) level(4, accA, accB);
+  const a = await hub(accA);
+  const b = await hub(accB);
+  const sa = a.next(m => m.t === 'seated');
+  a.send({ t: 'quick', stake: stake });
+  const A = await sa;
+  const sb = b.next(m => m.t === 'seated');
+  b.send({ t: 'quick', stake: stake });
+  const B = await sb;
+  assert.strictEqual(B.code, A.code, 'two quick players share a table');
   const t = { accA, accB, a, b, A, B, ra: seated(A), rb: seated(B) };
   t.offer = [t.ra, t.rb].map(c => c.next(m => m.t === 'state' && m.rm, 150000));
   for (const c of [t.ra, t.rb]) play(c, { finish: () => {} });
@@ -5165,6 +5159,95 @@ async function missedClock() {
   console.log('missedClock: a lost connection becomes away only after a stand-in move, and back clears it');
 }
 
+// A public table fills inside one window that ends 4 to 8 seconds after the first sit and starts then; somebody of the region looking
+// at the lobby stretches it, up to 15 seconds. The tables are made with a window 25 times longer, so a few hundred ms of delay is small.
+async function startWindow() {
+  const K = 0.02 * 25;
+  // a region nobody else uses, so no sleeping lobby socket of another section stretches the window
+  const player = () => from('JP', 'AS');
+  const sit = async acc => {
+    const h = await hub(acc);
+    const s = h.next(m => m.t === 'seated');
+    h.send({ t: 'quick', stake: 100, scale: 25 });
+    const m = await s;
+    hubs.push(h);
+    return { h, m, at: Date.now() };
+  };
+  const done = [];
+  const hubs = [];
+  const join = s => {
+    const r = track(seated(s.m), false);
+    done.push(played(r));
+    return r;
+  };
+  // the first state of a table, which may have come already
+  const to = async r => {
+    if (!r.states.length) await within(r.next(m => m.t === 'state'), 30000, 'the table starts');
+    return r.states[0][1];
+  };
+
+  // alone: a persona every 1 to 2 s, never in the last seat, and the match starts when the window ends
+  const A = await sit(await player());
+  const ra = join(A);
+  await to(ra);
+  const at = n => ra.rooms.find(x => x[1] === n);
+  assert.deepStrictEqual(ra.rooms.map(x => x[1]).filter((n, i, all) => !i || n !== all[i - 1]), [1, 2, 3, 4], 'one seat at a time: ' + JSON.stringify(ra.rooms.map(x => [x[0] - A.at, x[1]])));
+  for (const n of [2, 3]) {
+    const gap = at(n)[0] - (n === 2 ? A.at : at(2)[0]);
+    assert(gap >= 1000 * K - 150 && gap <= 2000 * K + 600, 'persona ' + (n - 1) + ' comes 1 to 2 s on: ' + gap + ' ms');
+  }
+  const end = at(4)[0] - A.at;
+  assert(end >= 4000 * K - 400 && end <= 8000 * K + 600, 'the last seat is filled when the window ends, 4 to 8 s: ' + end + ' ms');
+  assert(ra.states[0][0] >= at(4)[0], 'and the match starts after it');
+  console.log('startWindow: a lone player starts 4 to 8 s after sitting, the last seat filled at the end');
+
+  // a second person inside the window sits at the same table, with no retry
+  const B1 = await sit(await player());
+  const rb1 = join(B1);
+  const B2 = await sit(await player());
+  assert.strictEqual(B2.m.code, B1.m.code, 'the second player gets the same table');
+  const rb2 = join(B2);
+  const st = await to(rb1);
+  assert.strictEqual(st.players.filter(p => p.pid && personaIds([p.pid]) === 0).length, 2, 'two people');
+  assert.strictEqual(st.players.filter(p => p.pid && personaIds([p.pid]) === 1).length, 2, 'and two computer players');
+  await to(rb2);
+  console.log('startWindow: a second player inside the window gets the same table');
+
+  // somebody looking at the lobby: the start waits up to 15 s
+  const L = await hub(await player());
+  hubs.push(L);
+  const C = await sit(await player());
+  const rc = join(C);
+  await to(rc);
+  const late = rc.states[0][0] - C.at;
+  assert(late >= 15000 * K - 600 && late <= 15000 * K + 3500, 'the window is stretched to 15 s: ' + late + ' ms');
+  console.log('startWindow: a player in the lobby stretches the window up to 15 s');
+
+  // and that player may take the last seat while it waits: the table starts at once
+  const L2 = await player();
+  const hl = await hub(L2);
+  hubs.push(hl);
+  const D = await sit(await player());
+  const rd = join(D);
+  await sleep(8000 * K + 700);
+  assert.strictEqual(rd.states.length, 0, 'still waiting after the longest plain window');
+  assert.strictEqual(rd.rooms[rd.rooms.length - 1][1], 3, 'with the last seat open');
+  const t1 = Date.now();
+  const ss = hl.next(m => m.t === 'seated');
+  hl.send({ t: 'quick', stake: 100, scale: 25 });
+  const M = await ss;
+  assert.strictEqual(M.code, D.m.code, 'the player of the lobby takes the open seat');
+  const r2 = join({ m: M });
+  await to(rd);
+  assert(rd.states[0][0] - t1 < 2500, 'and the table starts when it is full: ' + (rd.states[0][0] - t1) + ' ms');
+  assert(rd.states[0][0] - D.at < 15000 * K - 500, 'before the 15 s');
+  await to(r2);
+  console.log('startWindow: the last seat stays open for a person until the window ends');
+  await within(Promise.all(done), 240000, 'the matches end');
+  for (const h of hubs) h.ws.close();
+  await sleep(500);
+}
+
 const sec = async (name, fn) => {
   names.add(name);
   if (only.length && !only.includes(name)) return;
@@ -5226,6 +5309,7 @@ process.on('unhandledRejection', e => {
   await sec('leaves', () => leaves());
   await sec('lapseRematch', () => lapseRematch());
   await sec('missedClock', () => missedClock());
+  await sec('startWindow', () => startWindow());
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
   await sec('board', () => board());

@@ -36,6 +36,9 @@ const TRIES = 3;
 const DEAL_TRIES = 5;
 const DEAL_TIME = 60000;
 const DEAL_RETRY = 2000;
+// a public table fills inside a window of 4 to 8 s from the first sit; a lobby player may stretch it in these steps up to the most
+const MOST = 15000;
+const STEP = 2000;
 const ID = /^[0-9a-f]{32}$/;
 
 export const stub = (ns, code) => ns.get(ns.idFromName(code), hint(code));
@@ -155,10 +158,10 @@ export class Room extends DurableObject {
   }
 
   // Called by the Hub. A public table is an ordinary room whose seats the Hub hands out.
-  openTable(code, stake, region) {
+  openTable(code, stake, region, scale) {
     if (this.r) return false;
     this.r = {
-      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, region: region, host: -1, seats: Array(4).fill(null),
+      code: code, n: 4, games: 4, level: 'relaxed', pub: true, stake: stake, region: region, scale: scale, host: -1, seats: Array(4).fill(null),
       started: false, over: false, since: 0, go: 0, ready: [], dead: Date.now() + KEEP * this.k
     };
     this.save();
@@ -204,7 +207,7 @@ export class Room extends DurableObject {
     else {
       i = r.seats.indexOf(null);
       r.seats[i] = human(p, since);
-      if (!r.go) r.go = Date.now() + this.lag(4000, 8000);
+      if (!r.go) this.window();
     }
     const token = r.seats[i].token;
     if (r.seats.every(Boolean)) this.ctx.waitUntil(this.go());
@@ -279,8 +282,8 @@ export class Room extends DurableObject {
       if (s && s.gone && Date.now() >= s.gone + GRACE * this.k) r.seats[i] = null;
     });
     if (this.pooled() && this.lonely()) return this.wipe();
-    if (r.go && Date.now() >= r.go) return this.fill();
-    if (this.pooled() && !r.go) r.go = Date.now() + this.lag(4000, 8000);
+    if (this.pooled() && !r.go) this.window();
+    if (r.go && Date.now() >= this.fillAt()) return this.fill();
     if (!r.pub && !r.seats[r.host]) r.host = this.firstHuman();
     this.save();
     this.send();
@@ -396,7 +399,7 @@ export class Room extends DurableObject {
     if (r.open || r.started) return;
     if (r.seats.every(Boolean)) return this.go();
     r.open = true;
-    r.go = Date.now() + this.lag(4000, 8000);
+    this.window();
     this.save();
     this.send();
     this.arm();
@@ -423,6 +426,8 @@ export class Room extends DurableObject {
     const r = this.r;
     r.started = true;
     r.go = 0;
+    delete r.first;
+    delete r.next;
     this.report();
     this.arm();
     return this.begin();
@@ -437,11 +442,12 @@ export class Room extends DurableObject {
     return { pid: p.id, name: Names.text(p.name_seed, 'en'), seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, bank: p.chips, bot: true, fake: true, gone: 0, ...look(p) };
   }
 
-  // The room may be gone or full again after the wait, and a player may have taken the seat meanwhile.
-  async seatOne() {
+  // The room may be gone or full again after the wait, and a player may have taken the seat meanwhile. With keep, the last
+  // open seat is left for a person.
+  async seatOne(keep) {
     const r = this.r;
     const p = await this.persona();
-    const i = this.r === r && !r.started ? r.seats.indexOf(null) : -1;
+    const i = this.r === r && !r.started && !(keep && r.seats.filter(s => !s).length < 2) ? r.seats.indexOf(null) : -1;
     if (i < 0) {
       await giveBack(this.env.DB, p.pid);
       return false;
@@ -450,16 +456,46 @@ export class Room extends DurableObject {
     return true;
   }
 
-  // a table takes one persona at a time, a few seconds apart, and starts when it is full
+  // The table fills inside one window that ends 4 to 8 s after the first person sat, and the match starts at its end.
+  // A persona sits every 1 to 2 s meanwhile, but never in the last open seat.
+  window() {
+    const r = this.r;
+    const f = r.scale && this.env.PACE ? r.scale : 1;
+    r.first = Date.now();
+    r.go = r.first + this.lag(4000, 8000) * f;
+    r.next = r.first + this.lag(1000, 2000) * f;
+  }
+
+  // when the table next has something to do: a persona for a seat that is not the last one, or the end of the window
+  fillAt() {
+    const r = this.r;
+    return r.seats.filter(s => !s).length > 1 ? Math.min(r.go, r.next) : r.go;
+  }
+
   async fill() {
     const r = this.r;
-    if (!await this.seatOne()) return;
-    if (r.seats.every(Boolean)) return this.go();
-    r.go = Date.now() + this.lag(3000, 12000);
-    this.save();
+    const now = Date.now();
+    const f = r.scale && this.env.PACE ? r.scale : 1;
+    if (now < r.go) {
+      r.next = now + this.lag(1000, 2000) * f;
+      await this.seatOne(true);
+      if (this.r !== r || r.started) return;
+      this.save();
+      this.send();
+      this.arm();
+      return this.report();
+    }
+    // somebody of the region who is looking at the lobby may be on the way, so the last seat waits a little longer
+    const cap = r.first + MOST * this.k * f;
+    if (r.go < cap && await this.hub().lobbied(r.region || codeRegion(r.code)).catch(() => false)) {
+      if (this.r !== r || r.started) return;
+      r.go = Math.min(r.go + STEP * this.k * f, cap);
+      this.save();
+      return this.arm();
+    }
+    while (r.seats.includes(null)) if (!await this.seatOne()) return;
     this.send();
-    this.arm();
-    this.report();
+    return this.go();
   }
 
   // a second call while the stakes are being taken waits for the first
@@ -544,7 +580,7 @@ export class Room extends DurableObject {
     for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover']) delete s[k];
     for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
-    if (r.open) r.go = Date.now() + this.lag(4000, 8000);
+    if (r.open) this.window();
     if (!r.seats.some(s => s && s.pid && !s.fake)) r.dead = Date.now() + KEEP * this.k;
     if (r.host >= 0 && !r.seats[r.host]) r.host = this.firstHuman();
     this.st = null;
@@ -1188,7 +1224,7 @@ export class Room extends DurableObject {
       r.open = true;
       r.host = this.firstHuman();
     }
-    r.go = Date.now() + this.lag(4000, 8000);
+    this.window();
     this.save();
     this.send();
     this.arm();
@@ -1207,7 +1243,7 @@ export class Room extends DurableObject {
     if (!st) {
       if (r.started) return r.aborted ? Infinity : r.retry || 0;
       const due = r.seats.filter(s => s && s.gone).map(s => s.gone + GRACE * k);
-      if (r.go) due.push(r.go);
+      if (r.go) due.push(this.fillAt());
       return due.length ? Math.min(...due) : Infinity;
     }
     if (st.phase === 'matchend') {

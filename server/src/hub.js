@@ -168,7 +168,7 @@ export class Hub extends DurableObject {
     }
     if (m.t === 'at') return ws.serializeAttachment(Object.assign({}, a, { at: m.at === 'training' ? 'training' : 'lobby' }));
     if (m.t === 'sit') return this.queue(() => this.sit(ws, a.pid, m.code));
-    if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake));
+    if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake, m.scale));
     if (m.t === 'cup') return this.queue(() => this.enter(ws, a.pid, m.buy));
     if (m.t === 'call') return this.queue(() => this.dial(ws, a.pid, m.to));
     if (m.t === 'accept') return this.accept(a.pid, m.id);
@@ -433,6 +433,17 @@ export class Hub extends DurableObject {
     this.rooms = now;
   }
 
+  // Whether somebody of this region is looking at the lobby: a signed-in socket that is not seated at a table and not in a
+  // tournament. A table waits a little for such a player before it starts.
+  lobbied(region) {
+    const seated = new Set();
+    for (const t of Object.values(this.tables)) for (const pid of t.pids) if (pid) seated.add(pid);
+    return this.ctx.getWebSockets().some(w => {
+      const a = w.deserializeAttachment();
+      return w.readyState === 1 && !!a.pid && a.region === region && a.at === 'lobby' && !seated.has(a.pid) && !this.inCup(a.pid);
+    });
+  }
+
   // whether the account holds a seat at a pool table other than this one, or is in a tournament
   holds(pid, code) {
     return this.inCup(pid) ||
@@ -512,7 +523,7 @@ export class Hub extends DurableObject {
   }
 
   // the open table of the room with the most people, real ones first, else a new one
-  async quick(ws, pid, stake) {
+  async quick(ws, pid, stake, scale) {
     if (!STAKES.includes(stake)) return;
     const p = await this.afford(ws, pid, stake);
     if (!p) return;
@@ -527,7 +538,7 @@ export class Hub extends DurableObject {
     for (let i = 0; i < 3; i++) {
       const code = await freeCode(this.env.ROOM, r);
       if (!code) break;
-      if (!await this.room(code).openTable(code, stake, r)) continue;
+      if (!await this.room(code).openTable(code, stake, r, this.env.PACE ? Number(scale) || undefined : undefined)) continue;
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
     }
