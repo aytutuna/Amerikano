@@ -1063,7 +1063,7 @@ var Game = (function () {
     }
   }
 
-  function botDiscard(st, p) {
+  function botDiscard(st, p, safe) {
     const nat = p.hand.filter(c => c.r);
     const pool = nat.length ? nat : p.hand;
     const seen = new Set();
@@ -1081,7 +1081,7 @@ var Game = (function () {
       const v = pts(c) - 7 * neighbours(p.hand, c);
       if (best === null || d < bs[0] || (d === bs[0] && v > bs[1])) { best = c; bs = [d, v]; }
     }
-    if (slip(st, 'badDiscard', p)) best = pool[Math.floor(st.rnd() * pool.length)];
+    if (!safe && slip(st, 'badDiscard', p)) best = pool[Math.floor(st.rnd() * pool.length)];
     discard(st, best);
   }
 
@@ -1118,6 +1118,17 @@ var Game = (function () {
     return false;
   }
 
+  // What plays for a player who ran out the clock: the task the bot would choose, a card from the stock, a pass and the sharp
+  // discard. Nothing is opened or laid and no chip is spent, whatever the seat's level.
+  function safeStep(st) {
+    if (st.phase === 'choose') botChoose(st, cur(st));
+    else if (st.phase === 'draw') drawStock(st);
+    else if (st.phase === 'claim') claimPass(st);
+    else if (st.phase === 'play') botDiscard(st, cur(st), true);
+    else return false;
+    return true;
+  }
+
   return {
     TASKS: TASKS, CARDS: CARDS, BOT_NAMES: BOT_NAMES,
     pts: pts, handPts: handPts, cardName: cardName,
@@ -1127,7 +1138,7 @@ var Game = (function () {
     newMatch: newMatch, startGame: startGame, chooseTask: chooseTask,
     drawStock: drawStock, takeDiscard: takeDiscard, claimTake: claimTake, claimPass: claimPass, claimer: claimer,
     open: open, openPlan: openPlan, layMeld: layMeld, addToMeld: addToMeld, finishHand: finishHand,
-    discard: discard, nextGame: nextGame, botStep: botStep, cur: cur,
+    discard: discard, nextGame: nextGame, botStep: botStep, safeStep: safeStep, cur: cur,
     dump: dump, load: load
   };
 })();

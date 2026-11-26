@@ -232,6 +232,7 @@ export class Room extends DurableObject {
     if (a.seat < 0) return this.fail(ws, 'join');
     if (m.t === 'start') return this.start(ws, a.seat);
     if (m.t === 'leave') return this.leave(ws, a);
+    if (m.t === 'back') return this.back(a.seat);
     if (m.t === 'rematch') return this.rematch(ws, a.seat);
     if (m.t === 'act') return this.act(ws, a.seat, m);
     if (m.t === 'say') return this.say(a.seat, m);
@@ -368,7 +369,6 @@ export class Room extends DurableObject {
     }
     const s = r.seats[i];
     s.gone = 0;
-    s.auto = false;
     if (!r.over) r.dead = 0;
     for (const w of this.socks()) if (w.deserializeAttachment().seat === i) w.close(4000, 'replaced');
     ws.serializeAttachment(Object.assign({}, a, { seat: i, sent: 0 }));
@@ -541,7 +541,7 @@ export class Room extends DurableObject {
     }
     for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
     r.seats = r.seats.map((s, i) => gone[i] ? null : s);
-    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto']) delete s[k];
+    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover']) delete s[k];
     for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
     if (r.open) r.go = Date.now() + this.lag(4000, 8000);
@@ -624,7 +624,7 @@ export class Room extends DurableObject {
     if (r.seats[a.seat]) this.hush(r.seats[a.seat].pid);
     ws.serializeAttachment(Object.assign({}, a, { seat: -1 }));
     if (r.started) {
-      const { token, gone, auto, ...s } = r.seats[a.seat];
+      const { token, gone, auto, misses, cover, ...s } = r.seats[a.seat];
       const live = !!r.id && !r.over && !!s.esc && !!this.st;
       r.seats[a.seat] = Object.assign(s, { bot: true, left: live || undefined });
       if (this.st) {
@@ -712,7 +712,7 @@ export class Room extends DurableObject {
       const { ok, err, ...more } = res;
       return this.fail(ws, err, more);
     }
-    r.seats[i].auto = false;
+    this.resume(r.seats[i]);
     r.seats[i].acts = (r.seats[i].acts || 0) + 1;
     this.moved();
   }
@@ -928,21 +928,48 @@ export class Room extends DurableObject {
     return this.r.seats.map((s, i) => i).filter(i => !this.r.seats[i].bot && this.here(i));
   }
 
-  // The bot plays for a human who stays away or idle, and keeps doing so until they act again.
+  // the turn in progress, the same for every phase of it
+  turn() {
+    return this.st.gameNo + ':' + this.st.turns;
+  }
+
+  // a seat that plays for itself again: no missed turns, no stand-in
+  resume(s) {
+    s.auto = false;
+    s.misses = 0;
+    delete s.cover;
+  }
+
+  // The player is back: the stand-in stops and the clock of the seat starts afresh.
+  back(i) {
+    const { r, st } = this;
+    const s = r.seats[i];
+    if (!st || !s || s.bot || !(s.auto || s.misses || s.cover)) return;
+    this.resume(s);
+    if (st.phase !== 'gameend' && st.phase !== 'matchend' && this.actor() === i) r.since = Date.now();
+    this.save();
+    this.send();
+    this.arm();
+  }
+
+  // The stand-in plays for a human whose clock ran out or who is gone. A missed turn is played to its end with safe moves and the
+  // player keeps control; the second missed turn in a row, or a lost connection, sets the seat to away until the player is back.
   step() {
     const st = this.st;
     const i = this.actor();
     const r = this.r;
     const s = r.seats[i];
-    const p = st.players[i];
     if (!s.bot) {
-      s.auto = true;
       s.autos = (s.autos || 0) + 1;
+      if (st.phase !== 'claim' && s.cover !== this.turn()) {
+        s.cover = this.turn();
+        s.misses = (s.misses || 0) + 1;
+      }
+      if (s.misses >= 2 || !this.here(i)) s.auto = true;
     }
     if (st.justOpened) st.played = true;
-    p.bot = true;
-    Game.botStep(st);
-    p.bot = !!s.bot;
+    if (s.bot) Game.botStep(st);
+    else Game.safeStep(st);
     if (!r.hi && st.gameNo === 1) {
       r.hi = true;
       this.chirp(i, ['hello', 'luck'], 0.5);
@@ -1149,7 +1176,7 @@ export class Room extends DurableObject {
     }
     r.seats = r.seats.map((s, i) => {
       if (!want.includes(i)) return null;
-      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'talked', 'lv']) delete s[k];
+      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'talked', 'lv']) delete s[k];
       return s;
     });
     for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait']) delete r[k];
@@ -1192,7 +1219,7 @@ export class Room extends DurableObject {
     const i = this.actor();
     const s = r.seats[i];
     const wait = r.wait || 1000 * k;
-    if (s.bot || s.auto) return r.since + wait;
+    if (s.bot || s.auto || s.cover === this.turn()) return r.since + wait;
     if (!this.here(i)) return Math.max(r.since + wait, s.gone + GRACE * k);
     return r.since + this.idle() * k;
   }
@@ -1203,7 +1230,7 @@ export class Room extends DurableObject {
     if (st.phase === 'gameend' || st.phase === 'matchend') return null;
     const i = this.actor();
     const s = r.seats[i];
-    if (s.auto || !s.bot && !this.here(i)) return null;
+    if (s.auto || s.cover === this.turn() || !s.bot && !this.here(i)) return null;
     return { p: i, left: Math.max(0, r.since + this.idle() * this.k - Date.now()), span: this.idle() * this.k };
   }
 
@@ -1293,7 +1320,7 @@ export class Room extends DurableObject {
     const place = st.final ? st.final.order.indexOf(me) + 1 : 0;
     return {
       t: 'state', lb: sent,
-      n: n, stake: r.stake, pub: r.pub && !r.cup, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
+      n: n, auto: !!r.seats[me].auto, stake: r.stake, pub: r.pub && !r.cup, fee: feeFor(r.stake), hold: hold(r.stake, r.games), games: st.games, gameNo: st.gameNo, level: st.level, pot: st.pot, phase: st.phase,
       task: st.task && st.task.id, tasksLeft: st.tasksLeft.map(x => x.id),
       turn: rot(st.turn), cutter: rot(st.cutter), chooser: rot(st.chooser),
       turns: st.turns, justOpened: st.justOpened, stock: st.stock.length, discard: ids(st.discard),
@@ -1304,7 +1331,7 @@ export class Room extends DurableObject {
         const i = (k + me) % n;
         const o = {
           name: p.name, pid: r.seats[i].pid, seed: r.seats[i].seed, av: r.seats[i].av, level: r.seats[i].level, wear: r.seats[i].wear || {}, vip: !!r.seats[i].vip,
-          bank: r.seats[i].bank, away: !r.seats[i].bot && !here.has(i), n: p.hand.length,
+          bank: r.seats[i].bank, away: !r.seats[i].bot && (!here.has(i) || !!r.seats[i].auto), n: p.hand.length,
           opened: p.opened, claims: p.claims, chips: p.chips, score: p.score
         };
         if (k === 0) o.hand = ids(p.hand);

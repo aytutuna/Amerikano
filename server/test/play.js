@@ -50,7 +50,7 @@ const PERSIST = process.env.PERSIST;
 const WATCHDOG = (+process.env.WATCHDOG_MIN || 60) * 60000;
 const base = process.env.URL || 'ws://localhost:' + port('WORKER', 8787);
 const http = base.replace(/^ws/, 'http');
-const TOP = new Set(['t', 'lb', 'n', 'stake', 'pub', 'fee', 'hold', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
+const TOP = new Set(['t', 'lb', 'n', 'auto', 'stake', 'pub', 'fee', 'hold', 'res', 'games', 'gameNo', 'level', 'pot', 'phase', 'task', 'tasksLeft', 'turn', 'cutter',
   'chooser', 'clock', 'rm', 'cup', 'turns', 'justOpened', 'stock', 'discard', 'melds', 'claim', 'players', 'result', 'stats', 'lastFin', 'final', 'log']);
 const RM = new Set(['left', 'want', 'mine']);
 const CUP = new Set(['round', 'buy', 'prizes', 'place', 'through']);
@@ -5029,6 +5029,142 @@ async function gates() {
   console.log('gates: guests sit at 100 and 500 only, no cups, no gifts');
 }
 
+// follows a table socket: every state with its time, the log kept as play() keeps it (unless play() has the socket), and the seat counts of the waiting view
+function track(c, log = true) {
+  c.states = [];
+  c.rooms = [];
+  c.handlers.push(m => {
+    if (m.t === 'room') c.rooms.push([Date.now(), m.seats.filter(Boolean).length]);
+    if (m.t !== 'state') return;
+    if (log) {
+      if (m.lb === 0) c.log = [];
+      c.log = c.log.concat(m.log);
+    }
+    c.st = m;
+    c.states.push([Date.now(), m]);
+  });
+  return c;
+}
+
+// three humans at a friend table without chips: the host and two others, none of them playing yet
+async function trio() {
+  const g = await pair(3, 3, undefined, 0);
+  const accX = await guest();
+  const x = client('/ws/' + g.code);
+  await x.ready;
+  x.send({ t: 'join', auth: accX.auth });
+  g.jx = await x.next(m => m.t === 'joined');
+  return Object.assign(g, { x, accX });
+}
+
+const MOVES = ['task', 'draw', 'take', 'claim', 'open', 'lay', 'add', 'finish', 'discard'];
+// what the seat of a viewer (0) did, from its log
+const byMe = c => c.log.filter(e => e.p === 0 && MOVES.includes(e.k)).map(e => e.k);
+const discards = c => c.log.filter(e => e.k === 'discard' && e.p === 0).length;
+
+// a missed clock is a missed turn: the stand-in plays it with safe moves and the player keeps control; the second one in a
+// row sets the seat away until the player says back
+async function missedClock() {
+  let g = await trio();
+  const a = track(g.a);
+  const fins = [played(g.b), played(g.x)];
+  const first = a.next(m => m.t === 'state' && discards(a) === 1);
+  a.send({ t: 'start' });
+  await within(first, 30000, 'the first clock runs out');
+  assert.deepStrictEqual(byMe(a), ['task', 'draw', 'discard'], 'the stand-in chose, drew from the stock and discarded');
+  assert.strictEqual(a.st.auto, false, 'one missed turn does not set the seat away');
+  assert(a.st.players.every(p => !p.away) && g.b.st.players.every(p => !p.away), 'and nobody sees it away');
+  assert.strictEqual(a.st.turn, 1, 'the turn has passed');
+  const fresh = a.next(m => m.t === 'state' && m.clock && m.clock.p === 0);
+  const away = g.b.next(m => m.t === 'state' && m.players.some(p => p.away));
+  const clock = (await within(fresh, 30000, 'the next clock of the seat')).clock;
+  assert(clock.left > 0.8 * clock.span, 'the next turn has a full clock: ' + clock.left + ' of ' + clock.span);
+
+  // the second missed turn in a row: away for the others, and the player's own state says so
+  await within(a.next(m => m.t === 'state' && m.auto), 60000, 'the second missed turn');
+  const seen = (await within(away, 60000, 'the others see it away')).players.filter(p => p.away);
+  assert.deepStrictEqual(seen.map(p => p.pid), [g.accA.id]);
+
+  // back: the seat is the player's again, and the count starts over
+  const before = discards(a);
+  const back = a.next(m => m.t === 'state' && !m.auto);
+  a.send({ t: 'back' });
+  await within(back, 5000, 'back clears away');
+  await within(a.next(m => m.t === 'state' && discards(a) > before), 60000, 'the stand-in discards again');
+  assert.strictEqual(a.st.auto, false, 'after back one missed turn is not away');
+  await within(a.next(m => m.t === 'state' && m.auto), 60000, 'away again after two more');
+  console.log('missedClock: a missed turn is played safely, the second in a row sets the seat away, back hands it over');
+
+  // the whole match with the player idle: nothing is claimed, taken, opened or laid for them
+  const end = a.next(m => m.t === 'state' && m.phase === 'matchend');
+  await within(Promise.all([...fins, end]), 180000, 'the match ends');
+  assert(a.states.every(([, m]) => m.players[0].claims === 0), 'claims stay 0');
+  assert(byMe(a).every(k => ['task', 'draw', 'discard'].includes(k)), 'only tasks, draws and discards: ' + [...new Set(byMe(a))]);
+  for (const c of [g.a, g.b, g.x]) c.ws.close();
+  console.log('missedClock: a whole match with the player idle leaves no claim, take or meld');
+
+  // a legal act between two missed turns resets the count
+  g = await trio();
+  const idle = track(g.a);
+  const fins2 = [played(g.b), played(g.x)];
+  let own = 0;
+  let key = '';
+  let sent = '';
+  idle.handlers.push(m => {
+    if (m.t !== 'state' || m.turn !== 0 || m.phase === 'claim' || m.phase === 'gameend' || m.phase === 'matchend') return;
+    const k = m.gameNo + ':' + m.turns;
+    if (k !== key) {
+      key = k;
+      own++;
+    }
+    if (own !== 2 || sent === k + m.phase) return;
+    sent = k + m.phase;
+    if (m.phase === 'choose') idle.send({ t: 'act', a: 'choose', id: m.tasksLeft[0] });
+    else if (m.phase === 'draw') idle.send({ t: 'act', a: 'draw' });
+    else idle.send({ t: 'act', a: 'discard', id: m.players[0].hand[0] });
+  });
+  const third = idle.next(m => m.t === 'state' && discards(idle) === 3);
+  idle.send({ t: 'start' });
+  await within(third, 90000, 'three discards');
+  assert.strictEqual(idle.st.auto, false, 'a missed turn after a turn of its own is only the first');
+  await within(idle.next(m => m.t === 'state' && m.auto), 90000, 'the next missed turn');
+  assert.strictEqual(discards(idle), 3, 'the one after it is the second in a row');
+  for (const c of [g.a, g.b, g.x]) c.ws.close();
+  await Promise.all(fins2.map(p => p.catch(() => {})));
+  console.log('missedClock: a legal act resets the count of missed turns');
+
+  // a lost connection: back before any move nothing shows; later the stand-in plays and the seat is away until back
+  g = await trio();
+  const host = track(g.a);
+  const fin3 = played(g.b);
+  const started = g.x.next(m => m.t === 'state');
+  host.send({ t: 'start' });
+  await within(started, 20000, 'the match starts');
+  g.x.ws.close();
+  const x2 = track(client('/ws/' + g.code));
+  await x2.ready;
+  const calm = host.next(m => m.t === 'state' && m.players.every(p => !p.away));
+  const joined = x2.next(m => m.t === 'state');
+  x2.send({ t: 'join', token: g.jx.token });
+  assert.strictEqual((await within(joined, 10000, 'the seat comes back')).auto, false, 'a quick return before any move is silent');
+  await within(calm, 10000, 'and the others see nobody away');
+  assert(!host.log.some(e => e.p === 2 && MOVES.includes(e.k)), 'nothing was played for the seat');
+  const drawn = host.next(m => m.t === 'state' && host.log.some(e => e.k === 'draw' && e.p === 2));
+  x2.ws.close();
+  await within(drawn, 60000, 'the stand-in plays for the seat that is gone');
+  const x3 = track(client('/ws/' + g.code));
+  await x3.ready;
+  const found = x3.next(m => m.t === 'state');
+  x3.send({ t: 'join', token: g.jx.token });
+  assert.strictEqual((await within(found, 10000, 'the seat comes back again')).auto, true, 'after a move of the stand-in the player finds the seat away');
+  const cleared = x3.next(m => m.t === 'state' && !m.auto);
+  x3.send({ t: 'back' });
+  await within(cleared, 5000, 'back clears it');
+  for (const c of [g.a, g.b, x3]) c.ws.close();
+  await fin3.catch(() => {});
+  console.log('missedClock: a lost connection becomes away only after a stand-in move, and back clears it');
+}
+
 const sec = async (name, fn) => {
   names.add(name);
   if (only.length && !only.includes(name)) return;
@@ -5089,6 +5225,7 @@ process.on('unhandledRejection', e => {
   await sec('gates', () => gates());
   await sec('leaves', () => leaves());
   await sec('lapseRematch', () => lapseRematch());
+  await sec('missedClock', () => missedClock());
   await sec('openRoom', () => openRoom());
   await sec('whereabouts', () => whereabouts());
   await sec('board', () => board());
