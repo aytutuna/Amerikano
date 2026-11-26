@@ -15,6 +15,8 @@ import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const IDLE = 30000;
 const GRACE = 8000;
+// at the fast test pace a browser or a phone needs longer than the grace to open a socket to the table it was just seated at
+const SLOW = 1500;
 const NEXT = 20000;
 const REMATCH = 15000;
 const STAYS = 0.6;
@@ -195,10 +197,11 @@ export class Room extends DurableObject {
     if (!r || !(r.pub || r.open)) return null;
     let i = r.seats.findIndex(s => s && s.pid === p.pid);
     if (r.started || i < 0 && !r.seats.includes(null)) return { table: this.summary() };
-    if (i >= 0) r.seats[i].gone = Date.now();
+    const since = Date.now() + Math.max(0, SLOW - GRACE * this.k);
+    if (i >= 0) r.seats[i].gone = since;
     else {
       i = r.seats.indexOf(null);
-      r.seats[i] = human(p, Date.now());
+      r.seats[i] = human(p, since);
       if (!r.go) r.go = Date.now() + this.lag(4000, 8000);
     }
     const token = r.seats[i].token;

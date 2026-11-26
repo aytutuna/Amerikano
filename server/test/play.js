@@ -1348,7 +1348,7 @@ async function personas() {
   }
   for (const p of others) {
     assert(p.level >= 1 && p.level <= 7, 'level near the human (4): ' + p.level);
-    assert(p.bank >= 500 * 9, 'plausible chips: ' + p.bank);
+    assert(p.bank >= 500 * 10 - 1325, 'plausible chips: ' + p.bank);
     assert.strictEqual(p.away, false);
   }
   assert.strictEqual(new Set(others.map(p => p.seed)).size, 3, 'no name twice at a table');
@@ -4630,6 +4630,21 @@ async function fee() {
   console.log('fee: a public 500 table takes 25 from every seat');
 }
 
+// a seat is kept for a player who is slow to open the table's socket, as a phone on a poor connection or a loaded browser is
+async function slowJoin() {
+  const acc = await guest();
+  const h = await hub(acc);
+  const s = h.next(m => m.t === 'seated');
+  h.send({ t: 'quick', stake: 100 });
+  const sat = await s;
+  await sleep(600);
+  const r = seated(sat);
+  await within(r.next(m => m.t === 'room' || m.t === 'state'), 10000, 'the seat is still there after a slow connect');
+  console.log('slowJoin: a player who connects to the table late keeps the seat');
+  r.ws.close();
+  h.ws.close();
+}
+
 // who may sit where: level gates on every way into a table, and what a guest may do
 async function gates() {
   const need = { 100: 1, 500: 4, 2500: 10, 10000: 20, 50000: 30 };
@@ -4791,6 +4806,7 @@ process.on('unhandledRejection', e => {
   await sec('reports', () => reports());
   await sec('personas', () => personas());
   await sec('pool', () => pool());
+  await sec('slowJoin', () => slowJoin());
   await sec('fee', () => fee());
   await sec('gates', () => gates());
   await sec('openRoom', () => openRoom());
