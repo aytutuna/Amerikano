@@ -14,7 +14,10 @@ test('the admin page asks for the key and saves a setting', async ({ page }) => 
   await expect(page.locator('#log tr', { hasText: 'chipsoff' }).first()).toBeVisible();
   await page.reload();
   await expect(page.locator('textarea[data-k=chipsoff]')).toHaveValue('TR');
+  // the log of an earlier run in the same server may already hold rows
+  await expect(page.locator('#log tr', { hasText: 'chipsoff' }).first()).toBeVisible();
+  const rows = await page.locator('#log tr', { hasText: 'chipsoff' }).count();
   await page.fill('textarea[data-k=chipsoff]', '');
   await page.click('button[data-save=chipsoff]');
-  await expect(page.locator('#log tr', { hasText: 'chipsoff' })).toHaveCount(2);
+  await expect(page.locator('#log tr', { hasText: 'chipsoff' })).toHaveCount(rows + 1);
 });
