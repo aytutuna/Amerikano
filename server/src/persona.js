@@ -8,6 +8,8 @@ const BONUS = 750;
 const LIFE = 3 * 3600000;
 const POOL = 12;
 
+// Computer players keep their own chips here, outside the chip function and its log: they are not accounts.
+// test/play.js (source scan) lists this file as the one place besides account.js that may set chips.
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 
 function hex() {

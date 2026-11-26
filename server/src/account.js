@@ -41,21 +41,24 @@ export const levelAt = xp => {
   return n;
 };
 
-function creditStmts(db, id, delta, reason, ref) {
+// claim: {set: {column: value}, where: 'sql with ? marks', args: [...]} makes a once-only grant (daily, bailout) one batch with its log row
+function creditStmts(db, id, delta, reason, ref, claim) {
+  const set = claim ? Object.keys(claim.set) : [];
   return [
-    db.prepare('UPDATE players SET chips = chips + ?1 WHERE id = ?2 AND chips + ?1 >= 0').bind(delta, id),
+    db.prepare('UPDATE players SET chips = chips + ?' + set.map(k => ', ' + k + ' = ?').join('') + ' WHERE id = ? AND chips + ? >= 0' + (claim ? ' AND (' + claim.where + ')' : ''))
+      .bind(delta, ...set.map(k => claim.set[k]), id, delta, ...(claim ? claim.args : [])),
     db.prepare('INSERT INTO chip_log (player, delta, reason, at, ref) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, Date.now(), ref || null)
   ];
 }
 
-// The only way chips change. Returns false when the player is gone or would go below zero.
+// The only way chips change. Returns false when the player is gone, would go below zero or lost the claim.
 // A ref makes the change happen once: the unique index fails the batch on a repeat, which counts as done.
-export async function credit(db, id, delta, reason, ref) {
+export async function credit(db, id, delta, reason, ref, claim) {
   if (!delta) return true;
   // a retry after the balance has moved must still see the first run
   if (ref && await db.prepare('SELECT 1 FROM chip_log WHERE player = ? AND ref = ?').bind(id, ref).first()) return true;
   try {
-    const r = await db.batch(creditStmts(db, id, delta, reason, ref));
+    const r = await db.batch(creditStmts(db, id, delta, reason, ref, claim));
     return r[0].meta.changes === 1;
   } catch (e) {
     if (ref && /UNIQUE/.test(e.message)) return true;
@@ -180,10 +183,10 @@ async function guest(db, a) {
   const secret = random(32);
   const now = Date.now();
   await db.batch([
-    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), START, now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
-    ...await sessionStmts(db, id, secret),
-    db.prepare('INSERT INTO chip_log (player, delta, reason, at) VALUES (?, ?, ?, ?)').bind(id, START, 'start', now)
+    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)')
+      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
+    ...creditStmts(db, id, START, 'start'),
+    ...await sessionStmts(db, id, secret)
   ]);
   return json({ id: id, secret: secret });
 }
@@ -258,13 +261,8 @@ async function daily(db, p) {
   const last = Math.floor(p.daily_at / DAY);
   if (last >= day) return fail('claimed', 409);
   const streak = last === day - 1 ? Math.min(p.streak + 1, 7) : 1;
-  const now = Date.now();
   const reward = 500 + 250 * streak;
-  const r = await db.batch([
-    db.prepare("INSERT INTO chip_log (player, delta, reason, at) SELECT id, ?1, 'daily', ?2 FROM players WHERE id = ?3 AND daily_at = ?4").bind(reward, now, p.id, p.daily_at),
-    db.prepare('UPDATE players SET daily_at = ?1, streak = ?2, chips = chips + ?3 WHERE id = ?4 AND daily_at = ?5').bind(now, streak, reward, p.id, p.daily_at)
-  ]);
-  if (r[1].meta.changes !== 1) return fail('claimed', 409);
+  if (!await credit(db, p.id, reward, 'daily', null, { set: { daily_at: Date.now(), streak: streak }, where: 'daily_at = ?', args: [p.daily_at] })) return fail('claimed', 409);
 }
 
 // the token comes from the phone, so its shape is checked: an APNs one goes into a URL
@@ -325,12 +323,9 @@ async function region(env, p, request) {
 
 async function bailout(db, p) {
   if (p.chips >= MIN_ROOM) return fail('rich', 409);
-  const now = Date.now();
-  const r = await db.batch([
-    db.prepare("INSERT INTO chip_log (player, delta, reason, at) SELECT id, ?1 - chips, 'bailout', ?2 FROM players WHERE id = ?3 AND chips < ?1 AND bail_at < ?4").bind(MIN_ROOM, now, p.id, today() * DAY),
-    db.prepare('UPDATE players SET chips = ?1, bail_at = ?2 WHERE id = ?3 AND chips < ?1 AND bail_at < ?4').bind(MIN_ROOM, now, p.id, today() * DAY)
-  ]);
-  if (r[1].meta.changes !== 1) return fail('claimed', 409);
+  // the balance read above is part of the claim: a match settling in between makes the top-up miss, and the next try gets it
+  const claim = { set: { bail_at: Date.now() }, where: 'bail_at < ? AND chips = ?', args: [today() * DAY, p.chips] };
+  if (!await credit(db, p.id, MIN_ROOM - p.chips, 'bailout', null, claim)) return fail('claimed', 409);
 }
 
 export const rcBase = env => env.RC_API || 'https://api.revenuecat.com';

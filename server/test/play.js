@@ -634,6 +634,19 @@ async function accounts() {
   assert.strictEqual((await call('POST', '/api/bailout', acc)).status, 409);
   console.log('bailout tops up to 1,000 once a day');
 
+  // the same claim fired at once pays once and writes one log row
+  const racer = await guest();
+  const count = reason => sql("SELECT count(*) AS n FROM chip_log WHERE player = '" + racer.id + "' AND reason = '" + reason + "'")[0].n;
+  let race = await Promise.all(Array.from({ length: 6 }, () => call('POST', '/api/daily', racer)));
+  assert.strictEqual(race.filter(x => x.status === 200).length, 1);
+  sql("UPDATE players SET chips = 200 WHERE id = '" + racer.id + "'");
+  race = await Promise.all(Array.from({ length: 6 }, () => call('POST', '/api/bailout', racer)));
+  assert.strictEqual(race.filter(x => x.status === 200).length, 1);
+  assert.deepStrictEqual([count('daily'), count('bailout')], [1, 1]);
+  assert.strictEqual((await call('GET', '/api/me', racer)).body.chips, 1000);
+  assert.strictEqual(sql("SELECT sum(delta) AS n FROM chip_log WHERE player = '" + racer.id + "' AND reason <> 'start'")[0].n, 750 + 800);
+  console.log('daily and bailout fired together pay once');
+
   r = await call('POST', '/api/avatar', acc, { avatar: [8, 6, 15, 8] });
   assert.deepStrictEqual(r.body.avatar, [8, 6, 15, 8]);
   for (const v of [[9, 0, 0, 0], [0, 0, 0], [0, 0, 0, -1], 'x', [0, 0, 0, 1.5]]) {
@@ -3658,6 +3671,22 @@ async function calls(f) {
   console.log('calls: friends only, busy, decline, missed, accept, SFU proxy, hang up, dropped');
   for (const x of [ha, hc, he]) x.ws.close();
 }
+// the source scan: nothing but the one function sets chips or tokens
+function chipfn() {
+  const dir = __dirname + '/../src/';
+  const hits = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.js') || f === 'persona.js') continue;
+    const text = fs.readFileSync(dir + f, 'utf8');
+    for (const m of text.matchAll(/UPDATE\s+(\w+)\s+SET\s[^;`'"]*?\b(chips|tokens)\s*=|INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\([^)]*\b(chips|tokens)\b/gi)) if ((m[1] || m[3]) === 'players') hits.push(f + ' ' + (m[2] || m[4]) + (m[1] ? '' : ' column'));
+  }
+  // the new account row is made with 0 chips and the start grant follows in the same batch
+  assert.deepStrictEqual(hits.sort(), ['account.js chips', 'account.js chips column', 'account.js tokens', 'account.js tokens']);
+  const persona = fs.readFileSync(dir + 'persona.js', 'utf8');
+  assert(/outside the chip function/.test(persona), 'the computer players banks are marked as separate');
+  console.log('chipfn: chips and tokens are set by account.js only, the computer players banks aside');
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -3707,6 +3736,7 @@ process.on('unhandledRejection', e => {
   await sec('calls', () => calls(sfu));
   sfu.server.close();
   await sec('purge', () => purge());
+  await sec('chipfn', () => chipfn());
   await sec('typedOff', () => typedOff());
   await sec('reports', () => reports());
   await sec('personas', () => personas());
