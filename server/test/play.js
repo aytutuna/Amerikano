@@ -1366,6 +1366,9 @@ function personaIds(ids) {
 
 // a lone human at a stake table: personas fill the seats one at a time and the match settles as before
 async function personas() {
+  // a pool that is there already, so a fresh database does not make the first fills slow
+  sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 15) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(hex(randomblob(16))), 500 + i, '1,1,1,0', 4, 400, 8, 2, 100000, " + Date.now() + ', NULL, 0, 2 FROM n');
   const acc = level(4, await guest());
   const h = await hub(acc);
   const t0 = Date.now();
@@ -1396,10 +1399,11 @@ async function personas() {
   assert.strictEqual(personaIds(others.map(p => p.pid)), 3);
   for (const p of others) {
     const row = sql("SELECT vip, wear FROM personas WHERE id = '" + p.pid + "'")[0];
-    assert([0, 1].includes(row.vip), 'a persona is decided as VIP or not once: ' + row.vip);
-    assert.strictEqual(p.vip, row.vip === 1, 'the seat shows what the persona is');
-    assert.strictEqual((await call('GET', '/api/player/' + p.pid, acc)).body.vip, p.vip, 'and so does the card');
-    assert(row.vip === 1 || !Object.values(JSON.parse(row.wear)).some(id => Catalog.item(id).vip), 'only a VIP persona wears VIP items');
+    assert(!row.vip, 'a computer player is never a VIP: ' + row.vip);
+    assert.strictEqual(p.vip, false, 'the seat shows no badge');
+    const card = (await call('GET', '/api/player/' + p.pid, acc)).body;
+    assert.strictEqual(card.vip, false, 'nor does the card');
+    assert(![...Object.values(JSON.parse(row.wear)), ...Object.values(p.wear), ...Object.values(card.wear)].some(id => Catalog.item(id).vip), 'and none wears an item for subscribers');
   }
   for (const p of others) {
     assert(p.level >= 1 && p.level <= 7, 'level near the human (4): ' + p.level);
@@ -1417,9 +1421,7 @@ async function personas() {
   // messages that queue up on a loaded machine arrive together, so the middle gap says it, not the smallest
   const mid = gaps.sort((x, y) => x - y)[gaps.length >> 1];
   assert(gaps.length > 8 && mid >= 15, 'bot moves are paced: ' + mid + ' (smallest ' + gaps[0] + ')');
-  const said = all.filter(m => m.t === 'said');
-  for (const m of said) assert(m.p >= 1 && m.p < 4 && (Chat.SAY.includes(m.k) || Chat.EMO.includes(m.k) || Catalog.pack(m.k)));
-  assert(said.length <= 4, 'chat is capped per match');
+  assert(!all.some(m => m.t === 'said' || m.t === 'typed'), 'no computer player says or types anything');
   await sleep(600);
   const me = (await call('GET', '/api/me', acc)).body;
   assert.strictEqual(me.chips, 5000 - 1300 - 25 + payout(500, 4, st.players[0].chips));
@@ -1428,8 +1430,8 @@ async function personas() {
   assert(me.xp >= 40 && me.games === 1, 'a match against personas counts: xp ' + me.xp);
   assert.strictEqual(me.xp, 40 + (st.final.low === 0 ? 30 : 0) + 5 * st.stats.filter(x => x.fin === 0).length);
   const board = (await call('GET', '/api/player/' + acc.id, acc)).body;
-  assert.strictEqual(board.won, st.res.net > 0 ? st.res.net : 0, 'and so does the weekly board');
-  console.log('personas: a lone human got a full table, ' + said.length + ' chat, ' + gaps.length + ' paced moves, settled');
+  assert.strictEqual(board.won, Math.max(0, payout(500, 4, st.players[0].chips) - hold(500, 4)), 'and so does the weekly board');
+  console.log('personas: a lone human got a full table, silent, ' + gaps.length + ' paced moves, settled');
 
   // profile, friend request and the lists look the same as for a real player
   const pid = others[0].pid;
@@ -1445,12 +1447,24 @@ async function personas() {
   assert.deepStrictEqual(l.outgoing.map(x => x.id), [pid]);
   assert.strictEqual(l.friends.length + l.incoming.length, 0);
   assert.deepStrictEqual(Object.keys(l.outgoing[0]).sort(), ['avatar', 'id', 'level', 'seed']);
-  const top = (await call('GET', '/api/top', acc)).body;
-  assert(![...top.week, ...top.level].some(x => x.id === pid), 'personas are not ranked');
   assert.strictEqual((await call('DELETE', '/api/friend/' + pid, acc)).status, 200);
   assert.strictEqual((await call('GET', '/api/player/' + pid, acc)).body.rel, 'none');
   assert.strictEqual((await call('GET', '/api/friends', acc)).body.outgoing.length, 0);
   console.log('persona profile: same shape, friend request stays pending and can be cancelled');
+  // a row from before: a subscriber badge and gold items on a computer player show nowhere, and the migration strips them
+  const old = 'f'.repeat(32);
+  sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, wear, owns, vip) VALUES ('" + old + "', 55, '1,1,1,0', 3, 300, 9, 3, 5000, 0, 0, 0, '{\"frame\":\"frame-gold\",\"plate\":\"plate-oak\",\"back\":\"back-vip\"}', '[]', 1)");
+  const shown = (await call('GET', '/api/player/' + old, acc)).body;
+  assert.strictEqual(shown.vip, false);
+  assert.deepStrictEqual(shown.wear, { plate: 'plate-oak' }, 'only the item anyone can buy is shown');
+  const text = fs.readFileSync(__dirname + '/../migrations/0018_computers.sql', 'utf8');
+  for (const q of text.split('\n').filter(l => /^UPDATE personas SET (vip|wear) /.test(l))) sql(q);
+  const row = sql("SELECT vip, wear FROM personas WHERE id = '" + old + "'")[0];
+  assert.strictEqual(row.vip, 0);
+  assert.deepStrictEqual(JSON.parse(row.wear), { plate: 'plate-oak' }, 'the migration strips the subscriber items');
+  sql("DELETE FROM personas WHERE id = '" + old + "'");
+  sql('DELETE FROM personas WHERE created = 2');
+  console.log('personas: no subscriber badge or items, in the seats, the cards or the old rows');
   r.ws.close();
   h.ws.close();
 

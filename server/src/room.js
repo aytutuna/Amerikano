@@ -22,7 +22,6 @@ const SLOW = 1500;
 const NEXT = 20000;
 const REMATCH = 15000;
 const STAYS = 0.6;
-const TALK = 4;
 const KEEP = 600000;
 const CUP_KEEP = 3 * 3600000;
 const BURST = 3;
@@ -78,8 +77,6 @@ function think(phase, idle) {
   const [lo, hi] = phase === 'play' ? [2500, 6500] : phase === 'claim' ? [1200, 3000] : [1500, 3500];
   return Math.round(f * (lo + (hi - lo) * Math.random() ** 2));
 }
-
-const REPLY = { hello: ['hello', 'smile'], bye: ['bye'], rematch: ['rematch', 'cheer'], luck: ['thanks', 'smile'] };
 
 function card(i) {
   return Number.isInteger(i) ? Game.CARDS[i] : undefined;
@@ -174,7 +171,7 @@ export class Room extends DurableObject {
   // the same ones again if the Hub asks twice for the same tournament.
   openCup(code, cup, seats) {
     if (this.r) return this.r.cup && this.r.cup.id === cup.id ? this.r.seats.map(s => s.bot ? null : s.token) : null;
-    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, owns: s.owns, bot: true }, more);
+    const bot = (s, more) => Object.assign({ pid: s.pid, name: Names.text(s.seed, 'en'), seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true }, more);
     this.r = {
       code: code, n: 4, games: 4, level: 'relaxed', pub: false, stake: 0, host: -1, cup: cup,
       seats: seats.map(s => s.fake ? bot(s, { fake: true, gone: 0 }) : s.left ? bot(s) : human(s, Date.now())),
@@ -578,7 +575,7 @@ export class Room extends DurableObject {
     for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
     r.seats = r.seats.map((s, i) => gone[i] ? null : s);
     for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover']) delete s[k];
-    for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
     if (r.open) this.window();
     if (!r.seats.some(s => s && s.pid && !s.fake)) r.dead = Date.now() + KEEP * this.k;
@@ -803,11 +800,10 @@ export class Room extends DurableObject {
     // an extra emote is for whoever bought its pack
     if (pack) {
       const s = this.r.seats[i];
-      if (s.fake ? !(s.owns || []).includes(pack.id) : !s.pid || !await owns(this.env.DB, s.pid, pack.id)) return;
+      if (!s.pid || !await owns(this.env.DB, s.pid, pack.id)) return;
       if (!this.st || this.r.seats[i] !== s) return;
     }
     this.cast(rot => ({ t: 'said', p: rot(i), k: m.k }));
-    if (!this.r.seats[i].fake) this.chirp(this.other(i), REPLY[m.k] || ['smile', 'wink', 'cheer'], 0.25);
   }
 
   // Typed chat reaches the people at this table, except those who blocked the sender or were blocked by them or switched typed
@@ -851,26 +847,6 @@ export class Room extends DurableObject {
     }
   }
 
-  // A persona now and then says something, through the same path as a player's chat.
-  chirp(i, keys, odds) {
-    const r = this.r;
-    const s = r.seats[i];
-    if (!s || !s.fake || (r.talk || 0) >= TALK || (s.talked || 0) >= 2 || Math.random() > odds) return;
-    r.talk = (r.talk || 0) + 1;
-    s.talked = (s.talked || 0) + 1;
-    let k = keys[Math.floor(Math.random() * keys.length)];
-    // a persona with an emote pack uses it now and then in place of a plain emote
-    const pack = Chat.EMO.includes(k) && (s.owns || []).length && Math.random() < 0.25 && Catalog.item(s.owns[0]);
-    if (pack) k = pack.emotes[Math.floor(Math.random() * pack.emotes.length)];
-    setTimeout(() => this.r === r && this.say(i, { k: k }), between(800, 2500) * this.k);
-  }
-
-  // a random persona other than seat i, or -1
-  other(i) {
-    const ps = this.r.seats.map((s, j) => j).filter(j => j !== i && this.r.seats[j].fake);
-    return ps.length ? ps[Math.floor(Math.random() * ps.length)] : -1;
-  }
-
   // The cost is the whole point: nobody receives chips, so gifts only take them out of play.
   async gift(ws, i, m) {
     const { r, st } = this;
@@ -894,7 +870,6 @@ export class Room extends DurableObject {
     this.save();
     this.send();
     this.cast(rot => ({ t: 'gifted', from: rot(i), to: rot(to), k: g.k }));
-    this.chirp(to, ['thanks', 'smile', 'love'], 0.6);
   }
 
   // Voice at the table goes through the Worker's SFU proxy: only people seated here with voice on can publish or listen, and nobody
@@ -1037,10 +1012,6 @@ export class Room extends DurableObject {
       Game.botStep(st);
       p.bot = bot;
     } else Game.safeStep(st);
-    if (!r.hi && st.gameNo === 1) {
-      r.hi = true;
-      this.chirp(i, ['hello', 'luck'], 0.5);
-    }
     this.moved();
   }
 
@@ -1053,31 +1024,17 @@ export class Room extends DurableObject {
   moved() {
     const r = this.r;
     r.since = Date.now();
-    this.watch();
     if (this.st.phase === 'matchend' && !r.over) {
       r.over = true;
       // a first-round table stays until the Hub closes it, as its qualifiers wait on the other table
       r.dead = Date.now() + (r.cup && r.cup.round === 'first' ? CUP_KEEP : KEEP) * this.k;
       this.outcome();
       if (!this.humans().length) this.report(true);
-      const ps = r.seats.map((s, i) => i).filter(i => r.seats[i].fake);
-      if (ps.length) this.chirp(ps[Math.floor(Math.random() * ps.length)], ['well', 'rematch', 'bye', 'cheer', 'smile'], 0.5);
     } else if (this.st.phase !== 'matchend') r.wait = think(this.st.phase, this.idle()) * this.k;
     this.save();
     this.send();
     this.arm();
     if (r.over && !r.paid) this.ctx.waitUntil(this.settle().catch(() => {}));
-  }
-
-  // a persona may cheer its own show of cards or someone else's
-  watch() {
-    const { r, st } = this;
-    const e = st.log[st.log.length - 1];
-    if (st.log.length === r.logn) return;
-    r.logn = st.log.length;
-    if (!e || e.p === undefined || !['open', 'lay', 'finish'].includes(e.k)) return;
-    if (r.seats[e.p].fake) this.chirp(e.p, ['smile', 'cheer', 'wink', 'wow'], 0.15);
-    else this.chirp(this.other(e.p), ['wow', 'nice', 'gasp', 'cheer'], 0.1);
   }
 
   // What each human gets, worked out once at the end, and xp only when this one played.
@@ -1243,10 +1200,10 @@ export class Room extends DurableObject {
     }
     r.seats = r.seats.map((s, i) => {
       if (!want.includes(i)) return null;
-      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'talked', 'lv']) delete s[k];
+      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv']) delete s[k];
       return s;
     });
-    for (const k of ['id', 'res', 'paid', 'logn', 'hi', 'talk', 'wait']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: r.pub ? Date.now() + KEEP * this.k : 0 });
     this.st = null;
     this.ctx.storage.delete('st');

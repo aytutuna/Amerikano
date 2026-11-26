@@ -32,39 +32,28 @@ function history(level) {
   return h;
 }
 
-const VIP_SHARE = 0.05;
-const vipItem = slot => Catalog.ITEMS.find(i => i.vip && i.slot === slot);
+// About a third of the personas wear one or two things, cheaper ones more often; chosen once, so a face looks the same each time.
+// Items for subscribers and the season pass are never worn, and nobody here owns an emote pack: they never speak.
+const worn = i => !i.vip && !i.pass;
 
-// A VIP persona wears a subscriber item in one or two slots, like a player who pays for the same.
-function vipWear(wear) {
-  const slots = ['frame', 'plate', 'back'].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.4 ? 2 : 1);
-  for (const slot of slots) if (Math.random() < 0.7) wear[slot] = vipItem(slot).id;
-}
-
-// About a third of the personas wear one or two things, cheaper ones more often, and a few own an emote pack; chosen once, so a face looks the same each time.
-// One in twenty is a VIP, which shows as the same badge a subscribed player has.
 function outfit() {
   const wear = {};
-  let owns = [];
   if (Math.random() < 0.35) {
     const slots = ['frame', 'plate', 'back'].sort(() => Math.random() - 0.5).slice(0, Math.random() < 0.4 ? 2 : 1);
     for (const slot of slots) {
-      const items = Catalog.ITEMS.filter(i => i.slot === slot && !i.vip);
+      const items = Catalog.ITEMS.filter(i => i.slot === slot && worn(i));
       let u = Math.random() * items.reduce((n, i) => n + 1 / i.price, 0);
       wear[slot] = (items.find(i => (u -= 1 / i.price) <= 0) || items[0]).id;
     }
   }
-  if (Math.random() < 0.15) {
-    const packs = Catalog.ITEMS.filter(i => i.emotes);
-    owns = [packs[Math.floor(Math.random() * packs.length)].id];
-  }
-  const vip = Math.random() < VIP_SHARE ? 1 : 0;
-  if (vip) vipWear(wear);
-  return { wear: JSON.stringify(wear), owns: JSON.stringify(owns), vip: vip };
+  return { wear: JSON.stringify(wear), owns: '[]', vip: 0 };
 }
 
-// what a persona wears and owns, for the seat
-export const look = p => ({ wear: JSON.parse(p.wear || '{}'), owns: JSON.parse(p.owns || '[]'), vip: !!p.vip });
+// what a persona wears, for the seat; an item for subscribers in an old row is left off
+export function look(p) {
+  const wear = JSON.parse(p.wear || '{}');
+  return { wear: Object.fromEntries(Object.entries(wear).filter(([, id]) => Catalog.item(id) && worn(Catalog.item(id)))), vip: false };
+}
 
 async function make(db, code, level, stake, avoid, now) {
   let seed;
@@ -73,9 +62,9 @@ async function make(db, code, level, stake, avoid, now) {
   const lv = levelAt(h.xp);
   // what a player of that level would plausibly hold, and enough to sit at this stake
   const chips = Math.round(Math.max(rnd(0.4, 1.6) * (4000 + 500 * lv * (lv + 1)), rnd(1.2, 3.5) * ENTRY * stake) / 10) * 10;
-  const p = Object.assign({ id: hex(), name_seed: seed, avatar: Avatar.random().join(','), level: lv, xp: h.xp, games: h.games, wins: h.wins, chips: chips, topup: now, busy: code, busy_at: now, created: now }, outfit());
-  await db.prepare('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created, wear, owns, vip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(p.id, p.name_seed, p.avatar, p.level, p.xp, p.games, p.wins, p.chips, p.topup, p.busy, p.busy_at, p.created, p.wear, p.owns, p.vip).run();
+  const p = Object.assign({ id: hex(), name_seed: seed, avatar: Avatar.random().join(','), level: lv, xp: h.xp, games: h.games, wins: h.wins, chips: chips, topup: now, busy: code, busy_at: now, created: now, factor: rnd(0.3, 1.5) }, outfit());
+  await db.prepare('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created, wear, owns, vip, factor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(p.id, p.name_seed, p.avatar, p.level, p.xp, p.games, p.wins, p.chips, p.topup, p.busy, p.busy_at, p.created, p.wear, p.owns, p.vip, p.factor).run();
   return p;
 }
 
@@ -99,13 +88,6 @@ export async function claim(db, code, level, stake, avoid) {
       if (row.wear === null) {
         Object.assign(row, outfit());
         await db.prepare('UPDATE personas SET wear = ?, owns = ?, vip = ? WHERE id = ?').bind(row.wear, row.owns, row.vip, row.id).run();
-      } else if (row.vip === null) {
-        // one made before VIP existed
-        const wear = JSON.parse(row.wear);
-        row.vip = Math.random() < VIP_SHARE ? 1 : 0;
-        if (row.vip) vipWear(wear);
-        row.wear = JSON.stringify(wear);
-        await db.prepare('UPDATE personas SET wear = ?, vip = ? WHERE id = ?').bind(row.wear, row.vip, row.id).run();
       }
       return row;
     }

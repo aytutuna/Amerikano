@@ -122,7 +122,7 @@ async function profile(db, p, id) {
   const row = ID.test(id) && await who(db, id);
   if (!row) return fail('nobody', 404);
   return json(Object.assign(mark(row), await rank(db, row), {
-    games: row.games, wins: row.wins, wear: row.persona ? look(row).wear : worn(row, ['frame', 'plate', 'back']), vip: row.persona ? !!row.vip : isVip(row), rel: row.id === p.id ? 'you' : await shown(db, p.id, row.id)
+    games: row.games, wins: row.wins, wear: row.persona ? look(row).wear : worn(row, ['frame', 'plate', 'back']), vip: row.persona ? look(row).vip : isVip(row), rel: row.id === p.id ? 'you' : await shown(db, p.id, row.id)
   }));
 }
 
