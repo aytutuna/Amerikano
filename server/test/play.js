@@ -856,6 +856,7 @@ async function apple() {
   assert.deepStrictEqual(row(web.body.id).apple_refresh, 'rt.w1');
   console.log('apple sign-in makes an account, the same subject gets it back, every device stays signed in');
 
+
   // sign-out ends that device's session, its device row and its hub socket, and nothing else
   const so = 'out.' + t.sub;
   const au = b => Object.assign(b, { auth: b.id + '.' + b.secret });
@@ -3140,45 +3141,77 @@ async function typedOff() {
   g.b.ws.close();
 }
 
+// a guest that is a day old and has finished that many matches
+async function agedGuest(games = 10) {
+  const x = await guest();
+  sql('UPDATE players SET created = created - ' + 2 * DAY + ', games = ' + games + ' WHERE id = ' + who(x));
+  return x;
+}
+
+// the same, with a seat in that table's match record at the given time
+async function mate(match, code, games, at) {
+  const x = await agedGuest(games);
+  sql("INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES ('" + match + "', '" + code + "', 'friend', 100, " + who(x) + ', 0, 4, ' + (at || Date.now()) + ')');
+  return x;
+}
+
 async function reports() {
   const g = await pair(3, 3);
   const [sa, sb] = await begin(g);
   const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
-  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
   await befriend(g.accA, g.accB);
-  // only accounts at least a day old count as reporters
-  const aged = async () => {
-    const x = await guest();
-    sql('UPDATE players SET created = created - ' + 2 * DAY + ' WHERE id = ' + who(x));
-    return x;
-  };
-  const [r1, r2, r3] = [await aged(), await aged(), await aged()];
+  const match = sql("SELECT match FROM match_seat WHERE code = '" + g.code + "' AND player = " + who(g.accB))[0].match;
+  const seated = (games, at) => mate(match, g.code, games, at);
   const rep = (from, to, o) => call('POST', '/api/report', from, Object.assign({ pid: to.id, text: 'rude words', ctx: g.code }, o));
-  const rows = who => sql('SELECT reporter, reported, text, ctx FROM reports WHERE reported = ' + who);
+  const rows = who => sql('SELECT reporter, reported, text, ctx, match, counts FROM reports WHERE reported = ' + who);
   const muted = acc => sql('SELECT mute_until FROM players WHERE id = ' + who(acc))[0].mute_until > Date.now();
+  const u1 = await agedGuest();
   assert.strictEqual((await call('POST', '/api/report', null, { pid: g.accB.id, ctx: 'dm' })).status, 401);
-  assert.strictEqual((await rep(r1, r1)).status, 400, 'not oneself');
-  assert.strictEqual((await rep(r1, g.accB, { pid: 'x' })).status, 400);
-  assert.strictEqual((await rep(r1, g.accB, { ctx: 'nowhere' })).status, 400);
-  assert.strictEqual((await rep(r1, { id: '0'.repeat(32) })).status, 404);
-  assert.strictEqual((await rep(r1, g.accB, { ctx: 'dm' })).status, 404, 'a private message has to exist');
-  assert.strictEqual((await rep(r1, g.accB)).status, 200);
-  assert.deepStrictEqual(rows(who(g.accB)), [{ reporter: r1.id, reported: g.accB.id, text: 'rude words', ctx: g.code }]);
-  assert.strictEqual((await rep(r1, g.accB, { ctx: 'profile', text: undefined })).status, 200);
-  assert.strictEqual((await rep(r1, g.accB)).status, 200);
-  assert.strictEqual((await rep(r2, g.accB, { text: 'x'.repeat(500) })).status, 200);
-  assert.strictEqual(rows(who(g.accB)).find(r => r.reporter === r2.id).text.length, 300, 'the text is cut');
-  assert.strictEqual(muted(g.accB), false, 'one reporter many times, and two reporters, are not enough');
-  // a report from outside the week does not count
-  sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('" + 'f'.repeat(32) + "', " + who(g.accB) + ", 'old', 'dm', " + (Date.now() - 8 * DAY) + ')');
-  assert.strictEqual(muted(g.accB), false);
+  assert.strictEqual((await rep(u1, u1)).status, 400, 'not oneself');
+  assert.strictEqual((await rep(u1, g.accB, { pid: 'x' })).status, 400);
+  assert.strictEqual((await rep(u1, g.accB, { ctx: 'nowhere' })).status, 400);
+  assert.strictEqual((await rep(u1, { id: '0'.repeat(32) })).status, 404);
+  assert.strictEqual((await rep(u1, g.accB, { ctx: 'dm' })).status, 404, 'a private message has to exist');
+
+  // someone who was never at the table is stored and counts nothing
+  assert.strictEqual((await rep(u1, g.accB)).status, 200);
+  assert.deepStrictEqual(rows(who(g.accB)), [{ reporter: u1.id, reported: g.accB.id, text: 'rude words', ctx: g.code, match: null, counts: 0 }]);
+  const [u2, u3] = [await agedGuest(), await agedGuest()];
+  assert.strictEqual((await rep(u2, g.accB, { text: 'x'.repeat(500) })).status, 200);
+  assert.strictEqual((await rep(u3, g.accB)).status, 200);
+  assert.strictEqual(rows(who(g.accB)).find(r => r.reporter === u2.id).text.length, 300, 'the text is cut');
+  assert(rows(who(g.accB)).every(r => r.counts === 0));
+  assert.strictEqual(muted(g.accB), false, 'three reporters who were never there do not mute');
+  // one who was there a week ago is not there now
+  const stale = await seated(10, Date.now() - 8 * DAY);
+  assert.strictEqual((await rep(stale, g.accB)).status, 200);
+  assert.strictEqual(rows(who(g.accB)).find(r => r.reporter === stale.id).counts, 0);
+  // a profile report is stored but never counts, from anyone
+  for (const x of [await seated(10), await seated(10), await seated(10)]) assert.strictEqual((await rep(x, g.accB, { ctx: 'profile', text: undefined })).status, 200);
+  assert.strictEqual(rows(who(g.accB)).filter(r => r.ctx === 'profile').length, 3);
+  assert(rows(who(g.accB)).filter(r => r.ctx === 'profile').every(r => r.counts === 0));
+  assert.strictEqual(muted(g.accB), false, 'three profile reports do not mute');
+  console.log('reports: stored with their context; strangers, old seats and profile reports count nothing');
+
+  // table-mates with 10 finished matches count: three of them mute for a day
+  sql("INSERT INTO reports (reporter, reported, text, ctx, at, counts) VALUES ('" + 'f'.repeat(32) + "', " + who(g.accB) + ", 'old', 'dm', " + (Date.now() - 8 * DAY) + ', 1)');
+  assert.strictEqual(muted(g.accB), false, 'a report from outside the week does not count');
+  const [s1, s2, s3, s4] = [await seated(10), await seated(9), await seated(10), await seated(10)];
+  assert.strictEqual((await rep(s1, g.accB)).status, 200);
+  assert.strictEqual((await rep(s1, g.accB)).status, 200);
+  assert.deepStrictEqual(rows(who(g.accB)).find(r => r.reporter === s1.id), { reporter: s1.id, reported: g.accB.id, text: 'rude words', ctx: g.code, match: match, counts: 1 });
+  assert.strictEqual((await rep(s2, g.accB)).status, 200);
+  assert.strictEqual(rows(who(g.accB)).find(r => r.reporter === s2.id).counts, 0, 'under 10 finished matches counts nothing');
   const typing = g.b.next(m => m.t === 'typed' && m.p === 0);
   g.b.send({ t: 'text', x: 'still fine' });
   await typing;
-  assert.strictEqual((await rep(r3, g.accB)).status, 200);
-  assert.strictEqual(muted(g.accB), true, 'three reporters within a week mute for a day');
+  assert.strictEqual((await rep(s3, g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), false, 'one reporter many times, two reporters and one who has played too little are not enough');
+  assert.strictEqual((await rep(s4, g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), true, 'three reporters who were there mute for a day');
   const left = sql('SELECT mute_until FROM players WHERE id = ' + who(g.accB))[0].mute_until - Date.now();
   assert(left > 23 * 3600000 && left <= DAY, 'for 24 hours');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE who = 'auto' AND action = 'mute' AND target = " + who(g.accB))[0].n, 1, 'the automatic mute is logged once');
 
   await sleep(2100);
   const heard = [];
@@ -3198,45 +3231,171 @@ async function reports() {
   const back = g.a.next(m => m.t === 'typed' && m.p === seatB);
   g.b.send({ t: 'text', x: 'thanks' });
   assert.strictEqual((await back).x, 'thanks', 'typing works again once the day is over');
-  console.log('reports: stored with their context, three reporters in a week mute typed chat for a day, phrases and emotes still work');
+  console.log('reports: three table-mates with 10 matches mute typed chat for a day, phrases and emotes still work');
 
-  // a private message is read back from the conversation
+  // a private message is read back from the conversation; it counts for a recipient with 10 matches
+  sql('UPDATE players SET games = 10 WHERE id = ' + who(g.accA));
   const sent = await call('POST', '/api/dm', g.accB, { to: g.accA.id, text: 'nasty one' });
   const mid = sent.body.message.id;
   assert.strictEqual((await rep(g.accA, g.accB, { ctx: 'dm', mid: mid, text: 'made up' })).status, 200);
-  assert.strictEqual(rows(who(g.accB)).filter(r => r.ctx === 'dm' && r.reporter === g.accA.id)[0].text, 'nasty one', 'the stored text is the real one');
-  assert.strictEqual((await rep(r1, g.accB, { ctx: 'dm', mid: mid })).status, 404, 'only the recipient can report it');
+  const dmRow = rows(who(g.accB)).filter(r => r.ctx === 'dm' && r.reporter === g.accA.id)[0];
+  assert.deepStrictEqual([dmRow.text, dmRow.counts, dmRow.match], ['nasty one', 1, null], 'the stored text is the real one');
+  assert.strictEqual((await rep(u1, g.accB, { ctx: 'dm', mid: mid })).status, 404, 'only the recipient can report it');
   assert.strictEqual((await rep(g.accB, g.accA, { ctx: 'dm', mid: mid })).status, 404);
-  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO reports (reporter, reported, text, ctx, at) SELECT ' + who(r1) + ", 'a', 'x', 'dm', " + Date.now() + ' FROM n');
-  assert.strictEqual((await rep(r1, g.accA)).status, 429, 'at most 20 reports a day');
+  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO reports (reporter, reported, text, ctx, at) SELECT ' + who(u1) + ", 'a', 'x', 'dm', " + Date.now() + ' FROM n');
+  assert.strictEqual((await rep(u1, g.accA)).status, 429, 'at most 20 reports a day');
   console.log('reports: private messages read back from the conversation, 20 a day');
 
+  // a computer player is reported like a person: same answer, stored, and nobody is muted
+  const bot = sql("SELECT player FROM match_seat WHERE code = '" + g.code + "' AND fake = 1")[0].player;
+  const [c1, c2, c3] = [await seated(10), await seated(10), await seated(10)];
+  const human = await rep(c1, g.accB, { ctx: 'profile' });
+  const comp = await rep(c2, { id: bot }, { ctx: 'profile' });
+  assert.deepStrictEqual([comp.status, comp.body], [human.status, human.body], 'the same answer for a person and a computer player');
+  assert.strictEqual((await rep(c1, { id: bot })).status, 200);
+  assert.strictEqual((await rep(c2, { id: bot })).status, 200);
+  assert.strictEqual((await rep(c3, { id: bot })).status, 200);
+  assert.deepStrictEqual(sql("SELECT counts FROM reports WHERE reported = '" + bot + "'").map(r => r.counts), [0, 0, 0, 0], 'stored, counting nothing');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE action = 'mute' AND target = '" + bot + "'")[0].n, 0);
+  console.log('reports: a computer player gets the same answer and is never muted');
+
   // new accounts do not count, and reports from before the last mute are spent
-  for (const y of [await guest(), await guest(), await guest()]) assert.strictEqual((await rep(y, g.accA)).status, 200);
+  for (const y of [await guest(), await guest(), await guest()]) {
+    sql('UPDATE players SET games = 10 WHERE id = ' + who(y));
+    sql("INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES ('" + match + "', '" + g.code + "', 'friend', 100, " + who(y) + ', 0, 4, ' + Date.now() + ')');
+    assert.strictEqual((await rep(y, g.accA)).status, 200);
+  }
   assert.strictEqual(muted(g.accA), false, 'three accounts under a day old do not mute');
-  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
-  assert.strictEqual(muted(g.accB), false, 'the three reports before the last mute are not counted again');
-  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
+  assert.strictEqual((await rep(await seated(10), g.accB)).status, 200);
+  assert.strictEqual(muted(g.accB), false, 'the reports before the last mute are not counted again');
+  assert.strictEqual((await rep(await seated(10), g.accB)).status, 200);
   assert.strictEqual(muted(g.accB), false);
-  assert.strictEqual((await rep(await aged(), g.accB)).status, 200);
+  assert.strictEqual((await rep(await seated(10), g.accB)).status, 200);
   assert.strictEqual(muted(g.accB), true, 'three new reporters after the mute ended mute again');
   console.log('reports: only accounts a day old count, and only reports since the last mute');
 
-  // 180 days, and a deleted reporter takes their reports along
+  // 180 days, and a deleted account takes the reports it made and the reports about it along
   const n = id => sql('SELECT count(*) AS n FROM reports WHERE reporter = ' + who(id))[0].n;
   const about = () => sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(g.accB))[0].n;
   const before = about();
-  assert(n(r2) > 0);
-  assert.strictEqual((await call('DELETE', '/api/me', r2)).status, 200);
-  assert.strictEqual(n(r2), 0, 'a deleted account leaves no reports it made');
+  assert(n(s3) > 0);
+  assert.strictEqual((await call('DELETE', '/api/me', s3)).status, 200);
+  assert.strictEqual(n(s3), 0, 'a deleted account leaves no reports it made');
   assert.strictEqual(about(), before - 1, 'reports about someone else stay');
+  const target = await agedGuest();
+  assert.strictEqual((await rep(await agedGuest(), target, { ctx: 'profile' })).status, 200);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(target))[0].n, 1);
+  assert.strictEqual((await call('DELETE', '/api/me', target)).status, 200);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(target))[0].n, 0, 'reports about a deleted account go with it');
   const T = Date.UTC(2031, 6, 20, 3, 5);
   sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('p', 'q', 'ancient', 'dm', " + (T - 181 * DAY) + "), ('p', 'q', 'kept', 'dm', " + (T - 179 * DAY) + ')');
   await tick(T);
   assert.deepStrictEqual(sql("SELECT text FROM reports WHERE reporter = 'p'").map(r => r.text), ['kept'], 'reports are purged after 180 days');
-  console.log('reports: purged after 180 days, removed with the reporter');
+  console.log('reports: purged after 180 days, removed with the reporter and the reported');
   g.a.ws.close();
   g.b.ws.close();
+}
+
+// the stand-in for Resend: it keeps what it is sent, and while down it hangs up
+function fakeResend() {
+  const f = { got: [], down: false };
+  f.server = fake('resend', port('RESEND', 8798), (req, res) => new Promise(ok => {
+    let b = '';
+    req.on('data', d => { b += d; });
+    req.on('end', () => {
+      if (f.down) req.socket.destroy();
+      else {
+        f.got.push({ url: req.url, method: req.method, auth: req.headers.authorization, body: JSON.parse(b) });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"id":"mail"}');
+      }
+      ok();
+    });
+  }));
+  return f;
+}
+
+async function reportMail(rs) {
+  const waitFor = async n => {
+    for (let i = 0; i < 100 && rs.got.length < n; i++) await sleep(100);
+    assert.strictEqual(rs.got.length, n, 'mails: ' + JSON.stringify(rs.got.map(x => x.body.subject)));
+  };
+  // nothing more arrives while the Worker would be sending
+  const quiet = async n => {
+    await sleep(800);
+    assert.strictEqual(rs.got.length, n, 'no more mail: ' + JSON.stringify(rs.got.map(x => x.body.subject)));
+  };
+  const code = 'MAIL';
+  sql('DELETE FROM mail_log');
+  rs.got.length = 0;
+  const [a, b] = [await agedGuest(), await guest()];
+  const rep = (from, to, o) => call('POST', '/api/report', from, Object.assign({ pid: to.id, text: 'rude words', ctx: 'profile' }, o));
+
+  // one report, one mail with what Aytu needs to find it
+  assert.strictEqual((await rep(a, b)).status, 200);
+  await waitFor(1);
+  const id = sql('SELECT id FROM reports WHERE reporter = ' + who(a))[0].id;
+  const m = rs.got[0];
+  assert.deepStrictEqual([m.method, m.url, m.auth], ['POST', '/emails', 'Bearer test-resend-key']);
+  assert.deepStrictEqual([m.body.from, m.body.to], ['Amerikano reports <reports@alazy.app>', ['support@alazy.app']]);
+  for (const part of ['Report ' + id, 'Context profile', 'Reporter ' + a.id, 'Reported ' + b.id, 'Counted no', 'rude words', http + '/admin']) assert(m.body.text.includes(part), part + ' in ' + m.body.text);
+  assert.strictEqual(sql('SELECT sent > 0 AS sent FROM mail_log')[0].sent, 1);
+  assert.strictEqual(sql('SELECT body FROM mail_log')[0].body, '', 'a sent mail keeps no text');
+  console.log('reportMail: a report sends one mail with its ids, context, text and the admin link');
+
+  // the mute sends a second one
+  const seats = ["('m-mail', '" + code + "', 'friend', 100, " + who(b) + ', 0, 0, ' + Date.now() + ')'];
+  const mates = [];
+  for (let i = 0; i < 3; i++) {
+    const x = await agedGuest();
+    mates.push(x);
+    seats.push("('m-mail', '" + code + "', 'friend', 100, " + who(x) + ', 0, ' + (i + 1) + ', ' + Date.now() + ')');
+  }
+  sql('INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at) VALUES ' + seats.join(', '));
+  for (const x of mates) assert.strictEqual((await rep(x, b, { ctx: code })).status, 200);
+  await waitFor(1 + 3 + 1);
+  const muteMail = rs.got.find(x => x.body.subject === 'Muted ' + b.id);
+  assert(muteMail, rs.got.map(x => x.body.subject).join(' | '));
+  assert(muteMail.body.text.includes('3 reports'));
+  await quiet(5);
+  console.log('reportMail: the automatic mute sends a second mail');
+
+  // an unreachable Resend does not fail the report, and the mail waits for the digest
+  rs.down = true;
+  const c = await guest();
+  assert.strictEqual((await rep(a, c, { text: 'while down' })).status, 200);
+  await sleep(800);
+  rs.down = false;
+  assert.strictEqual(rs.got.length, 5, 'nothing got through');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM reports WHERE reported = ' + who(c))[0].n, 1, 'the report is stored');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 1, 'the mail is kept');
+
+  // the 21st mail in an hour is held for the digest
+  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO mail_log (at, kind, report, subject, body, sent) SELECT ' + Date.now() + ", 'report', 0, 'filler', '', " + Date.now() + ' FROM n');
+  const d = await guest();
+  assert.strictEqual((await rep(a, d, { text: 'over the limit' })).status, 200);
+  await quiet(5);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 2, 'both are held');
+  const T = Date.UTC(2031, 6, 20, 5, 0);
+  await tick(T);
+  await waitFor(6);
+  const digest = rs.got[5].body;
+  assert(/2 held report mails/.test(digest.subject), digest.subject);
+  for (const part of ['while down', 'over the limit']) assert(digest.text.includes(part), part);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE sent = 0')[0].n, 0);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM mail_log WHERE body <> ''")[0].n, 0, 'sent mails keep no text');
+  await tick(T + 3600000);
+  await quiet(6);
+  console.log('reportMail: an unreachable Resend does not fail the report, the 21st mail in an hour is held and goes out in the digest');
+
+  // without a key nothing is sent or kept
+  const { mail } = await import('../src/mail.js');
+  const kept = sql('SELECT count(*) AS n FROM mail_log')[0].n;
+  await mail({}, 'report', 1, 'no key', 'text');
+  await quiet(6);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log')[0].n, kept);
+  sql('DELETE FROM mail_log');
+  console.log('reportMail: no key, no mail');
 }
 
 async function push() {
@@ -5381,11 +5540,14 @@ process.on('unhandledRejection', e => {
   sfu.server.close();
   await sec('purge', () => purge());
   await sec('matchlog', () => matchlog());
+  const rs = fakeResend();
+  await rs.server.listening$;
   await sec('admin', () => admin());
   await sec('chipfn', () => chipfn());
   await sec('dealfail', () => dealfail());
   await sec('typedOff', () => typedOff());
   await sec('reports', () => reports());
+  await sec('reportMail', () => reportMail(rs));
   await sec('personas', () => personas());
   await sec('pool', () => pool());
   await sec('slowJoin', () => slowJoin());
@@ -5426,6 +5588,7 @@ process.on('unhandledRejection', e => {
   await sec('vip', () => vip(rc));
   await sec('cap', () => cap());
   rc.server.close();
+  rs.server.close();
   const bad = only.filter(x => !names.has(x));
   if (bad.length) throw new Error('no such section: ' + bad.join(', ') + ' (have ' + [...names].join(' ') + ')');
   console.log('ok');

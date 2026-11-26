@@ -4,6 +4,7 @@ import { reward } from './account.js';
 import { week } from './social.js';
 import { rollup } from './stats.js';
 import { setting } from './admin.js';
+import { digest } from './mail.js';
 import more from './text.js';
 
 const DAY = 86400000;
@@ -270,7 +271,8 @@ async function cleanup(env, now) {
     env.DB.prepare('DELETE FROM messages WHERE at < ?').bind(now - 30 * DAY),
     env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(now - 180 * DAY),
     env.DB.prepare('DELETE FROM match_seat WHERE at < ?').bind(now - 35 * DAY),
-    env.DB.prepare('DELETE FROM leaves WHERE at < ?').bind(now - 35 * DAY)
+    env.DB.prepare('DELETE FROM leaves WHERE at < ?').bind(now - 35 * DAY),
+    env.DB.prepare('DELETE FROM mail_log WHERE at < ?').bind(now - 7 * DAY)
   ]);
 }
 
@@ -281,7 +283,7 @@ export async function cron(env, now) {
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
   // weeklies first, as they only have work on Mondays; one failing job does not stop the others. The daily push is tried on
   // every tick, so a crowd that does not fit one run is served by the next within its window.
-  const jobs = hourly(now) ? [rollup, cleanup, ...keys ? [weeklies] : []] : [];
+  const jobs = hourly(now) ? [rollup, cleanup, digest, ...keys ? [weeklies] : []] : [];
   if (keys) jobs.push(dailies);
   for (const job of jobs) {
     try {

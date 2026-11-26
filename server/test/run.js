@@ -93,6 +93,8 @@ function devVars(p) {
     'RC_WEBHOOK_AUTH=test-hook-auth',
     'RC_SECRET_KEY=sk_test',
     'RC_API=' + host('RC'),
+    'RESEND_KEY=test-resend-key',
+    'RESEND_BASE=' + host('RESEND'),
     'ADMIN_KEY=' + adminKey,
     'HUB_SILENT=30',
     'HUB_KNOWN=5',
@@ -113,7 +115,7 @@ async function up(url, limit) {
 }
 
 (async () => {
-  const names = ['WORKER', 'INSPECTOR', 'APPLE', 'APNS', 'SANDBOX', 'FCM', 'GOOGLE', 'SFU', 'RC'];
+  const names = ['WORKER', 'INSPECTOR', 'APPLE', 'APNS', 'SANDBOX', 'FCM', 'GOOGLE', 'SFU', 'RC', 'RESEND'];
   const ports = Object.fromEntries((await freePorts(names.length)).map((p, i) => [names[i], p]));
   const vars = path.join(tmp, 'dev.vars');
   fs.writeFileSync(vars, devVars(ports));

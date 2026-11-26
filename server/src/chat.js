@@ -1,6 +1,8 @@
 import { verify, who, json, fail } from './account.js';
 import { rel } from './social.js';
 import { clean, mask, contact } from './filter.js';
+import { mail } from './mail.js';
+import { logAdmin } from './admin.js';
 
 const DAY = 86400000;
 const TEXT = 300;
@@ -45,9 +47,14 @@ async function thread(env, p, id, url) {
   return json({ more: results.length > PAGE, messages: results.slice(0, PAGE).map(r => ({ id: r.id, mine: r.sender === p.id, text: r.text, c: contact(r.text), at: r.at, k: r.kind || undefined })) });
 }
 
-// A report keeps who, what and where: a table code, dm or profile. Three different reporters, each with an account at least a day
-// old, within a week and since the last mute ended mute the reported player's typed chat for a day. A persona can be reported like anyone, so a report says nothing about who is one.
-async function report(env, p, request) {
+// Which table the two shared, if either was seated there in the last week; computer players have rows too.
+const shared = (db, code, a, b, since) => db.prepare('SELECT x.match AS match FROM match_seat x JOIN match_seat y ON y.match = x.match WHERE x.code = ?1 AND x.player = ?2 AND y.player = ?3 AND x.at > ?4 ORDER BY x.at DESC LIMIT 1').bind(code, a, b, since).first();
+
+// A report is always stored and mailed. It counts toward the mute only from someone who finished 10 matches, about a real player,
+// and for a table only when both were seated there; a profile report never counts. Three counting reporters, each with an account
+// at least a day old, within a week and since the last mute ended mute the reported player's typed chat for a day. A computer
+// player can be reported like anyone and gets the same answer, so a report says nothing about who is one.
+async function report(env, ctx, p, request) {
   let b = {};
   try { b = await request.json(); } catch (e) { /* no body */ }
   if (!ID.test(b.pid) || b.pid === p.id) return fail('id');
@@ -64,10 +71,24 @@ async function report(env, p, request) {
   }
   const sent = await env.DB.prepare('SELECT count(*) AS n FROM reports WHERE reporter = ? AND at > ?').bind(p.id, now - DAY).first();
   if (sent.n >= REPORTS) return fail('slow', 429);
-  await env.DB.prepare('INSERT INTO reports (reporter, reported, text, ctx, at) VALUES (?, ?, ?, ?, ?)').bind(p.id, b.pid, text, b.ctx, now).run();
-  const since = Math.max(now - 7 * DAY, q.mute_until || 0);
-  const n = await env.DB.prepare('SELECT count(DISTINCT r.reporter) AS n FROM reports r JOIN players p ON p.id = r.reporter WHERE r.reported = ? AND r.at > ? AND p.created < ?').bind(b.pid, since, now - DAY).first();
-  if (n.n >= 3) await env.DB.prepare('UPDATE players SET mute_until = ?1 WHERE id = ?2 AND mute_until < ?3').bind(now + DAY, b.pid, now).run();
+  const table = /^[A-Z]{4}$/.test(b.ctx) ? await shared(env.DB, b.ctx, p.id, b.pid, now - 7 * DAY) : null;
+  const counts = !q.persona && p.games >= 10 && (b.ctx === 'dm' || !!table) ? 1 : 0;
+  const row = await env.DB.prepare('INSERT INTO reports (reporter, reported, text, ctx, at, match, counts) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(p.id, b.pid, text, b.ctx, now, table && table.match, counts).run();
+  const id = row.meta.last_row_id;
+  const home = new URL(request.url).origin + '/admin';
+  ctx.waitUntil(mail(env, 'report', id, 'Report ' + id + ' (' + b.ctx + ')',
+    ['Report ' + id, 'Time ' + new Date(now).toISOString(), 'Context ' + b.ctx, 'Reporter ' + p.id, 'Reported ' + b.pid, 'Counted ' + (counts ? 'yes' : 'no'), 'Text ' + (text || '(none)'), home].join('\n')));
+  if (counts) {
+    const since = Math.max(now - 7 * DAY, q.mute_until || 0);
+    const n = await env.DB.prepare('SELECT count(DISTINCT r.reporter) AS n FROM reports r JOIN players p ON p.id = r.reporter WHERE r.reported = ? AND r.counts = 1 AND r.at > ? AND p.created < ?').bind(b.pid, since, now - DAY).first();
+    if (n.n >= 3) {
+      const r = await env.DB.prepare('UPDATE players SET mute_until = ?1 WHERE id = ?2 AND mute_until < ?3').bind(now + DAY, b.pid, now).run();
+      if (r.meta.changes === 1) {
+        await logAdmin(env.DB, 'auto', 'mute', b.pid, { reports: n.n, until: now + DAY });
+        ctx.waitUntil(mail(env, 'mute', id, 'Muted ' + b.pid, ['Player ' + b.pid + ' was muted for 24 hours after ' + n.n + ' reports.', 'Latest report ' + id, home].join('\n')));
+      }
+    }
+  }
   return json({ ok: true });
 }
 
@@ -77,7 +98,7 @@ export async function chat(request, env, ctx) {
   const url = new URL(request.url);
   const [, , what, arg] = url.pathname.split('/');
   const m = request.method;
-  if (what === 'report' && m === 'POST') return report(env, p, request);
+  if (what === 'report' && m === 'POST') return report(env, ctx, p, request);
   if (what === 'dm' && m === 'POST' && !arg) return send(env, ctx, p, request);
   if (what === 'dm' && m === 'GET' && arg) return thread(env, p, arg, url);
   return fail('nope', 404);
