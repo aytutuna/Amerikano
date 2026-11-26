@@ -1005,7 +1005,14 @@ export class Room extends DurableObject {
     }
     if (st.justOpened) st.played = true;
     if (s.bot) Game.botStep(st);
-    else Game.safeStep(st);
+    else if (s.lv) {
+      // a counted leave plays like one that pressed Leave, but the seat can still be taken back by its player
+      const p = st.players[i];
+      const bot = p.bot;
+      Object.assign(p, { bot: true, level: 'relaxed' });
+      Game.botStep(st);
+      p.bot = bot;
+    } else Game.safeStep(st);
     if (!r.hi && st.gameNo === 1) {
       r.hi = true;
       this.chirp(i, ['hello', 'luck'], 0.5);

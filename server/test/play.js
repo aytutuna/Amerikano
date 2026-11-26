@@ -4895,6 +4895,23 @@ async function lapseRematch() {
   for (const c of [back, t.rb, t.a, t.b]) c.ws.close();
 }
 
+// a seat that lapsed is a counted leave: from then on it plays like one that pressed Leave, not with the safe moves of a missed turn
+async function lapseStandIn() {
+  const t = await seatTwo(100);
+  await t.rb.next(m => m.t === 'state');
+  t.ra.ws.close();
+  const lapses = () => sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(t.accA))[0].n;
+  for (let i = 0; i < 100 && !lapses(); i++) await sleep(300);
+  assert.strictEqual(lapses(), 1, 'the lapse counted');
+  const mark = t.rb.log.length;
+  await within(t.offer[1], 150000, 'match end');
+  const i = t.rb.st.players.findIndex(p => p.pid === t.accA.id);
+  const kinds = new Set(t.rb.log.slice(mark).filter(e => e.p === i && MOVES.includes(e.k)).map(e => e.k));
+  assert(['open', 'lay', 'take', 'claim'].some(k => kinds.has(k)), 'the lapsed seat plays on like a leaver, not only draws and discards: ' + [...kinds]);
+  console.log('lapseStandIn: a seat that lapsed plays on as a relaxed stand-in');
+  for (const c of [t.ra, t.rb, t.a, t.b]) c.ws.close();
+}
+
 // no leave from a friend table or a tournament was counted anywhere in the run
 function leaveKinds() {
   const n = sql("SELECT count(*) AS n FROM leaves l JOIN match_seat m ON m.match = l.match WHERE m.kind <> 'pub'")[0].n;
@@ -5082,8 +5099,11 @@ async function missedClock() {
   // back: the seat is the player's again, and the count starts over
   const before = discards(a);
   const back = a.next(m => m.t === 'state' && !m.auto);
+  const rearmed = a.next(m => m.t === 'state' && !m.auto && m.clock && m.clock.p === 0);
   a.send({ t: 'back' });
   await within(back, 5000, 'back clears away');
+  const again = (await within(rearmed, 60000, 'the clock of the seat runs again')).clock;
+  assert(again.left > 0.8 * again.span, 'back gives a full clock: ' + again.left + ' of ' + again.span);
   await within(a.next(m => m.t === 'state' && discards(a) > before), 60000, 'the stand-in discards again');
   assert.strictEqual(a.st.auto, false, 'after back one missed turn is not away');
   await within(a.next(m => m.t === 'state' && m.auto), 60000, 'away again after two more');
@@ -5248,7 +5268,8 @@ async function startWindow() {
   await sleep(500);
 }
 
-// a tournament that is cancelled gives each buy-in back once, to everyone who paid it, knocked out or not
+// a tournament that is cancelled gives each buy-in back once, to everyone who paid it, knocked out or not; the humans only sit and
+// miss their clocks, so some are knocked out in the first round
 async function cupAbort() {
   const t0 = Date.now();
   const buy = 1000;
@@ -5271,9 +5292,7 @@ async function cupAbort() {
       x.msgs.push(m);
       if (m.t !== 'seated' || !m.cup) return;
       for (const r of x.rooms) r.ws.close();
-      const r = seated(m);
-      play(r, { finish: () => {} });
-      x.rooms = [r];
+      x.rooms = [seated(m)];
     });
     hs.push(x);
   }
@@ -5283,8 +5302,13 @@ async function cupAbort() {
   }
   // both first-round tables deal, then every table that tries to deal fails: the final cannot be seated
   for (let i = 0; i < 400 && sql("SELECT count(*) AS n FROM match_seat WHERE kind = 'cup' AND at >= " + t0)[0].n < 8; i++) await sleep(50);
-  assert.strictEqual(sql("SELECT count(*) AS n FROM match_seat WHERE kind = 'cup' AND at >= " + t0)[0].n, 8, 'the first round is dealt: ' + JSON.stringify(hs.map(x => x.msgs.map(m => m.t + (m.k || '') + (m.n || '')))));
+  assert.strictEqual(sql("SELECT count(*) AS n FROM match_seat WHERE kind = 'cup' AND at >= " + t0)[0].n, 8, 'the first round is dealt: ' + JSON.stringify(hs.map(x => x.msgs.map(m => m.t + (m.k || '') + (m.n || '')))) + ' personas ' + JSON.stringify(sql('SELECT busy IS NULL AS free, count(*) AS n FROM personas GROUP BY 1')));
+  // the first abort fails on every refund, as when the database is down, and is tried again until it works
+  sql("CREATE TRIGGER no_back BEFORE INSERT ON chip_log WHEN NEW.ref LIKE '%:back' BEGIN SELECT RAISE(ABORT, 'down'); END");
   breakDeal({ kind: 'cup', n: 99, seat: 0 });
+  await sleep(3000);
+  assert(hs.every(x => !cupIn(x.acc).some(r => r.ref.endsWith(':back')) && !x.msgs.some(m => m.t === 'error' && m.k === 'cupoff')), 'nothing is refunded while the abort fails');
+  sql('DROP TRIGGER no_back');
   await within(Promise.all(hs.map(x => x.off)), 400000, 'the tournament is cancelled');
   mendDeal();
   await sleep(1500);
@@ -5296,11 +5320,12 @@ async function cupAbort() {
     assert.strictEqual((await call('GET', '/api/me', x.acc)).body.chips, 5000);
     if (x.msgs.some(m => m.t === 'cupout')) knocked++;
   }
+  assert(knocked > 0, 'a human who was knocked out is among those refunded');
   assert.strictEqual(cupIn(w).length, 0, 'the player who withdrew paid and got nothing');
   assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE ref = '" + id + ":back'")[0].n, 4, 'nobody was refunded twice');
   for (let i = 0; i < 100 && sql("SELECT count(*) AS n FROM personas WHERE busy = '" + id + "'")[0].n; i++) await sleep(100);
   assert.strictEqual(sql("SELECT count(*) AS n FROM personas WHERE busy = '" + id + "'")[0].n, 0, 'the computer players are free');
-  console.log('cupAbort: all four buy-ins came back once (' + knocked + ' of them from players who were out), nothing for the one who withdrew');
+  console.log('cupAbort: all four buy-ins came back once after repeated aborts (' + knocked + ' of them from players who were out), nothing for the one who withdrew');
   for (const x of hs) {
     for (const r of x.rooms) r.ws.close();
     x.h.ws.close();
@@ -5368,6 +5393,7 @@ process.on('unhandledRejection', e => {
   await sec('gates', () => gates());
   await sec('leaves', () => leaves());
   await sec('lapseRematch', () => lapseRematch());
+  await sec('lapseStandIn', () => lapseStandIn());
   await sec('missedClock', () => missedClock());
   await sec('startWindow', () => startWindow());
   await sec('openRoom', () => openRoom());
