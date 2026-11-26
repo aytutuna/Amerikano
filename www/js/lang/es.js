@@ -251,7 +251,8 @@
       settings: 'Ajustes',
       leave: 'Salir de la partida',
       note: 'Tu partida está guardada. Continúala desde el lobby.',
-      onlineNote: 'La partida sigue sin ti. Si te vas, alguien juega tu lugar.'
+      onlineNote: 'La partida sigue sin ti. Si te vas, alguien juega tu lugar.',
+      pubNote: 'Irte de una mesa pública puede costarte fichas, y tras varias salidas en una semana tendrás que esperar para volver a sentarte.'
     },
 
     choice: {
@@ -357,6 +358,7 @@
         elsewhere: 'Tienes un asiento en otra mesa, así que esta partida no puede empezar. Sal primero de esa mesa.',
         dealfail: 'No se pudo iniciar la partida. Te devolvimos las fichas. Inténtalo de nuevo.',
         left: 'Abandonaste esta partida, así que no puedes volver a tu asiento.',
+        cool: v => 'Has dejado mesas demasiadas veces. Durante ' + v.n + ' min no puedes sentarte en esta mesa ni en una mayor.',
         guest: 'Inicia sesión con Apple para desbloquearlo. Los invitados pueden jugar en las dos mesas más pequeñas y en mesas de amigos con entrada 0.',
         level: v => 'Necesitas el nivel ' + v.n + ' para jugar en esta mesa.',
         host: 'Solo el anfitrión puede empezar la partida.',
@@ -391,6 +393,7 @@
       lockGuest: 'Inicia sesión para desbloquear',
       fee: v => 'Cuota de mesa: ' + chips(v.n),
       minFee: v => 'Mín. ' + v.n + ' · cuota ' + v.f,
+      cool: v => 'Espera ' + v.n + ' min',
       level: v => 'Nv. ' + v.n
     },
 

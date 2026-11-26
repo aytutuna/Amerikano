@@ -250,7 +250,8 @@
       settings: 'Einstellungen',
       leave: 'Partie verlassen',
       note: 'Deine Partie ist gespeichert. Setze sie in der Lobby fort.',
-      onlineNote: 'Die Partie läuft ohne dich weiter. Wenn du gehst, übernimmt jemand deinen Platz.'
+      onlineNote: 'Die Partie läuft ohne dich weiter. Wenn du gehst, übernimmt jemand deinen Platz.',
+      pubNote: 'Wer einen öffentlichen Tisch verlässt, kann Chips verlieren, und nach ein paar Austritten in einer Woche musst du warten, bevor du dich wieder setzt.'
     },
 
     choice: {
@@ -356,6 +357,7 @@
         elsewhere: 'Du hast einen Platz an einem anderen Tisch, deshalb kann diese Partie nicht starten. Verlasse zuerst jenen Tisch.',
         dealfail: 'Die Partie konnte nicht starten. Deine Chips wurden zurückgegeben. Versuche es noch einmal.',
         left: 'Du hast diese Partie verlassen und kannst deinen Platz nicht wieder einnehmen.',
+        cool: v => 'Du hast zu oft Tische verlassen. Für ' + v.n + ' Min. kannst du dich nicht an diesen Tisch oder einen größeren setzen.',
         guest: 'Melde dich mit Apple an, um das freizuschalten. Gäste spielen an den zwei kleinsten Tischen und an Freundestischen mit einem Einsatz von 0.',
         level: v => 'Für diesen Tisch brauchst du Level ' + v.n + '.',
         host: 'Nur der Gastgeber kann die Partie starten.',
@@ -390,6 +392,7 @@
       lockGuest: 'Zum Freischalten anmelden',
       fee: v => 'Tischgebühr: ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · Gebühr ' + v.f,
+      cool: v => 'Noch ' + v.n + ' Min.',
       level: v => 'Lv. ' + v.n
     },
 

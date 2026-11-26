@@ -92,6 +92,9 @@ test('a quick phrase and an emote at an online table', async ({ page }) => {
   await page.click('#chat');
   await page.locator('.sheet .emos .emo').first().click();
   await expect(page.locator('.seat[data-p="0"] .bub.emo use[href="#e-smile"]')).toHaveCount(1);
+  // leaving a public table can cost chips, and the pause sheet says so
+  await page.click('#menu');
+  await expect(page.locator('.sheet .note', { hasText: 'Leaving a public table can cost chips' })).toBeVisible();
 });
 
 test('a 1,000 cup from joining to the result', async ({ page }) => {
@@ -171,6 +174,16 @@ test('a friend table: join by a typed code and by a /t/CODE link', async ({ page
   await expect(linked.page.locator('.wt-mid .code')).toHaveText(code, { timeout: 30000 });
   await expect(page.locator('.wt-table .ws:not(.free)')).toHaveCount(2, { timeout: 30000 });
   await linked.ctx.close();
+});
+
+test('a cooldown from leaving locks the tables it covers and shows the time left', async ({ page }) => {
+  await guest(page);
+  await signedIn(page, 10, ', cool_until = ' + (Date.now() + 14 * 60000) + ', cool_stake = 500');
+  await expect(page.locator('[data-k=room100]')).toBeEnabled();
+  for (const s of [500, 2500]) {
+    await expect(page.locator('[data-k=room' + s + ']')).toBeDisabled();
+    await expect(page.locator('[data-k=room' + s + ']')).toContainText('Wait 14 min');
+  }
 });
 
 test('tables above the player level are locked and say what they need', async ({ page }) => {

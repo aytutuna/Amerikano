@@ -251,7 +251,8 @@
       settings: 'Réglages',
       leave: 'Quitter la partie',
       note: 'Ta partie est enregistrée. Reprends-la depuis le salon.',
-      onlineNote: 'La partie continue sans toi. Si tu pars, quelqu’un jouera à ta place.'
+      onlineNote: 'La partie continue sans toi. Si tu pars, quelqu’un jouera à ta place.',
+      pubNote: 'Quitter une table publique peut coûter des jetons, et après quelques départs dans la semaine, tu dois attendre avant de te rasseoir.'
     },
 
     choice: {
@@ -357,6 +358,7 @@
         elsewhere: 'Tu as une place à une autre table, la partie ne peut donc pas commencer. Quitte d’abord cette table.',
         dealfail: 'La partie n’a pas pu démarrer. Tes jetons t’ont été rendus. Réessaie.',
         left: 'Tu as quitté cette partie et ne peux pas reprendre ta place.',
+        cool: v => 'Tu as quitté trop souvent des tables. Pendant ' + v.n + ' min, tu ne peux pas t’asseoir à cette table ni à une plus grande.',
         guest: 'Connecte-toi avec Apple pour débloquer cela. Les invités peuvent jouer aux deux plus petites tables et aux tables entre amis avec une entrée de 0.',
         level: v => 'Il faut être niveau ' + v.n + ' pour jouer à cette table.',
         host: 'Seul l’hôte peut lancer la partie.',
@@ -391,6 +393,7 @@
       lockGuest: 'Connecte-toi pour débloquer',
       fee: v => 'Frais de table : ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · frais ' + v.f,
+      cool: v => 'Attends ' + v.n + ' min',
       level: v => 'Niv. ' + v.n
     },
 

@@ -251,7 +251,8 @@
       settings: 'Impostazioni',
       leave: 'Esci dalla partita',
       note: 'La partita è salvata. Riprendila dalla lobby.',
-      onlineNote: 'La partita continua senza di te. Se esci, qualcuno gioca al tuo posto.'
+      onlineNote: 'La partita continua senza di te. Se esci, qualcuno gioca al tuo posto.',
+      pubNote: 'Lasciare un tavolo pubblico può costare fiches, e dopo qualche uscita in una settimana devi aspettare prima di sederti di nuovo.'
     },
 
     choice: {
@@ -357,6 +358,7 @@
         elsewhere: 'Hai un posto a un altro tavolo, quindi questa partita non può iniziare. Prima lascia quel tavolo.',
         dealfail: 'La partita non è potuta iniziare. Le tue fiche ti sono state restituite. Riprova.',
         left: 'Hai lasciato questa partita, quindi non puoi riprendere il tuo posto.',
+        cool: v => 'Hai lasciato i tavoli troppo spesso. Per ' + v.n + ' min non puoi sederti a questo tavolo né a uno più grande.',
         guest: 'Accedi con Apple per sbloccarlo. Gli ospiti possono giocare ai due tavoli più piccoli e ai tavoli tra amici con ingresso 0.',
         level: v => 'Per giocare a questo tavolo serve il livello ' + v.n + '.',
         host: 'Solo l’host può iniziare la partita.',
@@ -391,6 +393,7 @@
       lockGuest: 'Accedi per sbloccare',
       fee: v => 'Quota del tavolo: ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · quota ' + v.f,
+      cool: v => 'Attendi ' + v.n + ' min',
       level: v => 'Liv. ' + v.n
     },
 

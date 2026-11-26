@@ -331,6 +331,7 @@ var UI = (function () {
     // once a tournament table is over, leaving only costs something to a player waiting for the final
     if (cup && st.phase === 'matchend' && !cup.through) return;
     body.appendChild(node('p', 'note', t(cup ? 'cup.leaveNote' : net ? 'pause.onlineNote' : 'pause.note')));
+    if (net && st && st.pub && st.phase !== 'matchend') body.appendChild(node('p', 'note', t('pause.pubNote')));
   }
 
   const fmt = n => n.toLocaleString(I18n.loc());
@@ -942,6 +943,7 @@ var UI = (function () {
     if (!me) return t('hall.locked');
     if (!me.apple && s > 500) return t('hall.lockGuest');
     if (me.level < at.gate[s]) return t('hall.level', { n: at.gate[s] });
+    if (me.cool && me.cool.until > Date.now() && s >= me.cool.stake) return t('hall.cool', { n: Math.ceil((me.cool.until - Date.now()) / 60000) });
     return me.chips < at.entry * s ? t('hall.locked') : null;
   }
 
@@ -955,8 +957,13 @@ var UI = (function () {
     return m;
   }
 
+  let cooling = 0;
+
   function roomCards(me) {
     const list = node('div', 'rooms');
+    // the minutes left on a locked card count down
+    clearTimeout(cooling);
+    if (me && me.cool && me.cool.until > Date.now()) cooling = setTimeout(redraw, Math.min(30000, me.cool.until - Date.now() + 500));
     for (const s of at.stakes) {
       const why = shut(me, s);
       const ok = !why;

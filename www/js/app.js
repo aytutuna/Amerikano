@@ -649,7 +649,7 @@ var App = (function () {
     const card = i => Game.CARDS[i];
     const task = id => Game.TASKS.find(x => x.id === id);
     return {
-      n: m.n, stake: m.stake, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
+      n: m.n, stake: m.stake, pub: m.pub, games: m.games, gameNo: m.gameNo, level: m.level, pot: m.pot, phase: m.phase,
       task: m.task ? task(m.task) : null, tasksLeft: m.tasksLeft.map(task),
       turn: m.turn, turns: m.turns, cutter: m.cutter, chooser: m.chooser, justOpened: m.justOpened,
       // other hands and the stock are only counts, so those arrays stay holes with a length

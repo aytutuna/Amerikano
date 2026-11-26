@@ -252,7 +252,8 @@
       settings: 'Instellingen',
       leave: 'Partij verlaten',
       note: 'Je partij is opgeslagen. Ga verder vanuit de lobby.',
-      onlineNote: 'De partij gaat door zonder jou. Als je weggaat, neemt iemand je plek over.'
+      onlineNote: 'De partij gaat door zonder jou. Als je weggaat, neemt iemand je plek over.',
+      pubNote: 'Een openbare tafel verlaten kan fiches kosten, en na een paar keer weggaan in een week moet je wachten voordat je weer gaat zitten.'
     },
 
     choice: {
@@ -358,6 +359,7 @@
         elsewhere: 'Je hebt een plek aan een andere tafel, dus deze partij kan niet beginnen. Verlaat eerst die tafel.',
         dealfail: 'De partij kon niet beginnen. Je fiches zijn teruggegeven. Probeer het opnieuw.',
         left: 'Je hebt deze partij verlaten en kunt niet meer op je plek terugkeren.',
+        cool: v => 'Je bent te vaak van een tafel weggegaan. Gedurende ' + v.n + ' min kun je niet aan deze tafel of een grotere zitten.',
         guest: 'Log in met Apple om dit te ontgrendelen. Gasten kunnen aan de twee kleinste tafels en aan vriendentafels met een inzet van 0 spelen.',
         level: v => 'Voor deze tafel heb je level ' + v.n + ' nodig.',
         host: 'Alleen de host kan de partij starten.',
@@ -392,6 +394,7 @@
       lockGuest: 'Log in om te ontgrendelen',
       fee: v => 'Tafelkosten: ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · kosten ' + v.f,
+      cool: v => 'Wacht ' + v.n + ' min',
       level: v => 'Lv. ' + v.n
     },
 

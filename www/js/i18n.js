@@ -241,7 +241,8 @@ var I18n = (function () {
       settings: 'Settings',
       leave: 'Leave match',
       note: 'Your match is saved. Continue it from the lobby.',
-      onlineNote: 'The match goes on without you. If you leave, your seat is played for you.'
+      onlineNote: 'The match goes on without you. If you leave, your seat is played for you.',
+      pubNote: 'Leaving a public table can cost chips, and after a few leaves in a week you wait before sitting down again.'
     },
 
     choice: {
@@ -347,6 +348,7 @@ var I18n = (function () {
         elsewhere: 'You have a seat at another table, so this match cannot start. Leave that table first.',
         dealfail: 'The match could not start. Your chips were returned. Try again.',
         left: 'You left this match, so you cannot take your seat back.',
+        cool: v => 'You left tables too often. You cannot sit at this table or a larger one for ' + v.n + ' min.',
         guest: 'Sign in with Apple to unlock this. Guests can play the two smallest tables and friend tables with a stake of 0.',
         level: v => 'You need level ' + v.n + ' to play at this table.',
         host: 'Only the host can start the match.',
@@ -381,6 +383,7 @@ var I18n = (function () {
       lockGuest: 'Sign in to unlock',
       fee: v => 'Table fee ' + fmt(v.n) + (v.n === 1 ? ' chip' : ' chips'),
       minFee: v => 'Min ' + v.n + ' · fee ' + v.f,
+      cool: v => 'Wait ' + v.n + ' min',
       level: v => 'Lv ' + v.n
     },
 
@@ -916,7 +919,8 @@ var I18n = (function () {
       settings: 'Ayarlar',
       leave: 'Maçtan çık',
       note: 'Maçın kaydedildi. Lobiden devam edebilirsin.',
-      onlineNote: 'Maç sensiz devam eder. Ayrılırsan senin yerine oynanır.'
+      onlineNote: 'Maç sensiz devam eder. Ayrılırsan senin yerine oynanır.',
+      pubNote: 'Herkese açık masadan ayrılmak çipe mal olabilir; bir haftada birkaç kez ayrılırsan yeniden oturmak için beklemen gerekir.'
     },
 
     choice: {
@@ -1023,6 +1027,7 @@ var I18n = (function () {
         elsewhere: 'Başka bir masada yerin var, bu yüzden bu maç başlayamıyor. Önce o masadan ayrıl.',
         dealfail: 'Maç başlatılamadı. Çiplerin iade edildi. Tekrar dene.',
         left: 'Bu maçtan ayrıldığın için koltuğuna geri dönemezsin.',
+        cool: v => 'Masalardan çok sık ayrıldın. ' + v.n + ' dk boyunca bu masaya ya da daha büyük bir masaya oturamazsın.',
         guest: 'Bunun kilidini açmak için Apple ile giriş yap. Misafirler en küçük iki masada ve masa değeri 0 olan arkadaş masalarında oynayabilir.',
         level: v => 'Bu masada oynamak için ' + v.n + '. seviye gerekir.',
         host: 'Maçı yalnızca odayı kuran başlatabilir.',
@@ -1057,6 +1062,7 @@ var I18n = (function () {
       lockGuest: 'Kilidi açmak için giriş yap',
       fee: v => 'Masa ücreti: ' + fmt(v.n) + ' çip',
       minFee: v => 'En az ' + v.n + ' · ücret ' + v.f,
+      cool: v => v.n + ' dk bekle',
       level: v => v.n + '. sv'
     },
 

@@ -248,7 +248,8 @@
       settings: 'Pengaturan',
       leave: 'Keluar dari pertandingan',
       note: 'Pertandinganmu tersimpan. Lanjutkan dari lobi.',
-      onlineNote: 'Pertandingan terus berjalan tanpamu. Kalau kamu keluar, ada yang menggantikan tempatmu.'
+      onlineNote: 'Pertandingan terus berjalan tanpamu. Kalau kamu keluar, ada yang menggantikan tempatmu.',
+      pubNote: 'Keluar dari meja publik bisa mengurangi chip, dan setelah beberapa kali keluar dalam seminggu, kamu harus menunggu sebelum duduk lagi.'
     },
 
     choice: {
@@ -354,6 +355,7 @@
         elsewhere: 'Kamu punya kursi di meja lain, jadi pertandingan ini belum bisa dimulai. Keluar dulu dari meja itu.',
         dealfail: 'Pertandingan tidak bisa dimulai. Chip-mu sudah dikembalikan. Coba lagi.',
         left: 'Kamu sudah keluar dari pertandingan ini, jadi tidak bisa kembali ke kursimu.',
+        cool: v => 'Kamu terlalu sering meninggalkan meja. Selama ' + v.n + ' menit kamu tidak bisa duduk di meja ini atau meja yang lebih besar.',
         guest: 'Masuk dengan Apple untuk membukanya. Tamu bisa bermain di dua meja terkecil dan di meja teman dengan modal 0.',
         level: v => 'Kamu perlu level ' + v.n + ' untuk bermain di meja ini.',
         host: 'Hanya tuan rumah yang bisa memulai pertandingan.',
@@ -388,6 +390,7 @@
       lockGuest: 'Masuk untuk membuka',
       fee: v => 'Biaya meja ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · biaya ' + v.f,
+      cool: v => 'Tunggu ' + v.n + ' mnt',
       level: v => 'Lv. ' + v.n
     },
 

@@ -252,7 +252,8 @@
       settings: 'Ustawienia',
       leave: 'Opuść partię',
       note: 'Twoja partia jest zapisana. Wznów ją z lobby.',
-      onlineNote: 'Partia toczy się dalej bez ciebie. Jeśli wyjdziesz, ktoś zagra za ciebie.'
+      onlineNote: 'Partia toczy się dalej bez ciebie. Jeśli wyjdziesz, ktoś zagra za ciebie.',
+      pubNote: 'Opuszczenie publicznego stołu może kosztować żetony, a po kilku wyjściach w ciągu tygodnia musisz poczekać, zanim znów usiądziesz.'
     },
 
     choice: {
@@ -358,6 +359,7 @@
         elsewhere: 'Masz miejsce przy innym stole, więc ta partia nie może się zacząć. Najpierw opuść tamten stół.',
         dealfail: 'Nie udało się rozpocząć partii. Twoje żetony zostały zwrócone. Spróbuj ponownie.',
         left: 'Nie możesz wrócić na swoje miejsce, bo ta partia została przez ciebie opuszczona.',
+        cool: v => 'Zbyt często opuszczasz stoły. Przez ' + v.n + ' min nie możesz usiąść przy tym stole ani przy większym.',
         guest: 'Zaloguj się przez Apple, aby to odblokować. Goście mogą grać przy dwóch najmniejszych stołach i przy stołach ze znajomymi ze stawką 0.',
         level: v => 'Aby grać przy tym stole, potrzebujesz poziomu ' + v.n + '.',
         host: 'Partię może zacząć tylko gospodarz.',
@@ -392,6 +394,7 @@
       lockGuest: 'Zaloguj się, aby odblokować',
       fee: v => 'Opłata za stół: ' + chips(v.n),
       minFee: v => 'Min. ' + v.n + ' · opłata ' + v.f,
+      cool: v => 'Czekaj ' + v.n + ' min',
       level: v => 'Poz. ' + v.n
     },
 

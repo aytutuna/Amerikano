@@ -22,7 +22,7 @@ var Net = (function () {
   }
 
   function msg(k, m) {
-    const s = t('net.err.' + k, { n: m && m.need });
+    const s = t('net.err.' + k, { n: m && (m.need !== undefined ? m.need : Math.ceil(m.left / 60000)) });
     return s === 'net.err.' + k ? t('net.err.other') : s;
   }
 
