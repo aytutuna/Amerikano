@@ -129,7 +129,7 @@ async function up(url, limit) {
   if (process.argv[2] === '--serve') {
     // no purchases of its own: the browser tests credit them through the webhook, so the sync call finds nothing new
     http.createServer((q, r) => r.writeHead(200, { 'Content-Type': 'application/json' }).end('{"subscriber":{}}')).listen(ports.RC);
-    fs.writeFileSync(process.argv[3] + '.tmp', JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth', admin: adminKey }));
+    fs.writeFileSync(process.argv[3] + '.tmp', JSON.stringify({ port: ports.WORKER, hook: 'test-hook-auth', admin: adminKey, persist: persist }));
     fs.renameSync(process.argv[3] + '.tmp', process.argv[3]);
     return;
   }

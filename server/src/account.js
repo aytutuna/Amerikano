@@ -18,8 +18,38 @@ export const stakeOk = s => Number.isInteger(s) && s >= 0 && s <= 1e9 && s % 10 
 // what the final table of a tournament shares out, from first place down: half, a quarter, 15 % and 10 % of the buy-ins
 export const prizes = buy => [50, 25, 15, 10].map(x => 8 * buy * x / 100);
 
-// the stake back plus the match chips at stake/10 each; negative when the match cost more than the stake
-export const payout = (stake, chips) => stake + chips * stake / 10;
+// Match chips move by a tenth of the stake each. The most a seat can lose is set aside at the deal, so no
+// loss is ever forgiven; the rules phase changes the games count here and nowhere else.
+export const maxLoss = games => 10 + 4 * games;
+export const hold = (stake, games) => stake * maxLoss(games) / 10;
+
+// the held amount back plus the match chips at stake/10 each
+export const payout = (stake, games, chips) => hold(stake, games) + chips * stake / 10;
+
+// Level needed for each public table and each cup; a friend table takes the gate of the highest public stake at or below its own.
+const GATES = { 100: 1, 500: 4, 2500: 10, 10000: 20, 50000: 30 };
+const CUP_GATES = { 1000: 1, 5000: 10, 25000: 20 };
+const FEES = { 100: 5, 500: 25, 2500: 125, 10000: 700, 50000: 4000 };
+export const gates = () => ({ gate: GATES, cupGate: CUP_GATES, fee: FEES });
+
+const tier = stake => STAKES.filter(s => s <= stake).pop() || 0;
+
+// the table fee, taken from every seat at the deal; under the lowest table it is the same 5 % of the stake
+export const feeFor = stake => !stake ? 0 : tier(stake) ? FEES[tier(stake)] : Math.floor(stake * 5 / 100);
+
+// Why an account may not sit at a table with this stake, or null. Guests take the 100 and 500 tables and no friend table with a stake.
+export function barred(p, stake, pub) {
+  if (!stake) return null;
+  if (!signedIn(p) && !(pub && stake <= 500)) return { k: 'guest' };
+  const need = GATES[tier(stake)] || 1;
+  return p.level < need ? { k: 'level', need: need } : null;
+}
+
+export function cupBarred(p, buy) {
+  if (!signedIn(p)) return { k: 'guest' };
+  return p.level < CUP_GATES[buy] ? { k: 'level', need: CUP_GATES[buy] } : null;
+}
+
 const ROLLS = 20;
 const SESSIONS = 10;
 const DEVICES = 10;
@@ -67,6 +97,23 @@ export async function credit(db, id, delta, reason, ref, claim) {
     return r[0].meta.changes === 1;
   } catch (e) {
     if (ref && /UNIQUE/.test(e.message)) return true;
+    throw e;
+  }
+}
+
+// The deal's charge in one batch: the held amount (ref <match>:in) and the table fee (ref <match>:fee) both go, or neither.
+// False when the player cannot cover both.
+export async function charge(db, id, held, fee, match) {
+  if (!held && !fee) return true;
+  const ref = match + ':in';
+  if (await db.prepare('SELECT 1 FROM chip_log WHERE player = ? AND ref = ?').bind(id, ref).first()) return true;
+  const stmts = creditStmts(db, id, -held, 'escrow', ref, { set: {}, where: 'chips >= ?', args: [held + fee] });
+  if (fee) stmts.push(...creditStmts(db, id, -fee, 'fee', match + ':fee', { set: {}, where: 'EXISTS (SELECT 1 FROM chip_log WHERE player = ? AND ref = ?)', args: [id, ref] }));
+  try {
+    const r = await db.batch(stmts);
+    return r[0].meta.changes === 1;
+  } catch (e) {
+    if (/UNIQUE/.test(e.message)) return true;
     throw e;
   }
 }

@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { freeCode, stub, pick } from './room.js';
-import { verify, player, seat, credit, signedIn, STAKES, ENTRY, BUYINS, prizes } from './account.js';
+import { verify, player, seat, credit, barred, cupBarred, gates, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
@@ -148,7 +148,7 @@ export class Hub extends DurableObject {
         w.close(4000, 'replaced');
       }
       ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, stake: 0, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
-      this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, voice: on(this.env) });
+      this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, ...gates(), voice: on(this.env) });
       const c = this.inCall(p.id);
       if (c) {
         clearTimeout(c.gone[p.id]);
@@ -375,7 +375,7 @@ export class Hub extends DurableObject {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid === to);
     if (this.inCup(to) || await rel(this.env.DB, from.pid, to) !== 'friend') return false;
     const p = await player(this.env.DB, to);
-    if (!p || p.chips < ENTRY * stake) return false;
+    if (!p || p.chips < ENTRY * stake || barred(p, stake, pub)) return false;
     if (!socks.length) {
       this.ctx.waitUntil(this.ring(from.pid, to, 'invite', { seed: from.seed, code: code }).catch(() => {}));
       return false;
@@ -440,21 +440,20 @@ export class Hub extends DurableObject {
   }
 
   // the player if they can sit at this stake and hold no other seat at a public table, else the refusal is sent and it is null
-  async afford(ws, pid, stake, code) {
+  async afford(ws, pid, stake, code, pub = true) {
     const p = await player(this.env.DB, pid);
     if (!p) return this.refuse(ws, 'auth');
-    const k = p.chips < ENTRY * stake ? 'poor' : this.holds(pid, code) ? 'busy' : null;
-    if (!k) return p;
-    this.put(ws, { t: 'error', k: k });
+    const no = barred(p, stake, pub) || (p.chips < ENTRY * stake ? { k: 'poor' } : this.holds(pid, code) ? { k: 'busy' } : null);
+    if (!no) return p;
+    this.put(ws, Object.assign({ t: 'error' }, no));
     return null;
   }
 
   async seated(ws, pid, stake, code) {
-    const p = await this.afford(ws, pid, stake, code);
-    if (!p) return;
     // a table made by a friend keeps its kind when it is opened to others
     const t = this.tables[code];
-    if (t && !t.pub && t.stake && !signedIn(p)) return this.put(ws, { t: 'error', k: 'guest' });
+    const p = await this.afford(ws, pid, stake, code, !t || t.pub);
+    if (!p) return;
     const got = await this.room(code).sit(seat(p));
     if (!got) {
       this.table(code, null);
@@ -520,7 +519,7 @@ export class Hub extends DurableObject {
     const r = reg(p);
     const fill = t => t.seats.filter(Boolean).length;
     const real = t => t.pids.filter(Boolean).length;
-    const open = this.open().filter(([, t]) => t.region === r && t.stake === stake && (t.pub || signedIn(p))).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
+    const open = this.open().filter(([, t]) => t.region === r && t.stake === stake && !barred(p, stake, t.pub)).sort((a, b) => real(b[1]) - real(a[1]) || fill(b[1]) - fill(a[1]));
     for (const [code] of open) {
       const done = await this.seated(ws, pid, stake, code);
       if (done !== false) return;
@@ -570,8 +569,8 @@ export class Hub extends DurableObject {
     await this.sweep().catch(() => {});
     const p = await player(this.env.DB, pid);
     if (!p) return this.refuse(ws, 'auth');
-    const k = p.chips < buy ? 'poor' : this.holds(pid) ? 'busy' : null;
-    if (k) return this.put(ws, { t: 'error', k: k });
+    const no = cupBarred(p, buy) || (p.chips < buy ? { k: 'poor' } : this.holds(pid) ? { k: 'busy' } : null);
+    if (no) return this.put(ws, Object.assign({ t: 'error' }, no));
     const r = reg(p);
     const g = this.cups.form[slot(r, buy)] || (this.cups.form[slot(r, buy)] = { id: crypto.randomUUID(), buy: buy, region: r, hs: [], ps: [], due: now + WAIT * this.k, next: now + between(JOIN, 2 * JOIN) * this.k });
     // a form that is full is waiting to start
