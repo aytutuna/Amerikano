@@ -92,11 +92,7 @@ export async function verify(db, token) {
   if (!m) return null;
   const h = await hash(m[2]);
   const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2').bind(m[1], h).first();
-  if (p) return Object.assign(p, { session: h });
-  // a guest the old worker made after 0005 ran has no session yet; give it its one
-  const old = await db.prepare('SELECT * FROM players WHERE id = ?1 AND secret_hash = ?2 AND NOT EXISTS (SELECT 1 FROM sessions WHERE player = ?1)').bind(m[1], h).first();
-  if (old) await db.prepare('INSERT OR IGNORE INTO sessions (player, secret_hash, created) VALUES (?1, ?2, ?3)').bind(old.id, h, Date.now()).run();
-  return old && Object.assign(old, { session: h });
+  return p && Object.assign(p, { session: h });
 }
 
 export function player(db, id) {
@@ -185,8 +181,8 @@ async function guest(db, a) {
   const secret = random(32);
   const now = Date.now();
   await db.batch([
-    db.prepare('INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)')
-      .bind(id, await hash(secret), Names.pick(), Avatar.random().join(','), now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
+    db.prepare("INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created, apple, apple_refresh, apple_client) VALUES (?, '', ?, ?, 0, ?, ?, ?, ?)")
+      .bind(id, Names.pick(), Avatar.random().join(','), now, a ? a.sub : null, a ? a.token : null, a && a.token ? a.aud : null),
     ...creditStmts(db, id, START, 'start'),
     ...await sessionStmts(db, id, secret)
   ]);
@@ -323,6 +319,21 @@ async function region(env, p, request) {
   await env.HUB.get(env.HUB.idFromName('h')).move(p.id, b.region).catch(() => {});
 }
 
+// Ends this device's session and its device rows, or every session of the account. The hub drops the sockets that came with them.
+async function signout(env, p, request) {
+  const all = (await body(request)).all === true;
+  const db = env.DB;
+  await db.batch(all ? [
+    db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
+    db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id)
+  ] : [
+    db.prepare('DELETE FROM devices WHERE player = ?1 AND session = ?2').bind(p.id, p.session),
+    db.prepare('DELETE FROM sessions WHERE player = ?1 AND secret_hash = ?2').bind(p.id, p.session)
+  ]);
+  await env.HUB.get(env.HUB.idFromName('h')).drop(p.id, all ? null : p.session).catch(() => {});
+  return json({ ok: true });
+}
+
 async function bailout(db, p) {
   if (p.chips >= MIN_ROOM) return fail('rich', 409);
   // the balance read above is part of the claim: a match settling in between makes the top-up miss, and the next try gets it
@@ -390,6 +401,7 @@ export async function api(request, env, ctx) {
     return json({ ok: true });
   }
   if (path === '/api/me' && method === 'GET') return json(profile(p));
+  if (path === '/api/signout' && method === 'POST') return signout(env, p, request);
   if (path === '/api/device' && method === 'DELETE') {
     const b = await body(request);
     await db.prepare('DELETE FROM devices WHERE (token = ?1 OR token = lower(?1)) AND player = ?2').bind(String(b.token), p.id).run();

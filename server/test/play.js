@@ -673,14 +673,21 @@ async function accounts() {
   assert.strictEqual(sql("SELECT count(*) AS n FROM chip_log WHERE player = '" + acc.id + "'")[0].n, 0);
   console.log('account deleted with its rows');
 
-  // a guest the old worker made between migration 0005 and the deploy has no session row
+  // the old column opens nothing any more; migration 0015 copies it into a session before it is emptied, so no tester is locked out
   const old = { id: crypto.randomBytes(16).toString('hex'), secret: crypto.randomBytes(32).toString('hex') };
   const oh = crypto.createHash('sha256').update(old.secret).digest('hex');
   sql("INSERT INTO players (id, secret_hash, name_seed, avatar, chips, created) VALUES ('" + old.id + "', '" + oh + "', 1, '0,0,0,0', 5000, 0)");
-  assert.strictEqual((await call('GET', '/api/me', old)).status, 200);
-  assert.strictEqual(sql("SELECT count(*) AS n FROM sessions WHERE player = '" + old.id + "'")[0].n, 1);
-  assert.strictEqual((await call('GET', '/api/me', { id: old.id, secret: '0'.repeat(64) })).status, 401);
-  console.log('a guest from before the sessions table gets its session on first use');
+  assert.strictEqual((await call('GET', '/api/me', old)).status, 401, 'the old column is not a login');
+  const migration = fs.readFileSync(__dirname + '/../migrations/0015_foundations.sql', 'utf8');
+  const copy = /INSERT OR IGNORE INTO sessions[^;]*;/.exec(migration)[0].replace('WHERE secret_hash', "WHERE id = '" + old.id + "' AND secret_hash").replace(/\s+/g, ' ');
+  sql(copy);
+  sql("UPDATE players SET secret_hash = '' WHERE id = '" + old.id + "'");
+  assert.strictEqual((await call('GET', '/api/me', old)).status, 200, 'a guest the migration copied still gets in');
+  assert.strictEqual(sql("SELECT secret_hash AS h FROM players WHERE id = '" + old.id + "'")[0].h, '');
+  const fresh = await guest();
+  assert.strictEqual(sql("SELECT secret_hash AS h FROM players WHERE id = '" + fresh.id + "'")[0].h, '', 'a new guest keeps no secret in the old column');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM sessions WHERE player = '" + fresh.id + "'")[0].n, 1);
+  console.log('the old secret column opens nothing, the migration copy keeps old guests in');
 }
 
 const b64u = x => Buffer.from(x).toString('base64url');
@@ -751,6 +758,35 @@ async function apple() {
   console.log('apple sign-in makes an account, the same subject gets it back, every device stays signed in');
 
   const racer = 'race.' + t.sub;
+  // sign-out ends that device's session, its device row and its hub socket, and nothing else
+  const so = 'out.' + t.sub;
+  const au = b => Object.assign(b, { auth: b.id + '.' + b.secret });
+  const s1 = au((await post('/api/apple', null, await cred({ sub: so }, null, 'o1'))).body);
+  const s2 = au((await post('/api/apple', null, await cred({ sub: so }, null, 'o2'))).body);
+  const s3 = au((await post('/api/apple', null, await cred({ sub: so }, null, 'o3'))).body);
+  const k1 = fcmTok();
+  const k2 = fcmTok();
+  await reg(s1, 'fcm', k1, 'en', 0);
+  await reg(s2, 'fcm', k2, 'en', 0);
+  const h2 = await hub(s2);
+  const shut = c => new Promise(res => c.ws.on('close', (code, why) => res([code, String(why)])));
+  const closed2 = shut(h2);
+  assert.strictEqual((await call('POST', '/api/signout')).status, 401);
+  assert.strictEqual((await call('POST', '/api/signout', s2)).status, 200);
+  assert.strictEqual((await call('GET', '/api/me', s2)).status, 401, 'the signed-out secret is dead');
+  assert.deepStrictEqual(await within(closed2, 5000, 'the hub socket of the signed-out device closes'), [4001, 'signout']);
+  assert.strictEqual((await call('GET', '/api/me', s1)).status, 200);
+  assert.deepStrictEqual(devs(s1).map(d => d.token), [k1], 'only the signed-out device row went');
+  assert.strictEqual(sessions(s1.id), 2);
+  const h3 = await hub(s3);
+  const closed3 = shut(h3);
+  assert.strictEqual((await call('POST', '/api/signout', s1, { all: true })).status, 200);
+  assert.strictEqual(sessions(s1.id), 0);
+  assert.strictEqual((await call('GET', '/api/me', s3)).status, 401, 'all: true ends every session');
+  assert.strictEqual(devs(s1).length, 0);
+  await within(closed3, 5000, 'and every socket');
+  console.log('sign-out ends one session or all of them, with the device rows and hub sockets');
+
   const burst = await Promise.all([1, 2, 3, 4].map(async i => post('/api/apple', null, await cred({ sub: racer }, null, 'r' + i))));
   assert.strictEqual(new Set(burst.map(x => x.body.id)).size, 1);
   assert.ok(row(burst[0].body.id).apple_refresh);
