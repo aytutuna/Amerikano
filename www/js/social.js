@@ -167,7 +167,7 @@ var Social = (function () {
     el.setAttribute('role', 'status');
     const pic = Avatar.sized(m.from.av, 36);
     el.appendChild(pic);
-    const text = t('fr.invText', { name: who(m.from.seed), n: fmt(m.stake) });
+    const text = t(m.stake ? 'fr.invText' : 'fr.invFree', { name: who(m.from.seed), n: fmt(m.stake) });
     el.appendChild(node('p', '', text));
     const off = () => { box.textContent = ''; };
     if (!play) {

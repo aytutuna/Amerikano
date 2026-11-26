@@ -112,6 +112,25 @@ test('a 1,000 cup from joining to the result', async ({ page }) => {
   await expect(page.locator('[data-k=tabcups]')).toBeVisible();
 });
 
+test('no pace switch, and the friend table form takes a stake a guest cannot use', async ({ page }) => {
+  await guest(page);
+  await expect(page.locator('[data-f^=mode]')).toHaveCount(0);
+  await expect(page.locator('#home')).not.toContainText(/Fast/);
+  await page.click('[data-k=friends]');
+  const stake = page.locator('.sheet [data-f=stake]');
+  await expect(stake).toHaveValue('0');
+  await expect(page.locator('.sheet [data-f^=level]')).toHaveCount(0);
+  await expect(page.locator('.sheet [data-f^=mode]')).toHaveCount(0);
+  await stake.fill('15');
+  await page.locator('.sheet .sh-acts .btn.primary').click();
+  await expect(page.getByText('The stake must be a multiple of 10.')).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.click('[data-k=friends]');
+  await stake.fill('100');
+  await page.locator('.sheet .sh-acts .btn.primary').click();
+  await expect(page.getByText('Sign in with Apple to play friend tables for chips.').first()).toBeVisible();
+});
+
 // a second player in a browser of their own, from an address of their own
 async function otherGuest(browser, path) {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, reducedMotion: 'reduce' });

@@ -194,7 +194,7 @@ var Net = (function () {
         UI.hub(m);
         Voice.hub(m.voice);
         break;
-      case 'rooms': UI.rooms(m.n, m.f); break;
+      case 'rooms': UI.rooms(m.n); break;
       case 'cup': UI.cup(m); break;
       case 'cupend': UI.cupEnd(); break;
       case 'seated':
@@ -301,7 +301,7 @@ var Net = (function () {
 
   N.say = hubSay;
   N.sit = code => hubSay({ t: 'sit', code: code });
-  N.play = (stake, fast) => hubSay({ t: 'quick', stake: stake, fast: fast });
+  N.play = stake => hubSay({ t: 'quick', stake: stake });
   N.cup = buy => hubSay({ t: 'cup', buy: buy });
 
   N.create = o => {

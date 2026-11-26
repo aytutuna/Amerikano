@@ -11,8 +11,7 @@ var UI = (function () {
   // set when Cancel is pressed, so a count update already on its way does not bring the sheet back
   let leaving = false;
   // net is wait, up, down or replaced
-  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, f: {}, gate: '', fast: false };
-  try { at.fast = localStorage.getItem('amerikano.fast') === '1'; } catch (e) { /* normal pace */ }
+  const at = { tab: 'rooms', net: 'wait', stakes: null, entry: 10, n: {}, gate: '' };
 
   function button(label, kind, fn) {
     const b = node('button', 'btn ' + kind, label);
@@ -56,34 +55,21 @@ var UI = (function () {
     return fs;
   }
 
-  function pace(cur, fn) {
-    return choice('mode', t('hall.mode'), [
-      { v: 'normal', label: t('hall.normal'), note: t('hall.normalNote') },
-      { v: 'fast', label: t('hall.fast'), note: t('hall.fastNote') }
-    ], cur ? 'fast' : 'normal', v => fn(v === 'fast'), 'seg');
-  }
-
-  function setFast(on) {
-    at.fast = on;
-    try { localStorage.setItem('amerikano.fast', on ? '1' : '0'); } catch (e) { /* kept for this session only */ }
-  }
-
   function gameOptions(n) {
     const out = [];
     for (let g = n; g <= 16; g += n) out.push(g);
     return out;
   }
 
-  // players, games and level, plus the stake for an online table; get() reads what was picked
+  // players and games, plus the level offline or the stake for an online table; get() reads what was picked
   function matchForm(room) {
     let n = Settings.get('players');
     if (![3, 4, 5].includes(n)) n = 4;
     let g = Settings.get('games');
     let lv = Settings.get('level') === 'sharp' ? 'sharp' : 'relaxed';
     const me = Account.me();
-    const stakes = room && at.stakes ? at.stakes.filter(x => me && me.chips >= at.entry * x) : [];
-    let sk = stakes[0];
-    let fast = at.fast;
+    // a friend table can be for any stake in tens; a guest can only play for nothing
+    let sk = me && me.apple && me.chips >= at.entry * 100 ? 100 : 0;
     const form = node('div', 'form' + (room ? ' one' : ''));
     const saved = App.saved();
 
@@ -99,14 +85,29 @@ var UI = (function () {
       const games = choice('games', t('setup.games'), opts.map(v => ({ v: v, label: String(v) })), g, v => { g = v; }, 'seg');
       if (!room) games.appendChild(node('p', 'note', t('setup.gamesNote')));
       form.appendChild(games);
-      form.appendChild(choice('level', t('setup.level'), [
-        { v: 'relaxed', label: t('setup.relaxed'), note: room ? '' : t('setup.relaxedNote') },
-        { v: 'sharp', label: t('setup.sharp'), note: room ? '' : t('setup.sharpNote') }
-      ], lv, v => { lv = v; }, room ? 'seg' : 'rows'));
-      if (room) {
-        const stake = choice('stake', t('hall.stake'), stakes.map(v => ({ v: v, label: fmt(v) })), sk, v => { sk = v; fill(); focusOn('stake:' + v); }, 'seg');
+      if (!room) {
+        form.appendChild(choice('level', t('setup.level'), [
+          { v: 'relaxed', label: t('setup.relaxed'), note: t('setup.relaxedNote') },
+          { v: 'sharp', label: t('setup.sharp'), note: t('setup.sharpNote') }
+        ], lv, v => { lv = v; }, 'rows'));
+      } else {
+        const stake = node('fieldset', 'fld');
+        stake.appendChild(node('legend', '', t('hall.stake')));
+        const inp = node('input', 'txt');
+        inp.type = 'text';
+        inp.inputMode = 'numeric';
+        inp.maxLength = 10;
+        inp.autocomplete = 'off';
+        inp.value = Number.isNaN(sk) ? '' : String(sk);
+        inp.dataset.f = 'stake';
+        inp.addEventListener('input', () => {
+          inp.value = inp.value.replace(/D/g, '');
+          sk = inp.value === '' ? NaN : Number(inp.value);
+        });
+        stake.appendChild(inp);
+        stake.appendChild(node('p', 'note', t('hall.stakeHint')));
+        if (me && !me.apple) stake.appendChild(node('p', 'note', t('net.err.guest')));
         form.appendChild(stake);
-        form.appendChild(pace(fast, v => { fast = v; }));
       }
       if (saved && !room) form.appendChild(node('p', 'note', t('setup.replace')));
     }
@@ -119,12 +120,19 @@ var UI = (function () {
     fill();
     return {
       form: form,
-      ok: () => !room || sk !== undefined,
+      // the text key of what is wrong with the stake, or null
+      problem: () => {
+        if (!room) return null;
+        if (!Number.isInteger(sk) || sk % 10 || sk > 1e9) return 'hall.stakeBad';
+        if (sk && !(me && me.apple)) return 'net.err.guest';
+        return me && me.chips >= at.entry * sk ? null : 'net.err.poor';
+      },
       get: () => {
         Settings.set('players', n, true);
         Settings.set('games', g, true);
+        if (room) return { players: n, games: g, stake: sk };
         Settings.set('level', lv, true);
-        return { players: n, games: g, level: lv, stake: sk, fast: room ? fast : undefined };
+        return { players: n, games: g, level: lv };
       }
     };
   }
@@ -758,7 +766,6 @@ var UI = (function () {
       code.setAttribute('aria-label', m.code.split('').join(' '));
       mid.appendChild(code);
     }
-    if (m.fast) mid.appendChild(node('i', 'tag', t('hall.fast')));
     box.appendChild(mid);
     const n = m.seats.length;
     const els = m.seats.map((s, i) => {
@@ -815,16 +822,14 @@ var UI = (function () {
     const side = wait.side;
     const keep = side.contains(document.activeElement) ? document.activeElement.dataset.f : null;
     side.textContent = '';
-    const sk = node('p', 'stake', t('hall.stakeAt', { n: fmt(m.stake) }));
-    if (m.fast) sk.append(' ', node('i', 'tag', t('hall.fast')));
-    side.appendChild(sk);
+    side.appendChild(node('p', 'stake', t(m.stake ? 'hall.stakeAt' : 'hall.noStake', { n: fmt(m.stake) })));
     const mine = m.you === m.host;
     if (m.finding > 0) {
       const p = node('p', 'lead', t('net.finding', { n: m.finding }));
       p.setAttribute('role', 'status');
       side.appendChild(p);
     } else side.appendChild(node('p', 'note', m.pub ? t('hall.fill') : t(mine ? 'net.hintHost' : 'net.hintGuest')));
-    side.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(m.stake) })));
+    if (m.stake) side.appendChild(node('p', 'note', t('hall.stakeNote', { n: fmt(m.stake) })));
     const out = node('p', 'note');
     out.setAttribute('role', 'status');
     const acts = node('div', 'wt-acts');
@@ -913,9 +918,8 @@ var UI = (function () {
     redraw();
   }
 
-  function rooms(n, f) {
+  function rooms(n) {
     at.n = n;
-    at.f = f || {};
     redraw();
   }
 
@@ -945,12 +949,12 @@ var UI = (function () {
       const ok = afford(me, s);
       const b = raw('room', () => {
         connecting(false, t('hall.finding'));
-        Net.play(s, at.fast);
+        Net.play(s);
       });
       b.disabled = !ok;
       b.dataset.k = 'room' + s;
       b.appendChild(node('b', 'plaque', short(s)));
-      const here = (at.fast ? at.f : at.n)[s] || 0;
+      const here = at.n[s] || 0;
       b.appendChild(miniTable(here));
       const meta = node('span', 'rmeta');
       meta.appendChild(node('b', '', t('hall.min', { n: fmt(at.entry * s) })));
@@ -983,7 +987,7 @@ var UI = (function () {
     return m;
   }
 
-  // the same wood cards as the rooms, on a tab of their own: the Fast switch does not reach them
+  // the same wood cards as the rooms, on a tab of their own
   function cupCards(me) {
     const list = node('div', 'rooms cups');
     for (const buy of BUYS) {
@@ -1146,7 +1150,8 @@ var UI = (function () {
       actions: [
         {
           label: t('net.createGo'), kind: 'primary', fn: () => {
-            if (!f.ok()) return notice(t('net.err.poor'));
+            const bad = f.problem();
+            if (bad) return notice(t(bad));
             connecting(true, t('net.title'));
             Net.create(f.get());
           }
@@ -1241,14 +1246,6 @@ var UI = (function () {
     head.appendChild(node('h2', 'hl-h', t(on ? cups ? 'cup.title' : 'hall.pick' : 'start.title')));
     const bn = banner();
     if (bn) head.appendChild(bn);
-    if (on && !cups) {
-      const mode = pace(at.fast, v => { setFast(v); draw();
-        const e = document.querySelector('[data-f="mode:' + (v ? 'fast' : 'normal') + '"]');
-        if (e) e.focus({ preventScroll: true });
-      });
-      mode.classList.add('hl-mode');
-      head.insertBefore(mode, bn);
-    }
     main.appendChild(head);
     if (on) main.appendChild(cups ? cupCards(me) : roomCards(me));
     else if (at.net === 'wait') main.appendChild(waiting());
@@ -1260,7 +1257,7 @@ var UI = (function () {
       const q = ok[Math.min(1, ok.length - 1)];
       const quick = twoLines('primary', t('hall.quick'), q ? t('hall.quickAt', { n: fmt(q) }) : t('hall.locked'), () => {
         connecting(false, t('hall.finding'));
-        Net.play(q, at.fast);
+        Net.play(q);
       });
       quick.disabled = !q;
       quick.dataset.k = 'quick';

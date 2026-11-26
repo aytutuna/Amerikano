@@ -291,7 +291,7 @@
     const r = st.res;
     const cup = st.cup;
     const prize = cup && cup.round === 'final' ? cup.prizes[cup.place - 1] : 0;
-    if (cup ? prize || (r && r.xp) : r) {
+    if (cup ? prize || (r && r.xp) : r && (st.stake || r.xp)) {
       const me = Account.me();
       const res = node('div', 'hres');
       if (!cup) res.setAttribute('aria-label', t('end.change', { n: r.net, abs: fmt(r.net) }) + (r.xp ? ' ' + t('end.xp', { n: r.xp }) : '') + (r.tok ? ' ' + t('end.tokens', { n: r.tok }) : ''));
@@ -385,7 +385,7 @@
       tr.appendChild(td);
       tr.appendChild(node('td', 'num', num(st.players[p].score)));
       // online the pot is in chips of stake/10, as in the result above
-      if (!st.cup) tr.appendChild(node('td', 'num', signed(st.res ? st.players[p].chips * st.stake / 10 : st.players[p].chips)));
+      if (!st.cup) tr.appendChild(node('td', 'num', signed(st.res && st.stake ? st.players[p].chips * st.stake / 10 : st.players[p].chips)));
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
@@ -408,7 +408,7 @@
         sentence = t('end.split', v);
       }
       body.appendChild(node('p', 'pline', sentence));
-      if (st.res) {
+      if (st.res && st.stake) {
         body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.loc()), unit: (st.stake / 10).toLocaleString(I18n.loc()) })));
       }
     }
