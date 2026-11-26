@@ -1772,6 +1772,46 @@ async function rematchPersona() {
   run.h.ws.close();
 }
 
+// requests to computer players: some are declined after a while, the rest never answered, and they never accept
+async function computerFriends() {
+  const me = await guest();
+  const human = await guest();
+  sql("DELETE FROM personas WHERE created = 7");
+  sql('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 60) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+    "SELECT lower(printf('%02x', i)) || lower(printf('%02x', i)) || '0000000000000000000000000000', 300 + i, '1,1,1,0', 3, 300, 9, 3, 5000, 0, 'parked', 0, 7 FROM n");
+  const pids = sql('SELECT id FROM personas WHERE created = 7 ORDER BY name_seed').map(x => x.id);
+  const mine = await call('POST', '/api/friend', me, { id: human.id });
+  assert.deepStrictEqual([mine.status, mine.body], [200, { ok: true }]);
+  const t0 = Date.now();
+  for (const id of pids) {
+    const r = await call('POST', '/api/friend', me, { id: id });
+    assert.deepStrictEqual([r.status, r.body], [mine.status, mine.body], 'the answer is the one a person would get');
+  }
+  const rows = sql("SELECT b, decide FROM friends WHERE a = " + who(me) + " AND b IN (SELECT id FROM personas WHERE created = 7)");
+  assert.strictEqual(rows.length, 60);
+  const timed = rows.filter(x => x.decide !== null);
+  assert(timed.length >= 10 && timed.length <= 38, 'about 40 percent get a time: ' + timed.length + ' of 60');
+  assert(timed.every(x => x.decide >= t0 + 600000 && x.decide <= Date.now() + 3 * DAY), 'between ten minutes and three days away');
+  assert.strictEqual(sql('SELECT decide FROM friends WHERE a = ' + who(me) + ' AND b = ' + who(human))[0].decide, null, 'a person\'s request has no time');
+
+  // the sweep removes what is due and nothing else
+  const [due, later] = [timed[0].b, timed[1].b];
+  const never = rows.find(x => x.decide === null).b;
+  const hour = Math.floor(Date.now() / 3600000) * 3600000;
+  sql("UPDATE friends SET decide = " + (hour - 1000) + " WHERE a = " + who(me) + " AND b = '" + due + "'");
+  await tick(hour);
+  const left = sql('SELECT b FROM friends WHERE a = ' + who(me)).map(x => x.b);
+  assert(!left.includes(due), 'a request whose time has passed is gone, like a decline');
+  assert(left.includes(later) && left.includes(never) && left.includes(human.id), 'the others are still waiting');
+  assert.strictEqual((await call('GET', '/api/player/' + due, me)).body.rel, 'none');
+  assert.strictEqual((await call('GET', '/api/player/' + never, me)).body.rel, 'sent');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM friends WHERE state = 'friend' AND (a IN (SELECT id FROM personas) OR b IN (SELECT id FROM personas))")[0].n, 0, 'they never accept');
+  assert.deepStrictEqual((await call('GET', '/api/friends', me)).body.friends, []);
+  sql('DELETE FROM personas WHERE created = 7');
+  sql('DELETE FROM friends WHERE a = ' + who(me));
+  console.log('friends: ' + timed.length + ' of 60 requests got a time, the due one was swept, none accepted, answers match a person\'s');
+}
+
 function schema() {
   const text = require('fs').readFileSync(__dirname + '/../migrations/0004_personas.sql', 'utf8');
   assert(!/insert/i.test(text), 'the migration only creates the table');
@@ -6149,6 +6189,7 @@ process.on('unhandledRejection', e => {
   await sec('whereabouts', () => whereabouts());
   await sec('boards', () => boards());
   await sec('rematchPersona', () => rematchPersona());
+  await sec('computerFriends', () => computerFriends());
   await sec('board', () => board());
   await sec('fixes', () => fixes());
   await sec('held', () => held());

@@ -68,7 +68,9 @@ async function befriend(db, p, id) {
   }
   const full = !q.persona && await count(db, "SELECT count(*) AS n FROM friends WHERE b = ? AND state = 'req'", id) >= CAP;
   if (full) return fail('cap', 409);
-  await db.prepare("INSERT OR IGNORE INTO friends (a, b, state) VALUES (?, ?, 'req')").bind(p.id, id).run();
+  // a computer player declines 4 in 10 requests some time between ten minutes and three days later and leaves the rest unanswered
+  const decide = q.persona && Math.random() < 0.4 ? Date.now() + 600000 + Math.floor(Math.random() * (3 * DAY - 600000)) : null;
+  await db.prepare("INSERT OR IGNORE INTO friends (a, b, state, decide) VALUES (?, ?, 'req', ?)").bind(p.id, id, decide).run();
   return 'req';
 }
 
@@ -171,6 +173,11 @@ export async function simulate(env, now) {
     'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + CAST(?2 * factor * ' + jitter + ' AS INTEGER), ' +
     'week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + CAST(?3 * factor * ' + jitter + ' AS INTEGER), week = ?1 WHERE busy IS NULL OR busy_at < ?4')
     .bind(week(now), Math.round(rate.won), Math.round(rate.xp), now - 3 * 3600000).run();
+}
+
+// the requests to computer players whose time has come are dropped, as a person declining would
+export function decline(env, now) {
+  return env.DB.prepare("DELETE FROM friends WHERE state = 'req' AND decide IS NOT NULL AND decide <= ?").bind(now).run();
 }
 
 export async function social(request, env, ctx) {

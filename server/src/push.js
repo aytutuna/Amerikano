@@ -1,7 +1,7 @@
 import Names from '../../www/js/names.js';
 import { unb64, b64 } from './apple.js';
 import { reward } from './account.js';
-import { week, simulate } from './social.js';
+import { week, simulate, decline } from './social.js';
 import { rollup } from './stats.js';
 import { setting } from './admin.js';
 import { digest } from './mail.js';
@@ -287,7 +287,7 @@ export async function cron(env, now) {
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
   // weeklies first, as they only have work on Mondays; one failing job does not stop the others. The daily push is tried on
   // every tick, so a crowd that does not fit one run is served by the next within its window.
-  const jobs = hourly(now) ? [rollup, dayTotals, simulate, cleanup, digest, ...keys ? [weeklies] : []] : [];
+  const jobs = hourly(now) ? [rollup, dayTotals, simulate, decline, cleanup, digest, ...keys ? [weeklies] : []] : [];
   if (keys) jobs.push(dailies);
   for (const job of jobs) {
     try {
