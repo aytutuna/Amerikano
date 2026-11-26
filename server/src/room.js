@@ -346,6 +346,8 @@ export class Room extends DurableObject {
     if (i < 0) {
       if (m.token) return this.miss(ws, a, p);
       i = r.seats.findIndex(s => s && s.pid === p.id);
+      // a seat the player left is played on by a stand-in and is not theirs any more
+      if (i >= 0 && r.seats[i].bot && !r.seats[i].fake) return this.refuse(ws, 'left');
       if (i < 0) {
         if (r.started) return this.miss(ws, a, p);
         if (r.stake && !signedIn(p)) return this.miss(ws, a, p, 'guest');

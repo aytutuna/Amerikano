@@ -1837,6 +1837,55 @@ async function friendTables() {
   cb.ws.close();
 }
 
+// a seat that was left is not given back to a join without its token
+async function noRetake() {
+  const [a, b, c] = [link(await guest()), await guest(), await guest()];
+  link(b, c);
+  const host = client('/ws/new');
+  await host.ready;
+  host.send({ t: 'create', auth: a.auth, players: 3, games: 3, stake: 100 });
+  const ja = await host.next(m => m.t === 'joined');
+  const join = async acc => {
+    const x = client('/ws/' + ja.code);
+    await x.ready;
+    const r = x.next(m => m.t === 'joined' || m.t === 'error');
+    x.send({ t: 'join', auth: acc.auth });
+    const m = await r;
+    return [m, x];
+  };
+  // before the start a seat is simply free again
+  let [jb, xb] = await join(b);
+  assert.strictEqual(jb.t, 'joined');
+  xb.send({ t: 'leave' });
+  await sleep(200);
+  [jb, xb] = await join(b);
+  assert.strictEqual(jb.t, 'joined', 'a pre-start leave frees the seat');
+  const [jc, xc] = await join(c);
+  assert.strictEqual(jc.t, 'joined');
+  const going = [host, xb, xc].map(x => x.next(m => m.t === 'state'));
+  host.send({ t: 'start' });
+  await within(Promise.all(going), 20000, 'the match starts');
+  xb.send({ t: 'leave' });
+  await sleep(300);
+  const [again] = await join(b);
+  assert.strictEqual(again.k, 'left', 'the seat was left');
+  // not listed again: the account can sit somewhere else
+  const hb = await hub(b);
+  const sat = hb.next(m => m.t === 'seated' || m.t === 'error');
+  hb.send({ t: 'quick', stake: 100 });
+  assert.strictEqual((await sat).t, 'seated', 'and is not held by the table it left');
+  // a player who only lost the connection comes back with the token
+  xc.ws.close();
+  await sleep(200);
+  const back = client('/ws/' + ja.code);
+  await back.ready;
+  const r = back.next(m => m.t === 'joined' || m.t === 'error');
+  back.send({ t: 'join', token: jc.token });
+  assert.strictEqual((await r).t, 'joined', 'the token still brings its owner back');
+  console.log('noRetake: a left seat is refused, a dropped one is not');
+  for (const x of [host, xb, back, hb]) x.ws.close();
+}
+
 const within = (p, ms, what) => {
   let t;
   const lim = new Promise((r, j) => { t = setTimeout(() => j(new Error('timeout: ' + what)), ms); });
@@ -2271,6 +2320,16 @@ async function cupRun(n) {
       if (x.leaver) r.ready.then(() => sleep(300)).then(() => {
         r.send({ t: 'leave' });
         res({ t: 'left' });
+        // the seat is a stand-in's now, and a join without its token is turned away
+        x.again = sleep(400).then(async () => {
+          const t = client('/ws/' + m.code);
+          await t.ready;
+          const got = t.next(z => z.t === 'error' || z.t === 'joined');
+          t.send({ t: 'join', auth: acc.auth });
+          const z = await got;
+          t.ws.close();
+          return z;
+        });
       });
       // the personas of this tournament stay level so no match brings a bonus, and their chips are noted
       if (!snap) {
@@ -2316,6 +2375,7 @@ async function cupRun(n) {
     const end = x.msgs.find(m => m.t === 'cupend');
     if (x.leaver) {
       assert(!end && rows.length === 1 && !x.msgs.some(m => m.t === 'cupout'), 'the leaver got nothing');
+      assert.strictEqual((await x.again).k, 'left', 'a left seat of a tournament table is not taken back');
       const sat = x.h.next(m => m.t === 'seated');
       x.h.send({ t: 'quick', stake: 100 });
       await within(sat, 5000, 'the leaver is free');
@@ -4444,6 +4504,7 @@ process.on('unhandledRejection', e => {
   await sec('held', () => held());
   await sec('pace', () => pace());
   await sec('friendTables', () => friendTables());
+  await sec('noRetake', () => noRetake());
   await sec('regions', () => regions());
   await sec('rematchBoth', () => rematchBoth());
   await sec('rematchOne', () => rematchOne());
