@@ -1,6 +1,7 @@
 import { look } from './persona.js';
 import { verify, who, worn, isVip, json, fail } from './account.js';
 import { setting } from './admin.js';
+import { notHeld, onHold } from './friend.js';
 
 const DAY = 86400000;
 const CAP = 200;
@@ -115,8 +116,9 @@ async function friends(env, p) {
 async function rank(db, row) {
   const w = week();
   const cur = row.week === w ? row.week_won : 0;
-  if (!cur) return { won: 0, rank: null };
-  const ahead = await db.prepare('SELECT (SELECT count(*) FROM players WHERE week = ?1 AND week_won > ?2) + (SELECT count(*) FROM personas WHERE week = ?1 AND week_won > ?2) AS n').bind(w, cur).first();
+  // a pair held for a look by the admin is out of the rankings, and so is what it won
+  if (!cur || await onHold(db, row.id)) return { won: 0, rank: null };
+  const ahead = await db.prepare('SELECT (SELECT count(*) FROM players WHERE week = ?1 AND week_won > ?2 AND ' + notHeld('id') + ') + (SELECT count(*) FROM personas WHERE week = ?1 AND week_won > ?2) AS n').bind(w, cur).first();
   return { won: cur, rank: ahead.n + 1 };
 }
 
@@ -136,11 +138,11 @@ async function profile(db, p, id) {
 
 async function top(db, p) {
   const w = week();
-  const wk = await db.prepare('SELECT id, name_seed, avatar, level, week_won FROM (SELECT id, name_seed, avatar, level, week_won FROM players WHERE week = ?1 AND week_won > 0 UNION ALL SELECT id, name_seed, avatar, level, week_won FROM personas WHERE week = ?1 AND week_won > 0) ORDER BY week_won DESC, id LIMIT ?2').bind(w, TOP).all();
-  const lv = await db.prepare('SELECT id, name_seed, avatar, level, xp FROM (SELECT id, name_seed, avatar, level, xp FROM players WHERE xp > 0 UNION ALL SELECT id, name_seed, avatar, level, xp FROM personas WHERE xp > 0) ORDER BY level DESC, xp DESC, id LIMIT ?').bind(TOP).all();
+  const wk = await db.prepare('SELECT id, name_seed, avatar, level, week_won FROM (SELECT id, name_seed, avatar, level, week_won FROM players WHERE week = ?1 AND week_won > 0 AND ' + notHeld('id') + ' UNION ALL SELECT id, name_seed, avatar, level, week_won FROM personas WHERE week = ?1 AND week_won > 0) ORDER BY week_won DESC, id LIMIT ?2').bind(w, TOP).all();
+  const lv = await db.prepare('SELECT id, name_seed, avatar, level, xp FROM (SELECT id, name_seed, avatar, level, xp FROM players WHERE xp > 0 AND ' + notHeld('id') + ' UNION ALL SELECT id, name_seed, avatar, level, xp FROM personas WHERE xp > 0) ORDER BY level DESC, xp DESC, id LIMIT ?').bind(TOP).all();
   let up = null;
-  if (p.xp > 0) {
-    const ahead = await db.prepare('SELECT (SELECT count(*) FROM players WHERE level > ?1 OR (level = ?1 AND xp > ?2)) + (SELECT count(*) FROM personas WHERE level > ?1 OR (level = ?1 AND xp > ?2)) AS n').bind(p.level, p.xp).first();
+  if (p.xp > 0 && !await onHold(db, p.id)) {
+    const ahead = await db.prepare('SELECT (SELECT count(*) FROM players WHERE (level > ?1 OR (level = ?1 AND xp > ?2)) AND ' + notHeld('id') + ') + (SELECT count(*) FROM personas WHERE level > ?1 OR (level = ?1 AND xp > ?2)) AS n').bind(p.level, p.xp).first();
     up = ahead.n + 1;
   }
   return json({

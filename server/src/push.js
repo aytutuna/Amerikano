@@ -6,6 +6,7 @@ import { rollup } from './stats.js';
 import { setting } from './admin.js';
 import { digest } from './mail.js';
 import { dayTotals } from './flow.js';
+import { notHeld, pairs } from './friend.js';
 import more from './text.js';
 
 const DAY = 86400000;
@@ -254,9 +255,9 @@ async function weeklies(env, now) {
   const last = week(now) - 1;
   const z = zone(now, 10, 5) + ' AND (' + Math.floor(now) + ' - tz * 60000) / ' + DAY + ' % 7 = 4 AND (' + Math.floor(now) + ' - 4 * ' + DAY + ') / ' + 7 * DAY + ' = (' + Math.floor(now) + ' - tz * 60000 - 4 * ' + DAY + ') / ' + 7 * DAY;
   const sql = 'UPDATE players SET week_sent = ?1 WHERE id IN (SELECT id FROM players WHERE id IN (SELECT player FROM devices WHERE ' + z +
-    ') AND push_on = 1 AND push_week = 1 AND week_sent < ?1 AND ' + fin('', '?1') + ' > 0 ORDER BY week_sent LIMIT ?2) RETURNING id, ' + fin('', '?1') +
-    ' AS won, (SELECT count(*) FROM players q WHERE q.week = ?1 AND q.week_won > ' + fin('players.', '?1') +
-    ') + (SELECT count(*) FROM players q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') +
+    ') AND push_on = 1 AND push_week = 1 AND week_sent < ?1 AND ' + fin('', '?1') + ' > 0 AND ' + notHeld('id') + ' ORDER BY week_sent LIMIT ?2) RETURNING id, ' + fin('', '?1') +
+    ' AS won, (SELECT count(*) FROM players q WHERE q.week = ?1 AND q.week_won > ' + fin('players.', '?1') + ' AND ' + notHeld('q.id') +
+    ') + (SELECT count(*) FROM players q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') + ' AND ' + notHeld('q.id') +
     ') + (SELECT count(*) FROM personas q WHERE q.week = ?1 AND q.week_won > ' + fin('players.', '?1') +
     ') + (SELECT count(*) FROM personas q WHERE q.prev_week = ?1 AND q.prev_won > ' + fin('players.', '?1') + ') + 1 AS place';
   await serve(env, 'week', 'week_sent', n => env.DB.prepare(sql).bind(last, n), z, p => ({ won: p.won, rank: p.place }));
@@ -289,7 +290,7 @@ export async function cron(env, now) {
   const keys = !!(env.APNS_KEY && env.APNS_KEY_ID) || !!(env.FCM_KEY && env.FCM_PROJECT);
   // weeklies first, as they only have work on Mondays; one failing job does not stop the others. The daily push is tried on
   // every tick, so a crowd that does not fit one run is served by the next within its window.
-  const jobs = hourly(now) ? [rollup, dayTotals, simulate, decline, cleanup, digest, ...keys ? [weeklies] : []] : [];
+  const jobs = hourly(now) ? [rollup, dayTotals, simulate, decline, pairs, cleanup, digest, ...keys ? [weeklies] : []] : [];
   if (keys) jobs.push(dailies);
   for (const job of jobs) {
     try {

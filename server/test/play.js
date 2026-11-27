@@ -4273,6 +4273,13 @@ async function push() {
   set(w8, lw, 450);
   // already won this week: last week is in the prev columns
   set(w9, lw + 1, 100, ', prev_week = ' + lw + ', prev_won = 400');
+  // a pair held for a look gets no weekly push and is not counted ahead of anyone
+  const [h1, h2] = [await guest(), await guest()];
+  await mk(h1, [['apns', 0, 'en']]);
+  await mk(h2, [['apns', 0, 'en']]);
+  set(h1, lw, 1000);
+  set(h2, lw, 950);
+  sql("INSERT INTO flags (kind, a, b, x, y, at) VALUES ('pair', " + who(h1) + ', ' + who(h2) + ', 0, 0, ' + Date.now() + ')');
   // computer players are on the board: one ahead of most with last week's chips in the week columns, one with them in the prev columns
   sql('DELETE FROM personas WHERE created = 5');
   const bot = (i, extra) => sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, week, week_won, prev_week, prev_won) VALUES ('" + String(i).repeat(32) + "', " + (900 + i) + ", '1,1,1,0', 3, 300, 9, 3, 5000, 0, 0, 5, " + extra + ')');
@@ -4286,6 +4293,7 @@ async function push() {
   assert.deepStrictEqual(wm(w2)[0].message.notification, { title: 'Haftalık sıralama', body: 'Geçen hafta 500 çip kazandın ve sıralamada 5. oldun.' });
   assert.deepStrictEqual(wm(w3)[0].body.aps.alert.body, 'You won 900 chips last week and finished #1.');
   assert.strictEqual(wm(w9)[0].message.notification.body, 'You won 400 chips last week and finished #8.', 'a player who already won this week still gets last week\'s rank, with the computer players in it');
+  assert.strictEqual(wm(h1).length + wm(h2).length, 0, 'a flagged pair gets no weekly push');
   for (const [acc, why] of [[w4, 'won nothing last week'], [w5, 'switched off'], [w7, 'no chips won']]) assert.strictEqual(wm(acc).length, 0, why);
   assert.strictEqual(wm(w6).length + wm(w8).length, 0, 'in a zone ahead the clock is not Monday morning, or the UTC week has not turned');
   seen.push(...f.apns, ...f.fcm);
@@ -5553,6 +5561,87 @@ async function heldWins() {
   console.log('heldWins: deleting the account removes them');
 }
 
+// A pair that moves chips one way is flagged and held out of the rankings until the admin clears it.
+async function pairs() {
+  const hex = () => crypto.randomBytes(16).toString('hex');
+  const NOW = Date.now();
+  let n = 0;
+  const seed = (kind, stake, rows, at) => {
+    const m = 'pr' + ++n + '-' + NOW;
+    sql('INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at, net) VALUES ' + rows.map(([p, net, fake], i) => "('" + m + "', '" + m + "', '" + kind + "', " + stake + ", '" + p + "', " + (fake ? 1 : 0) + ', ' + i + ', ' + at + ', ' + net + ')').join(', '));
+  };
+  const ago = i => NOW - i * 1000;
+  // a loss of 10,000 at the 10,000 table is -10,700 with the fee
+  const pass = (from, to, times, extra = []) => {
+    for (let i = 0; i < times; i++) seed('friend', 10000, [[from, -10700], [to, 10000], ...extra], ago(i));
+  };
+  const [x1, y1] = [await guest(), await guest()];
+  const [x2, y2, x3, y3, x4, f4, x5, y5, z5, x6, y6] = Array.from({ length: 11 }, hex);
+  pass(x1.id, y1.id, 5);
+  pass(x2, y2, 5);
+  pass(y2, x2, 2);
+  pass(x3, y3, 4);
+  seed('friend', 10000, [[x3, -10700], [y3, 10000]], NOW - 8 * DAY);
+  for (let i = 0; i < 10; i++) seed('friend', 10000, [[x4, -10700], [f4, 10000, 1]], ago(i));
+  for (let i = 0; i < 6; i++) seed('friend', 10000, [[x5, -10700], [y5, 5000], [z5, 5000]], ago(i));
+  pass(x6, y6, 5);
+  // the other way of looking: most of the last 20 matches with one partner, lost to
+  const run = (r, s, times, others, kind, at0 = 0) => {
+    for (let i = 0; i < times; i++) seed(kind, 100, [[r, -105], [s, 100]], ago(at0 + i));
+    for (let i = 0; i < others; i++) seed('pub', 100, [[r, -105], [hex(), 100]], ago(at0 + times + i));
+  };
+  const [r1, s1, r2, s2, r3, s3, r4, f5] = Array.from({ length: 8 }, hex);
+  run(r1, s1, 16, 4, 'pub');
+  run(r2, s2, 15, 5, 'pub');
+  // sixteen friend matches that are older than 84 public ones are not among the last 20
+  run(r3, s3, 16, 0, 'friend', 84);
+  for (let i = 0; i < 84; i++) seed('pub', 100, [[r3, -105], [hex(), 100]], ago(i));
+  for (let i = 0; i < 20; i++) seed('pub', 100, [[r4, -105], [f5, 100, 1]], ago(i));
+
+  const big = 8e15;
+  const me = await guest();
+  sql('UPDATE players SET week = ' + WEEK() + ', week_won = ' + (big + 100) + ' WHERE id = ' + who(me));
+  sql('UPDATE players SET week = ' + WEEK() + ', week_won = ' + (big + 200) + ', xp = 1e13, level = 200000 WHERE id = ' + who(x1));
+  sql('UPDATE players SET week = ' + WEEK() + ', week_won = ' + (big + 150) + ', xp = 9e12, level = 190000 WHERE id = ' + who(y1));
+  let top = (await call('GET', '/api/top', me)).body;
+  assert.deepStrictEqual(top.week.slice(0, 2).map(r => r.id), [x1.id, y1.id]);
+  assert.strictEqual(top.you.rank, 3);
+
+  const hour = Math.floor(NOW / 3600000) * 3600000;
+  await tick(hour);
+  const open = sql("SELECT id, a, b, x, y FROM flags WHERE kind = 'pair' AND cleared IS NULL AND (a IN ('" + [x1.id, x2, x3, x4, x5, y5, z5, x6, r1, r2, r3, r4].join("', '") + "') OR b IN ('" + [y1.id, s1, s2, s3, y2, y3, f4, f5, y6].join("', '") + "')) ORDER BY id");
+  assert.deepStrictEqual(open.map(o => o.a + ' ' + o.b).sort(), [x1.id + ' ' + y1.id, x6 + ' ' + y6, r1 + ' ' + s1].sort(), 'only the one-way pairs and the one-partner run are flagged');
+  assert.deepStrictEqual(open.filter(o => o.a === x1.id).map(o => [o.x, o.y]), [[50000, 0]]);
+  assert.deepStrictEqual(open.filter(o => o.a === r1).map(o => [o.x, o.y]), [[0, 16]]);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE who = 'auto' AND action = 'pair' AND target = " + who(x1))[0].n, 1);
+  await tick(hour);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'pair' AND a = " + who(x1))[0].n, 1, 'a second run flags nothing again');
+  console.log('pairs: one-way flows and runs of lost matches are flagged, balanced pairs, computer players and mixed partners are not');
+
+  // held out of the rankings
+  top = (await call('GET', '/api/top', me)).body;
+  assert(!top.week.some(r => r.id === x1.id || r.id === y1.id), 'neither is on the weekly board');
+  assert(!top.level.some(r => r.id === x1.id || r.id === y1.id), 'nor on the level board');
+  assert.strictEqual(top.you.rank, 1, 'and nobody counts them ahead');
+  assert.deepStrictEqual((await call('GET', '/api/top', x1)).body.you, { won: 0, rank: null });
+  const listed = (await adm('GET', 'flags', ADMIN, null, '10.9.8.1')).body.flags;
+  assert(listed.some(f => f.a === x1.id && f.b === y1.id));
+
+  // clearing brings them back and blocks a new flag for 30 days
+  const fid = open.find(o => o.a === x1.id).id;
+  assert.strictEqual((await adm('POST', 'clear', ADMIN, { id: fid }, '10.9.8.2')).status, 200);
+  assert.strictEqual((await adm('POST', 'clear', ADMIN, { id: fid }, '10.9.8.3')).status, 404);
+  top = (await call('GET', '/api/top', me)).body;
+  assert.deepStrictEqual(top.week.slice(0, 2).map(r => r.id), [x1.id, y1.id], 'cleared, they are back');
+  await tick(hour);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'pair' AND cleared IS NULL AND a = " + who(x1))[0].n, 0, 'not flagged again soon');
+  sql('UPDATE flags SET cleared = cleared - ' + 31 * DAY + ' WHERE id = ' + fid);
+  await tick(hour);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'pair' AND cleared IS NULL AND a = " + who(x1))[0].n, 1, 'after 30 days it can be');
+  console.log('pairs: held out of the boards, cleared on the admin page, quiet for 30 days');
+  sql("UPDATE players SET week_won = 0, xp = 0, level = 1 WHERE id IN ('" + [me.id, x1.id, y1.id].join("', '") + "')");
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -6406,6 +6495,7 @@ process.on('unhandledRejection', e => {
   await sec('leaveKinds', () => leaveKinds());
   await sec('friendLimits', () => friendLimits());
   await sec('heldWins', () => heldWins());
+  await sec('pairs', () => pairs());
   await sec('metrics', () => metrics());
   const rc = fakeRc();
   await rc.server.listening$;
