@@ -1,3 +1,6 @@
+// Voice is off in shipped builds until it is released; the server alone cannot turn it on.
+var BUILD_VOICE = false;
+
 var Voice = (function () {
   const ICE = [{ urls: 'stun:stun.cloudflare.com:3478' }];
   const AUDIO = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
@@ -20,7 +23,7 @@ var Voice = (function () {
 
   const V = {};
 
-  V.can = () => sfu && !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  V.can = () => BUILD_VOICE && sfu && !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   V.on = () => V.can() && !!Account.me() && Account.me().voice !== false;
   V.muted = pid => muted.has(pid);
 
@@ -300,6 +303,7 @@ var Voice = (function () {
   };
 
   V.ring = m => {
+    if (!BUILD_VOICE) return Net.say({ t: 'hang', id: m.id });
     if (call) {
       if (call.id === m.id) call.sure = true;
       return;
