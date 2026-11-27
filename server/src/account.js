@@ -10,6 +10,8 @@ const START = 5000;
 const MIN_ROOM = 1000;
 export const STAKES = [100, 500, 2500, 10000, 50000];
 export const ENTRY = 10;
+// finished public matches an account needs before it may sit at a friend table with a stake
+export const FRIEND_GAMES = 10;
 export const BUYINS = [1000, 5000, 25000];
 
 // a friend table's stake: payouts are counted in tenths of it; the top is a bound for the arithmetic, not a policy
@@ -50,6 +52,7 @@ export function barred(p, stake, pub) {
   if (!signedIn(p) && !(pub && stake <= 500)) return { k: 'guest' };
   const need = GATES[tier(stake)] || 1;
   if (p.level < need) return { k: 'level', need: need };
+  if (!pub && p.pub_games < FRIEND_GAMES) return { k: 'games', need: FRIEND_GAMES };
   // a cooldown from leaving public tables covers the stake it was earned at and every larger one
   return pub && p.cool_until > Date.now() && stake >= p.cool_stake ? { k: 'cool', left: p.cool_until - Date.now() } : null;
 }
@@ -83,7 +86,8 @@ export const levelAt = xp => {
   return n;
 };
 
-// claim: {set: {column: value}, where: 'sql with ? marks', args: [...]} makes a once-only grant (daily, bailout) one batch with its log row
+// claim: {set: {column: value}, where: 'sql with ? marks', args: [...]} makes a once-only grant (daily, bailout) one batch with its log row;
+// also: statements that run after the log row in the same batch, each guarding itself on that row
 function creditStmts(db, id, delta, reason, ref, claim) {
   const set = claim ? Object.keys(claim.set) : [];
   const stmts = [
@@ -92,6 +96,7 @@ function creditStmts(db, id, delta, reason, ref, claim) {
   ];
   // a claim that pays nothing still sets its columns but leaves no log row
   if (delta) stmts.push(db.prepare('INSERT INTO chip_log (player, delta, reason, at, ref) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, Date.now(), ref || null));
+  if (claim && claim.also) stmts.push(...claim.also);
   return stmts;
 }
 
@@ -108,6 +113,15 @@ export async function credit(db, id, delta, reason, ref, claim) {
     if (ref && /UNIQUE/.test(e.message)) return true;
     throw e;
   }
+}
+
+// Several credits that stand or fall together: each one carries the guard (sql with ? marks, over rows that `done` changes), and
+// `done` goes last. True when this run was the one that got through, so a repeat or a second click changes nothing.
+export async function creditAll(db, list, guard, args, done) {
+  const stmts = list.flatMap(c => creditStmts(db, c.id, c.delta, c.reason, c.ref, { set: {}, where: guard, args: args }));
+  stmts.push(done);
+  const r = await db.batch(stmts);
+  return r[r.length - 1].meta.changes === 1;
 }
 
 // The deal's charge in one batch: the held amount (ref <match>:in) and the table fee (ref <match>:fee) both go, or neither.
@@ -208,9 +222,9 @@ export function seat(p) {
   return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, wear: worn(p, ['frame', 'plate', 'back']), vip: isVip(p) };
 }
 
-// xp, games and wins for one finished match; a level-up pays 1,000 chips times the new level
+// xp, games and wins for one finished match (and the public one that opens friend tables); a level-up pays 1,000 chips times the new level
 export async function award(db, id, add) {
-  await db.prepare('UPDATE players SET xp = xp + ?, games = games + 1, wins = wins + ? WHERE id = ?').bind(add.xp, add.win ? 1 : 0, id).run();
+  await db.prepare('UPDATE players SET xp = xp + ?, games = games + 1, wins = wins + ?, pub_games = pub_games + ? WHERE id = ?').bind(add.xp, add.win ? 1 : 0, add.pub ? 1 : 0, id).run();
   const p = await db.prepare('SELECT xp, level FROM players WHERE id = ?').bind(id).first();
   if (!p) return;
   const to = levelAt(p.xp);
@@ -487,6 +501,8 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM persona_flow WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM friend_day WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM held WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion

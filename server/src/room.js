@@ -1151,7 +1151,7 @@ export class Room extends DurableObject {
       await this.net(x.pid, x.net);
       x.done = true;
       this.save();
-      if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win });
+      if (x.xp) await award(this.env.DB, x.pid, { xp: x.xp, win: x.win, pub: r.pub && !r.cup });
       // a finished match pays tokens up to the day's cap; a seat taken over by a bot did not finish it
       if (x.xp && !r.seats[i].bot && await grantTokens(this.env.DB, x.pid, Catalog.MATCH, 'match', r.id + ':' + x.pid + ':tok', Catalog.DAILY)) x.tok = Catalog.MATCH;
       if (x.won) await won(this.env.DB, x.pid, x.won);

@@ -367,6 +367,7 @@
         cool: v => 'Zbyt często opuszczasz stoły. Przez ' + v.n + ' min nie możesz usiąść przy tym stole ani przy większym.',
         guest: 'Zaloguj się przez Apple, aby to odblokować. Goście mogą grać przy dwóch najmniejszych stołach i przy stołach ze znajomymi ze stawką 0.',
         level: v => 'Aby grać przy tym stole, potrzebujesz poziomu ' + v.n + '.',
+        games: v => 'Stół ze znajomymi ze stawką wymaga ' + v.n + ' zakończonych partii przy stołach publicznych. Zagraj najpierw kilka z nich.',
         host: 'Partię może zacząć tylko gospodarz.',
         opts: 'Te ustawienia partii są niedozwolone.',
         join: 'Najpierw dołącz do pokoju.',

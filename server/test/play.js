@@ -78,9 +78,9 @@ async function guest() {
   return Object.assign(r.body, { auth: r.body.id + '.' + r.body.secret });
 }
 
-// friend tables with a stake are for accounts with an Apple identity; this gives each of these one
+// friend tables with a stake are for accounts with an Apple identity and 10 public matches; this gives each of these both
 function link(...accs) {
-  sql("UPDATE players SET apple = 'test-' || id WHERE apple IS NULL AND id IN (" + accs.map(a => "'" + a.id + "'").join(', ') + ')');
+  sql("UPDATE players SET apple = 'test-' || id, pub_games = 10 WHERE apple IS NULL AND id IN (" + accs.map(a => "'" + a.id + "'").join(', ') + ')');
   return accs[0];
 }
 
@@ -5385,6 +5385,91 @@ async function dealfail() {
   console.log('dealfail: a tournament table that cannot deal refunds the tournament');
 }
 
+// Friend tables with a stake are for accounts with 10 finished public matches, whichever way they come in.
+async function friendLimits() {
+  const mk = async (games, lv = 1) => {
+    const x = link(level(lv, await guest()));
+    sql('UPDATE players SET pub_games = ' + games + ', chips = 50000000 WHERE id = ' + who(x));
+    return x;
+  };
+  const made = async (acc, stake, players = 3) => {
+    const c = client('/ws/new');
+    await c.ready;
+    const r = c.next(m => m.t === 'joined' || m.t === 'error');
+    c.send({ t: 'create', auth: acc.auth, players: players, games: players, stake: stake });
+    return [await r, c];
+  };
+  const ask = async (acc, o) => {
+    const h = await hub(acc);
+    const r = h.next(m => m.t === 'error' || m.t === 'seated');
+    h.send(o);
+    const m = await r;
+    h.ws.close();
+    return m;
+  };
+
+  // create and join
+  const [no, nc] = await made(await mk(9), 100);
+  assert.deepStrictEqual([no.k, no.need], ['games', 10], '9 public matches cannot host a table with a stake');
+  nc.ws.close();
+  const [free, fc] = await made(await mk(0), 0);
+  assert.strictEqual(free.t, 'joined', 'a table for nothing is open to anyone');
+  fc.ws.close();
+  const [ok, host] = await made(await mk(10), 100);
+  assert.strictEqual(ok.t, 'joined', '10 can');
+  const join = async acc => {
+    const j = client('/ws/' + ok.code);
+    await j.ready;
+    j.send({ t: 'join', auth: acc.auth });
+    const m = await j.next(m => m.t === 'error' || m.t === 'joined');
+    j.ws.close();
+    return m;
+  };
+  const [j9, j0] = [await join(await mk(9)), await join(await mk(0))];
+  assert.deepStrictEqual([j9.k, j9.need, j0.k], ['games', 10, 'games'], 'nor can they sit at one');
+  assert.strictEqual((await join(await mk(10))).t, 'joined');
+  const [gno, gc] = await made(await guest(), 100);
+  assert.strictEqual(gno.k, 'guest', 'a guest has no such table');
+  gc.ws.close();
+  host.ws.close();
+  console.log('friendLimits: create and join need 10 public matches');
+
+  // an opened room: sit by code and quick play meet the same rule, a computer player does not
+  // the accounts first: the table fills with computer players a few seconds after it opens
+  const [young, vet, hostAcc] = [await mk(9, 4), await mk(10, 4), await mk(10, 4)];
+  const [op, oc] = await made(hostAcc, 500);
+  const opened = oc.next(m => m.t === 'room' && m.finding === 2);
+  oc.send({ t: 'start' });
+  await opened;
+  const sit = await ask(young, { t: 'sit', code: op.code });
+  assert.deepStrictEqual([sit.k, sit.need], ['games', 10], 'sit by code');
+  const quick = await ask(young, { t: 'quick', stake: 500 });
+  assert.strictEqual(quick.t, 'seated');
+  assert.notStrictEqual(quick.code, op.code, 'quick play finds the young account a public table, not the friend room');
+  const old = await ask(vet, { t: 'sit', code: op.code });
+  assert.strictEqual(old.t, 'seated', 'ten can sit there');
+  oc.ws.close();
+  console.log('friendLimits: an opened room and quick play meet the same rule');
+
+  // only a finished public match counts: not a friend table, not a seat that was left
+  const [a, b] = [await mk(0), await mk(0)];
+  const full = await quickAt(a, 100);
+  const early = await quickAt(b, 100);
+  await Promise.all([early.first, full.first]);
+  early.r.send({ t: 'leave' });
+  await within(full.done, 120000, 'match end');
+  await sleep(1500);
+  const games = acc => sql('SELECT pub_games AS n FROM players WHERE id = ' + who(acc))[0].n;
+  assert.strictEqual(games(a), 1, 'a finished public match counts');
+  assert.strictEqual(games(b), 0, 'a left one does not');
+  sql('UPDATE players SET pub_games = 10 WHERE id = ' + who(a));
+  const fr = await friendAt(a, 3, 100);
+  await within(fr.done, 120000, 'friend match end');
+  await sleep(1500);
+  assert.strictEqual(games(a), 10, 'a friend table does not');
+  console.log('friendLimits: public matches are counted when finished');
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -6236,6 +6321,7 @@ process.on('unhandledRejection', e => {
   await sec('cupRun', () => cupRun(2, 5000));
   await sec('cupAbort', () => cupAbort());
   await sec('leaveKinds', () => leaveKinds());
+  await sec('friendLimits', () => friendLimits());
   await sec('metrics', () => metrics());
   const rc = fakeRc();
   await rc.server.listening$;

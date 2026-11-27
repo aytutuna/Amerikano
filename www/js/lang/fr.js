@@ -366,6 +366,7 @@
         cool: v => 'Tu as quitté trop souvent des tables. Pendant ' + v.n + ' min, tu ne peux pas t’asseoir à cette table ni à une plus grande.',
         guest: 'Connecte-toi avec Apple pour débloquer cela. Les invités peuvent jouer aux deux plus petites tables et aux tables entre amis avec une entrée de 0.',
         level: v => 'Il faut être niveau ' + v.n + ' pour jouer à cette table.',
+        games: v => 'Une table entre amis avec une entrée demande ' + v.n + ' parties terminées aux tables publiques. Joues-en quelques-unes d’abord.',
         host: 'Seul l’hôte peut lancer la partie.',
         opts: 'Ces réglages de partie ne sont pas autorisés.',
         join: 'Rejoins d’abord une salle.',

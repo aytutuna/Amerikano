@@ -363,6 +363,7 @@
         cool: v => 'Kamu terlalu sering meninggalkan meja. Selama ' + v.n + ' menit kamu tidak bisa duduk di meja ini atau meja yang lebih besar.',
         guest: 'Masuk dengan Apple untuk membukanya. Tamu bisa bermain di dua meja terkecil dan di meja teman dengan modal 0.',
         level: v => 'Kamu perlu level ' + v.n + ' untuk bermain di meja ini.',
+        games: v => 'Meja teman dengan modal butuh ' + v.n + ' pertandingan selesai di meja publik. Mainkan beberapa di sana dulu.',
         host: 'Hanya tuan rumah yang bisa memulai pertandingan.',
         opts: 'Pengaturan pertandingan itu tidak diizinkan.',
         join: 'Gabung ke ruang dulu.',

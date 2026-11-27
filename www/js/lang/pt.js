@@ -366,6 +366,7 @@
         cool: v => 'Você saiu de mesas vezes demais. Por ' + v.n + ' min você não pode sentar nesta mesa nem em uma maior.',
         guest: 'Entre com a Apple para desbloquear. Convidados podem jogar nas duas menores mesas e em mesas de amigos com entrada 0.',
         level: v => 'Você precisa do nível ' + v.n + ' para jogar nesta mesa.',
+        games: v => 'Uma mesa de amigos com entrada exige ' + v.n + ' partidas concluídas em mesas públicas. Jogue algumas lá primeiro.',
         host: 'Só o anfitrião pode começar a partida.',
         opts: 'Essas opções de partida não são permitidas.',
         join: 'Entre em uma sala primeiro.',

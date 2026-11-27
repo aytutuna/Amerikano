@@ -365,6 +365,7 @@
         cool: v => 'Du hast zu oft Tische verlassen. Für ' + v.n + ' Min. kannst du dich nicht an diesen Tisch oder einen größeren setzen.',
         guest: 'Melde dich mit Apple an, um das freizuschalten. Gäste spielen an den zwei kleinsten Tischen und an Freundestischen mit einem Einsatz von 0.',
         level: v => 'Für diesen Tisch brauchst du Level ' + v.n + '.',
+        games: v => 'Für einen Freundestisch mit Einsatz brauchst du ' + v.n + ' beendete Partien an öffentlichen Tischen. Spiel dort erst ein paar.',
         host: 'Nur der Gastgeber kann die Partie starten.',
         opts: 'Diese Spieleinstellungen sind nicht erlaubt.',
         join: 'Tritt zuerst einem Raum bei.',

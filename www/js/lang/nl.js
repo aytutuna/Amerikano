@@ -367,6 +367,7 @@
         cool: v => 'Je bent te vaak van een tafel weggegaan. Gedurende ' + v.n + ' min kun je niet aan deze tafel of een grotere zitten.',
         guest: 'Log in met Apple om dit te ontgrendelen. Gasten kunnen aan de twee kleinste tafels en aan vriendentafels met een inzet van 0 spelen.',
         level: v => 'Voor deze tafel heb je level ' + v.n + ' nodig.',
+        games: v => 'Een vriendentafel met inzet vereist ' + v.n + ' afgeronde partijen aan openbare tafels. Speel daar eerst een paar.',
         host: 'Alleen de host kan de partij starten.',
         opts: 'Deze partij-instellingen zijn niet toegestaan.',
         join: 'Doe eerst mee in een kamer.',

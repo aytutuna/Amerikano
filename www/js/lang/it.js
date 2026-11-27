@@ -366,6 +366,7 @@
         cool: v => 'Hai lasciato i tavoli troppo spesso. Per ' + v.n + ' min non puoi sederti a questo tavolo né a uno più grande.',
         guest: 'Accedi con Apple per sbloccarlo. Gli ospiti possono giocare ai due tavoli più piccoli e ai tavoli tra amici con ingresso 0.',
         level: v => 'Per giocare a questo tavolo serve il livello ' + v.n + '.',
+        games: v => 'Un tavolo tra amici con ingresso richiede ' + v.n + ' partite concluse ai tavoli pubblici. Giocane qualcuna lì prima.',
         host: 'Solo l’host può iniziare la partita.',
         opts: 'Queste impostazioni di partita non sono consentite.',
         join: 'Entra prima in una sala.',
