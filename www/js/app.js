@@ -875,6 +875,8 @@ var App = (function () {
     html.classList.add('wait');
     let shown = false;
     let freed = false;
+    // the stored account is read from the system's store; the first screen waits a moment for it and is redrawn when it comes late
+    let late = false;
     const free = () => {
       if (freed) return;
       freed = true;
@@ -884,6 +886,7 @@ var App = (function () {
     const show = () => {
       if (shown) return;
       shown = true;
+      late = !Account.loaded();
       probe.remove();
       UI.show();
       UI.link();
@@ -918,7 +921,9 @@ var App = (function () {
       };
       poll();
     });
-    Promise.all([fonts, bars]).then(show);
+    const stored = Promise.race([Account.ready, new Promise(res => setTimeout(res, 1500))]);
+    Promise.all([fonts, bars, stored]).then(show);
+    Account.ready.then(() => { if (late && Account.has()) UI.retry(); });
   }
 
   return A;

@@ -1,19 +1,59 @@
 var Account = (function () {
   const KEY = 'amerikano.account';
   const ME = 'amerikano.me';
-  let acc = load(KEY);
-  let me = load(ME);
+  // the apps keep the key in the system's own store; the web keeps it in localStorage
+  const pref = () => window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
+  let acc = pref() ? null : load(KEY);
+  let me = pref() ? null : load(ME);
+  let loaded = !pref();
   let making = null;
 
   function load(k) {
     try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; }
   }
 
-  function keep(k, v) {
+  function local(k, v) {
     try {
       if (v) localStorage.setItem(k, JSON.stringify(v));
       else localStorage.removeItem(k);
     } catch (e) { /* kept for this session only */ }
+  }
+
+  // Until the read is in, nothing signs in and nothing is written, so a slow read cannot swap the real account for a new guest.
+  // Only a read that fails falls through to the localStorage copy, if there is one, and then to a guest.
+  const ready = !pref() ? Promise.resolve() : (async () => {
+    const p = pref();
+    const got = async k => {
+      const r = await p.get({ key: k });
+      return r && r.value ? JSON.parse(r.value) : null;
+    };
+    try {
+      acc = await got(KEY);
+      me = await got(ME);
+      const old = load(KEY);
+      if (!acc && old) {
+        const oldMe = load(ME);
+        await p.set({ key: KEY, value: JSON.stringify(old) });
+        if (oldMe) await p.set({ key: ME, value: JSON.stringify(oldMe) });
+        acc = old;
+        me = oldMe;
+        local(KEY, null);
+        local(ME, null);
+      }
+    } catch (e) {
+      acc = acc || load(KEY);
+      me = me || load(ME);
+    }
+    loaded = true;
+  })();
+  let writes = ready;
+
+  function keep(k, v) {
+    const p = pref();
+    if (!p) return local(k, v);
+    // a write that fails lands in localStorage, and one that works removes the old copy so a sign-out cannot come back
+    writes = writes.then(() => (v ? p.set({ key: k, value: JSON.stringify(v) }) : p.remove({ key: k })))
+      .then(() => local(k, null), () => local(k, v));
   }
 
   function base() {
@@ -23,6 +63,7 @@ var Account = (function () {
   }
 
   async function call(method, path, body) {
+    if (!loaded) await ready;
     const h = {};
     if (body) h['Content-Type'] = 'application/json';
     if (acc && path !== '/api/guest' && path !== '/api/apple') h.Authorization = 'Bearer ' + acc.id + '.' + acc.secret;
@@ -35,8 +76,11 @@ var Account = (function () {
   }
 
   function forget(dead) {
-    // the request needs the login, so it starts before the account goes; a dead login has no devices left to drop
-    if (acc && !dead && typeof Push !== 'undefined') Push.leave();
+    // the requests need the login, so they start before the account goes; a dead login has nothing left to end
+    if (acc && !dead) {
+      if (typeof Push !== 'undefined') Push.leave();
+      call('POST', '/api/signout').catch(() => {});
+    }
     acc = me = null;
     keep(KEY, null);
     keep(ME, null);
@@ -54,6 +98,8 @@ var Account = (function () {
 
   const A = {};
 
+  A.ready = ready;
+  A.loaded = () => loaded;
   A.has = () => !!acc;
   A.auth = () => acc && acc.id + '.' + acc.secret;
   A.me = () => me;
@@ -69,6 +115,7 @@ var Account = (function () {
 
   // the guest account is made on first use
   A.ensure = async () => {
+    await ready;
     if (!acc) {
       making = making || call('POST', '/api/guest').finally(() => { making = null; });
       const g = await making;
@@ -104,7 +151,7 @@ var Account = (function () {
   // an Apple account the server holds no token for has to send a fresh credential
   A.remove = async cred => {
     await call('DELETE', '/api/me', cred);
-    forget();
+    forget(true);
   };
 
   A.forget = forget;

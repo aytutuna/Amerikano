@@ -139,7 +139,7 @@ var Net = (function () {
   function fail(m) {
     if (m.k === 'held') return UI.held(m.seat);
     if (REFUSED.includes(m.k)) {
-      if (m.k === 'auth') Account.forget();
+      if (m.k === 'auth') Account.forget(true);
       const live = App.online();
       detach();
       drop();
@@ -221,7 +221,7 @@ var Net = (function () {
     }
     UI.close();
     if (m.k === 'auth') {
-      Account.forget();
+      Account.forget(true);
       hubClose();
       return UI.retry();
     }
