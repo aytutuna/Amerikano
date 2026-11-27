@@ -3156,7 +3156,7 @@ async function shop(rc) {
   const a = await guest();
   const b = await guest();
   assert.strictEqual((await call('GET', '/api/shop')).status, 401);
-  assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, vipUntil: 0, earned: 0, cap: 20 });
+  assert.deepStrictEqual(await shopOf(a), { tokens: 0, owned: [], worn: {}, vipUntil: 0, earned: 0, cap: 20, chips: true });
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).status, 409, 'no tokens, no frame');
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'frame-brass' })).body.error, 'broke');
   assert.strictEqual((await call('POST', '/api/shop/buy', a, { item: 'chips' })).status, 400);
@@ -3671,6 +3671,40 @@ async function sandbox() {
   assert.strictEqual((await wipe({ all: true, confirm: true }, '10.9.0.5')).body.tokens, 500, 'the kept account goes when it is chosen');
   assert.strictEqual(await tokens(w2), 0);
   console.log('sandbox: the wipe of every account skips the ones kept');
+}
+
+// where the player is and where the store charged
+async function country() {
+  const a = await guest();
+  const chips = async (acc, c) => (await call('GET', '/api/shop', acc, undefined, undefined, c ? { 'X-Country': c } : {})).body.chips;
+  const set = list => adm('POST', 'settings', ADMIN, { key: 'chipsoff', value: list }, '10.9.0.6');
+  assert.strictEqual(await chips(a), true, 'chip packs are open by default');
+  assert.strictEqual(sql('SELECT country FROM players WHERE id = ' + who(a))[0].country, null);
+  assert.strictEqual(await chips(a, 'TR'), true, 'and open in Turkey until the list says otherwise');
+  assert.strictEqual(sql('SELECT country FROM players WHERE id = ' + who(a))[0].country, 'TR', 'the country is taken from the call');
+  assert.strictEqual((await set('TR')).status, 200);
+  assert.strictEqual(await chips(a), false, 'the next call sees the list, with no restart');
+  const b = await guest();
+  assert.strictEqual(await chips(b, 'DE'), true, 'other countries are not affected');
+  assert.strictEqual((await set('TR,DE')).status, 200);
+  assert.deepStrictEqual([await chips(a), await chips(b)], [false, false]);
+  assert.strictEqual((await set('')).status, 200);
+  assert.deepStrictEqual([await chips(a), await chips(b)], [true, true], 'removing it opens the packs again');
+  // the player cannot move it
+  assert.strictEqual((await call('POST', '/api/region', a, { region: 'am' })).status, 200);
+  assert.strictEqual((await call('POST', '/api/region', a, { region: 'eu', country: 'US' })).status, 200);
+  assert.strictEqual(sql('SELECT country FROM players WHERE id = ' + who(a))[0].country, 'TR', 'POST /api/region leaves the country alone');
+  // a code that is not a country is ignored, /api/me refreshes it as well, and it follows the player on the road
+  for (const x of ['XX', 'tr1', '']) await call('GET', '/api/me', a, undefined, undefined, { 'X-Country': x });
+  assert.strictEqual(sql('SELECT country FROM players WHERE id = ' + who(a))[0].country, 'TR');
+  await call('GET', '/api/me', a, undefined, undefined, { 'X-Country': 'CA' });
+  assert.strictEqual(sql('SELECT country FROM players WHERE id = ' + who(a))[0].country, 'CA');
+  // a purchase the store already took is never refused by the switch
+  assert.strictEqual((await set('CA')).status, 200);
+  assert.strictEqual((await hook(event('NON_RENEWING_PURCHASE', a, PACK(500), 'cty-1', { country_code: 'CA' }))).status, 200);
+  assert.deepStrictEqual([(await shopOf(a)).tokens, sql("SELECT country FROM purchases WHERE tx = 'cty-1'")[0].country], [500, 'CA'], 'the switch only closes the offer, and the store country is kept on the purchase');
+  await set('');
+  console.log('country: the list closes chip packs per country at once, the country follows the call and not the player');
 }
 
 // the day's earnings stop at the cap, and a new UTC day starts again
@@ -6737,6 +6771,7 @@ process.on('unhandledRejection', e => {
   await sec('shop', () => shop(rc));
   await sec('vip', () => vip(rc));
   await sec('sandbox', () => sandbox());
+  await sec('country', () => country());
   await sec('cap', () => cap());
   rc.server.close();
   rs.server.close();

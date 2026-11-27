@@ -422,6 +422,16 @@ function guess(env, request) {
   return regionOf(request.cf && request.cf.country, request.cf && request.cf.continent);
 }
 
+// The country the call came from, kept on the account for the chip pack switch. It is the address's, so nothing the player sends
+// can change it; the dev server has no real one, so the tests pin it by header.
+export async function placed(env, p, request) {
+  const h = request.headers;
+  const c = env.PACE ? h.get('X-Country') : h.get('CF-IPCountry') || (request.cf && request.cf.country);
+  if (!/^[A-Z]{2}$/.test(c || '') || c === 'XX' || c === 'T1' || c === p.country) return;
+  await env.DB.prepare('UPDATE players SET country = ? WHERE id = ?').bind(c, p.id).run();
+  p.country = c;
+}
+
 async function region(env, p, request) {
   const b = await body(request);
   if (!REGIONS.includes(b.region)) return fail('region');
@@ -480,6 +490,7 @@ export async function api(request, env, ctx) {
     p.region = guess(env, request);
     await db.prepare('UPDATE players SET region = ?1 WHERE id = ?2 AND region IS NULL').bind(p.region, p.id).run();
   }
+  await placed(env, p, request);
   if (path === '/api/me' && method === 'DELETE') {
     let token = p.apple_refresh;
     let client = p.apple_client;

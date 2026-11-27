@@ -1,5 +1,5 @@
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, grantTokens, worn, isVip, rcBase, json, fail } from './account.js';
+import { verify, placed, player, grantTokens, worn, isVip, rcBase, json, fail } from './account.js';
 
 const DAY = 86400000;
 const SYNC_GAP = 10000;
@@ -18,7 +18,15 @@ async function body(request) {
   }
 }
 
-async function view(db, id) {
+// Chip packs are on offer everywhere except the countries on the admin page's list. Only the offer closes: a charge the store has
+// already taken is credited whatever the list says. Phase 3 adds the age and state rules here.
+export async function chipsOpen(env, p) {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'chipsoff'").first();
+  return !(p.country && row && row.value.split(',').includes(p.country));
+}
+
+async function view(env, id) {
+  const db = env.DB;
   const p = await player(db, id);
   if (!p) return fail('auth', 401);
   const { results } = await db.prepare('SELECT item FROM owned WHERE player = ?').bind(id).all();
@@ -27,7 +35,7 @@ async function view(db, id) {
   return json({
     tokens: p.tokens, owned: results.map(r => r.item).concat(vip ? Catalog.ITEMS.filter(i => i.vip).map(i => i.id) : []), worn: worn(p),
     vipUntil: vip ? p.vip_until : 0,
-    earned: p.earn_day === Math.floor(Date.now() / DAY) ? p.earned : 0, cap: Catalog.DAILY
+    earned: p.earn_day === Math.floor(Date.now() / DAY) ? p.earned : 0, cap: Catalog.DAILY, chips: await chipsOpen(env, p)
   });
 }
 
@@ -283,12 +291,13 @@ export async function shop(request, env) {
   if (path === '/api/rc' && method === 'POST') return hook(env, request);
   const p = await verify(env.DB, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
   if (!p) return fail('auth', 401);
-  if (path === '/api/shop' && method === 'GET') return view(env.DB, p.id);
+  await placed(env, p, request);
+  if (path === '/api/shop' && method === 'GET') return view(env, p.id);
   if (method !== 'POST') return fail('nope', 404);
   let err = null;
   if (path === '/api/shop/buy') err = await buy(env.DB, p, request);
   else if (path === '/api/shop/wear') err = await wear(env.DB, p, request);
   else if (path === '/api/shop/sync') err = await sync(env, p);
   else return fail('nope', 404);
-  return err || view(env.DB, p.id);
+  return err || view(env, p.id);
 }
