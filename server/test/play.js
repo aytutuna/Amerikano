@@ -2091,7 +2091,8 @@ async function flow() {
   const fakeNet = st.players.slice(1).reduce((n, p) => n + change(100, 4, p.chips), 0);
   assert.deepStrictEqual(rows[0], { kind: 'pub', stake: 100, sharp: 0, fakes: 3, humans: 1, net: net, units: net / 100, won: st.final.low === 0 ? 1 : 0, fake_net: fakeNet, day: Math.floor(Date.now() / DAY) });
   assert.strictEqual(net, change(100, 4, st.players[0].chips), 'the net is what the chips show, fee included');
-  assert.strictEqual(sql("SELECT count(*) AS n FROM persona_flow WHERE player = " + who(a))[0].n, 1, 'settling again writes nothing more');
+  sql("INSERT OR IGNORE INTO persona_flow SELECT match, player, day, kind, stake, 3, fakes, humans, net + 1, units, won, fake_net, at FROM persona_flow WHERE player = " + who(a));
+  assert.deepStrictEqual(sharpRows(a), rows, 'settling again writes nothing more');
   assert.strictEqual(sharpRows(b).length, 0, 'a match left early writes none');
   console.log('flow: a match with three computer players wrote one row with the right net and sharp count, a left match none');
 
@@ -2112,6 +2113,13 @@ async function flow() {
   const t100 = shown.flow.find(x => x.kind === 'pub' && x.stake === 100);
   assert(t100 && t100.matches >= 1 && t100.players >= 1 && typeof t100.mid === 'number' && t100.sharp === 0, 'the table is listed: ' + JSON.stringify(t100));
   assert(shown.days.some(x => x.day === day && x.kind === 'pub' && x.stake === 100 && x.matches === mine.n), 'and so are the day totals');
+  // two people at one table are one match
+  const ins = p => sql("INSERT INTO persona_flow (match, player, day, kind, stake, sharp, fakes, humans, net, units, won, fake_net, at) VALUES ('two', '" + p + "', " + Math.floor(Date.now() / DAY) + ", 'pub', 7, 0, 2, 2, 0, 0, 0, 0, " + Date.now() + ')');
+  ins('p1');
+  ins('p2');
+  const two = (await adm('GET', 'flow', ADMIN)).body.flow.find(x => x.kind === 'pub' && x.stake === 7);
+  assert.deepStrictEqual([two.matches, two.players], [1, 2], 'one match with two players: ' + JSON.stringify(two));
+  sql("DELETE FROM persona_flow WHERE match = 'two'");
   sql('UPDATE persona_flow SET day = day - 1 WHERE player = ' + who(a));
   assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
   assert.strictEqual(sql("SELECT count(*) AS n FROM persona_flow WHERE player = " + who(a))[0].n, 0, 'the account takes its rows with it');
@@ -2749,7 +2757,9 @@ async function cupCancel() {
   h.send({ t: 'quick', stake: 100 });
   assert.strictEqual((await no).k, 'busy', 'a registered player is held');
   // cancel early: under the test pace the eight can be there within half a second, and a started tournament has no way out
-  await h.next(m => m.t === 'cup' && m.n >= 3);
+  // counts already holds what came while the busy answer was awaited
+  for (let i = 0; i < 400 && Math.max(...counts) < 3; i++) await sleep(50);
+  assert(Math.max(...counts) >= 3, 'the form filled with computer players');
   const before = Math.max(...counts);
   const out = h.next(m => m.t === 'cup' && m.buy === 0);
   h.send({ t: 'cup', buy: 0 });
@@ -2855,14 +2865,14 @@ async function cupPoor() {
 
 // Humans enter and personas fill the rest. Nothing moves at the first tables, and the final pays 50/25/15/10 of eight buy-ins.
 // With six humans one leaves right after the start: it is let go at once, gets no prize, and its share stays unpaid.
-async function cupRun(n) {
-  const buy = 1000;
-  const prizes = [4000, 2000, 1200, 800];
+async function cupRun(n, buy = 1000) {
+  const sharp = buy === 1000 ? 1 : 2;
+  const prizes = [4, 2, 1.2, 0.8].map(x => x * buy);
   const hs = [];
   const finals = new Set();
   const probes = [];
   let snap = null;
-  for (const acc of await Promise.all(Array.from({ length: n }, async () => link(await guest())))) {
+  for (const acc of await Promise.all(Array.from({ length: n }, async () => level(10, link(await guest()))))) {
     const h = await hub(acc);
     const x = { acc: acc, h: h, counts: [], msgs: [], rooms: [], round: null, leaver: n === 6 && hs.length === 5, late: n === 2 };
     x.end = new Promise(res => h.handlers.push(m => {
@@ -2972,7 +2982,7 @@ async function cupRun(n) {
       assert(x.msgs.some(m => m.t === 'cupout'));
       assert.strictEqual(week, 0);
       const fl = sharpRows(x.acc);
-      assert(fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === -buy && r.won === 0 && r.sharp === 1), 'a human knocked out is logged at the buy-in');
+      assert(fl.length === (n === 2 ? 1 : fl.length) && fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === -buy && r.won === 0 && r.sharp === sharp), 'a human knocked out is logged at the buy-in');
       flowRows += fl.length;
       console.log('tournament: a human went out after the first round and paid only the buy-in');
       continue;
@@ -2987,16 +2997,17 @@ async function cupRun(n) {
     assert.deepStrictEqual(st.cup.prizes, prizes);
     assert.strictEqual(week, Math.max(0, end.prize - buy));
     const fl = sharpRows(x.acc);
-    assert(fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === end.prize - buy && r.won === (end.place === 1 ? 1 : 0) && r.sharp === 1), 'a finalist is logged by place');
+    assert(fl.length === (n === 2 ? 1 : fl.length) && fl.length <= 1 && fl.every(r => r.kind === 'cup' && r.stake === buy && r.net === end.prize - buy && r.won === (end.place === 1 ? 1 : 0) && r.sharp === sharp), 'a finalist is logged by place');
     flowRows += fl.length;
     paid += end.prize;
     console.log('tournament: a human placed ' + end.place + ' at the final and got ' + end.prize);
   }
-  assert(n === 6 || flowRows >= 1, 'the tournament wrote its flow rows');
+  assert(flowRows >= (n === 2 ? 2 : 1), 'the tournament wrote its flow rows');
   const after = sql('SELECT sum(chips) AS n FROM personas WHERE id IN (' + ids() + ')')[0].n;
   paid += after - snap.rows.reduce((n, r) => n + r.chips, 0);
   const unpaid = 8 * buy - paid;
   assert(n === 6 ? [0, ...prizes].includes(unpaid) : unpaid === 0, 'the pool was paid out, less the share of a leaver: ' + unpaid);
+  sql('UPDATE players SET chips = chips + 5000 WHERE id = ' + who(a.acc));
   const free = a.h.next(m => m.t === 'seated');
   a.h.send({ t: 'quick', stake: 100 });
   await within(free, 5000, 'free after the tournament');
@@ -6222,6 +6233,7 @@ process.on('unhandledRejection', e => {
   await sec('cupRetry', () => cupRetry());
   await sec('cupRun', () => cupRun(2));
   await sec('cupRun', () => cupRun(6));
+  await sec('cupRun', () => cupRun(2, 5000));
   await sec('cupAbort', () => cupAbort());
   await sec('leaveKinds', () => leaveKinds());
   await sec('metrics', () => metrics());

@@ -15,13 +15,15 @@ export function rematches(db, kind, stake, o) {
 // The totals of a finished day are written once, from its rows, and stay when the rows are deleted with an account or after 90 days.
 export async function dayTotals(env, now) {
   const today = Math.floor(now / DAY);
-  await env.DB.prepare('INSERT INTO persona_day (day, kind, stake, matches, units, wins, fake_net) SELECT day, kind, stake, count(*), sum(units), sum(won), sum(fake_net) FROM persona_flow WHERE day >= ?1 AND day < ?2 GROUP BY day, kind, stake ON CONFLICT (day, kind, stake) DO UPDATE SET matches = excluded.matches, units = excluded.units, wins = excluded.wins, fake_net = excluded.fake_net WHERE persona_day.matches = 0')
+  await env.DB.prepare('INSERT INTO persona_day (day, kind, stake, matches, units, wins, fake_net) SELECT day, kind, stake, count(DISTINCT match), sum(units), sum(won), sum(fake_net) FROM persona_flow WHERE day >= ?1 AND day < ?2 GROUP BY day, kind, stake ON CONFLICT (day, kind, stake) DO UPDATE SET matches = excluded.matches, units = excluded.units, wins = excluded.wins, fake_net = excluded.fake_net WHERE persona_day.matches = 0')
     .bind(today - 7, today).run();
 }
 
 // per table over the last 14 days: matches, and the average result in units of the stake for the middle half of the players
 export async function middle(env, now) {
   const { results } = await env.DB.prepare('SELECT kind, stake, player, count(*) AS n, avg(units) AS units, sum(sharp) AS sharp FROM persona_flow WHERE at > ? GROUP BY kind, stake, player').bind(now - 14 * DAY).all();
+  const counts = await env.DB.prepare('SELECT kind, stake, count(DISTINCT match) AS n FROM persona_flow WHERE at > ? GROUP BY kind, stake').bind(now - 14 * DAY).all();
+  const games = Object.fromEntries(counts.results.map(r => [r.kind + ' ' + r.stake, r.n]));
   const tables = {};
   for (const r of results) (tables[r.kind + ' ' + r.stake] = tables[r.kind + ' ' + r.stake] || []).push(r);
   return Object.entries(tables).map(([k, rows]) => {
@@ -29,8 +31,8 @@ export async function middle(env, now) {
     const avg = rows.map(r => r.units).sort((a, b) => a - b);
     const q = Math.floor(avg.length / 4);
     const mid = avg.slice(q, avg.length - q);
-    const matches = rows.reduce((a, r) => a + r.n, 0);
+    const results = rows.reduce((a, r) => a + r.n, 0);
     const [kind, stake] = k.split(' ');
-    return { kind: kind, stake: Number(stake), matches: matches, players: rows.length, mid: mid.reduce((a, b) => a + b, 0) / mid.length, sharp: rows.reduce((a, r) => a + r.sharp, 0) / matches };
+    return { kind: kind, stake: Number(stake), matches: games[k], players: rows.length, mid: mid.reduce((a, b) => a + b, 0) / mid.length, sharp: rows.reduce((a, r) => a + r.sharp, 0) / results };
   }).sort((a, b) => a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.stake - b.stake);
 }
