@@ -162,12 +162,15 @@ var Shop = (function () {
     return Math.round(n / cost(n) / (80 / cost(80)) * 100 - 100);
   }
 
+  // the pack that gives the most tokens for the money
+  const best = () => Catalog.PACKS.reduce((a, k) => (bonus(k) > bonus(a) ? k : a));
+
   // the card shows the price the store gives, in the player's own currency
   function packTile(n, i, draw) {
     const e = node('div', 'itile' + (live() ? '' : ' off'));
     e.appendChild(preview('pack', i));
     if (n > Catalog.PACKS[0]) e.appendChild(node('span', 'bon', t('shop.bonus', { n: bonus(n) })));
-    const rib = n === 1200 ? 'popular' : n === 14000 ? 'best' : '';
+    const rib = n === 1200 ? 'popular' : n === best() ? 'best' : '';
     if (rib) e.appendChild(node('span', 'rbn', t('shop.' + rib)));
     e.appendChild(node('b', 'inm', t('shop.count', { n: n })));
     const bt = node('div', 'ibt');

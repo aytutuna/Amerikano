@@ -342,3 +342,18 @@ test('a tap outside the finding sheet cancels it', async ({ page }) => {
   await expect(page.locator('.sw')).toHaveCount(0);
   table.close();
 });
+
+test('the best-value ribbon sits on the pack that gives the most tokens, and the VIP card still says the pass is coming', async ({ page }) => {
+  await fakeStore(page);
+  await guest(page);
+  await page.click('[data-k=tokens]');
+  const tiles = page.locator('.sheet .itile');
+  await expect(tiles.nth(1).locator('.btn.primary')).toBeEnabled();
+  const ribbons = await page.evaluate(() => [...document.querySelectorAll('.sheet .itile')].map(t => (t.querySelector('.rbn') || {}).textContent || ''));
+  // seven packs: the 1,200 one is called popular and the largest gives the most tokens for the money
+  expect(ribbons.filter(Boolean)).toEqual(['Popular', 'Best value']);
+  expect(ribbons[2]).toBe('Popular');
+  expect(ribbons[ribbons.length - 1]).toBe('Best value');
+  await page.click('[data-k=tabvip]');
+  await expect(page.locator('.sheet')).toContainText('Premium season pass (coming soon)');
+});
