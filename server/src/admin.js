@@ -67,6 +67,12 @@ async function reports(env) {
   return json({ reports: rows.results });
 }
 
+// chip-trade phrases newest first, with how many each player has; the lines themselves are not kept
+async function trades(env) {
+  const rows = await env.DB.prepare('SELECT h.id, h.player, h.ctx, h.term, h.at, (SELECT count(*) FROM trade_hits WHERE player = h.player) AS n, (SELECT mute_until FROM players WHERE id = h.player) AS mute, (SELECT banned FROM players WHERE id = h.player) AS banned FROM trade_hits h ORDER BY h.id DESC LIMIT 200').all();
+  return json({ trades: rows.results });
+}
+
 // what waits for a look: pairs of accounts the detector found, and friend-table winnings above the day's cap
 async function flags(env) {
   const [f, h] = await env.DB.batch([
@@ -101,7 +107,7 @@ async function flow(env) {
 
 // what the page shows, in one call: its tries are limited per address
 async function overview(request, env) {
-  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env), flow(env), flags(env)]);
+  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env), flow(env), flags(env), trades(env)]);
   return json(Object.assign({}, ...await Promise.all(parts.map(r => r.json()))));
 }
 
@@ -212,6 +218,7 @@ export async function admin(request, env) {
   if (path === '/admin/api/log' && request.method === 'GET') return log(env);
   if (path === '/admin/api/leavers' && request.method === 'GET') return leavers(env);
   if (path === '/admin/api/reports' && request.method === 'GET') return reports(env);
+  if (path === '/admin/api/trades' && request.method === 'GET') return trades(env);
   if (path === '/admin/api/flow' && request.method === 'GET') return flow(env);
   if (path === '/admin/api/flags' && request.method === 'GET') return flags(env);
   if (path === '/admin/api/overview' && request.method === 'GET') return overview(request, env);
@@ -239,6 +246,7 @@ td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:to
 <div id="in"><input id="key" type="password" placeholder="Key"><button id="go">Open</button></div>
 <div id="main" hidden>
 <h2>Reports</h2><table id="reports"></table>
+<h2>Chip trade phrases</h2><table id="trades"></table>
 <h2>Player</h2>
 <input id="pid" placeholder="Player id">
 <button data-do="mute">Mute 24 h</button> <button data-do="unmute">Unmute</button> <button data-do="ban">Ban</button> <button data-do="unban">Unban</button>
@@ -276,6 +284,7 @@ async function show() {
   $('settings').innerHTML = Object.keys(s).map(k => '<div><b>' + esc(k) + '</b><textarea rows="2" data-k="' + esc(k) + '">' + esc(s[k]) + '</textarea><button data-save="' + esc(k) + '">Save</button></div>').join('');
   const rp = o.reports;
   $('reports').innerHTML = '<tr><th>Report</th><th>Reporter</th><th>Reported</th><th>Where</th><th>Counted</th></tr>' + rp.map(x => '<tr><td>' + x.id + '<br>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '<br>' + esc(x.text) + '</td><td data-id="' + esc(x.reporter) + '">' + esc(x.reporter) + '<br>' + (x.games == null ? 'gone' : x.games + ' matches') + '</td><td data-id="' + esc(x.reported) + '">' + esc(x.reported) + (x.fake ? '<br>computer player' : '') + (x.banned ? '<br>banned' : x.mute > Date.now() ? '<br>muted' : '') + '</td><td>' + esc(x.ctx) + '</td><td>' + (x.counts ? 'yes' : 'no') + '</td></tr>').join('');
+  $('trades').innerHTML = '<tr><th>Time</th><th>Player</th><th>Where</th><th>Phrase</th><th>Hits</th></tr>' + o.trades.map(x => '<tr><td>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td data-id="' + esc(x.player) + '">' + esc(x.player) + (x.banned ? '<br>banned' : x.mute > Date.now() ? '<br>muted' : '') + '</td><td>' + esc(x.ctx) + '</td><td>' + esc(x.term) + '</td><td>' + x.n + '</td></tr>').join('');
   $('held').innerHTML = '<tr><th>Player</th><th>Chips</th><th>Match</th><th></th></tr>' + o.held.map(x => '<tr><td data-id="' + esc(x.player) + '">' + esc(x.player) + '</td><td>' + x.amount + '</td><td>' + esc(x.match) + '<br>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td><button data-row="release" data-n="' + x.id + '">Release</button> <button data-row="return" data-n="' + x.id + '">Return</button></td></tr>').join('');
   $('flags').innerHTML = '<tr><th>Kind</th><th>Accounts</th><th>Numbers</th><th>Time</th><th></th></tr>' + o.flags.map(x => '<tr><td>' + esc(x.kind) + '</td><td data-id="' + esc(x.a) + '">' + esc(x.a) + '<br>' + esc(x.b) + '</td><td>' + x.x + ' / ' + x.y + '</td><td>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td><button data-row="clear" data-n="' + x.id + '">Clear</button></td></tr>').join('');
   const v = o.leavers;
@@ -319,7 +328,7 @@ document.body.addEventListener('click', async e => {
     $('msg').textContent = what + ': ' + err.message;
   }
 });
-$('reports').onclick = e => {
+$('reports').onclick = $('trades').onclick = e => {
   const id = e.target.closest('td[data-id]');
   if (id) $('pid').value = id.dataset.id;
 };
