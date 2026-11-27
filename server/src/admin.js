@@ -1,5 +1,6 @@
 import { json, fail, credit } from './account.js';
 import { middle } from './flow.js';
+import { releaseHeld, returnHeld } from './friend.js';
 
 const KEYS = ['strong', 'chipsoff'];
 const STRONG = ['100', '500', '2500', '10000', '50000', 'cup1000', 'cup5000', 'cup25000'];
@@ -65,6 +66,32 @@ async function reports(env) {
   return json({ reports: rows.results });
 }
 
+// what waits for a look: pairs of accounts the detector found, and friend-table winnings above the day's cap
+async function flags(env) {
+  const [f, h] = await env.DB.batch([
+    env.DB.prepare('SELECT id, kind, a, b, x, y, at FROM flags WHERE cleared IS NULL ORDER BY id DESC LIMIT 100'),
+    env.DB.prepare("SELECT id, player, amount, match, at FROM held WHERE state = 'held' ORDER BY id DESC LIMIT 100")
+  ]);
+  return json({ flags: f.results, held: h.results });
+}
+
+async function clear(env, b) {
+  if (!Number.isInteger(b.id)) return fail('id');
+  const r = await env.DB.prepare('UPDATE flags SET cleared = ? WHERE id = ? AND cleared IS NULL').bind(Date.now(), b.id).run();
+  if (r.meta.changes !== 1) return fail('noflag', 404);
+  await logAdmin(env.DB, 'admin', 'clear', String(b.id));
+  return json({ ok: true });
+}
+
+// release pays the held chips to the winner, return gives them back to the seats that lost them
+async function settle(env, b, give) {
+  if (!Number.isInteger(b.id)) return fail('id');
+  const h = await (give ? returnHeld : releaseHeld)(env.DB, b.id);
+  if (!h) return fail('noheld', 409);
+  await logAdmin(env.DB, 'admin', give ? 'return' : 'release', h.player, { held: b.id, amount: h.amount, match: h.match, to: h.paid });
+  return json({ ok: true });
+}
+
 // what tables gave people against computer players, so the ladder can be moved by hand; the daily totals keep rematch counts too
 async function flow(env) {
   const days = await env.DB.prepare('SELECT * FROM persona_day ORDER BY day DESC, kind, stake LIMIT 100').all();
@@ -73,7 +100,7 @@ async function flow(env) {
 
 // what the page shows, in one call: its tries are limited per address
 async function overview(request, env) {
-  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env), flow(env)]);
+  const parts = await Promise.all([settings(request, env), log(env), leavers(env), reports(env), flow(env), flags(env)]);
   return json(Object.assign({}, ...await Promise.all(parts.map(r => r.json()))));
 }
 
@@ -160,9 +187,10 @@ export async function admin(request, env) {
   if (path === '/admin/api/leavers' && request.method === 'GET') return leavers(env);
   if (path === '/admin/api/reports' && request.method === 'GET') return reports(env);
   if (path === '/admin/api/flow' && request.method === 'GET') return flow(env);
+  if (path === '/admin/api/flags' && request.method === 'GET') return flags(env);
   if (path === '/admin/api/overview' && request.method === 'GET') return overview(request, env);
   if (request.method === 'POST') {
-    const act = { mute: b => mute(env, b, true), unmute: b => mute(env, b, false), ban: b => ban(env, b), unban: b => unban(env, b), unsay: b => unsay(env, b), balance: b => balance(env, b) }[path.slice(11)];
+    const act = { mute: b => mute(env, b, true), unmute: b => mute(env, b, false), ban: b => ban(env, b), unban: b => unban(env, b), unsay: b => unsay(env, b), balance: b => balance(env, b), clear: b => clear(env, b), release: b => settle(env, b, false), return: b => settle(env, b, true) }[path.slice(11)];
     if (act) return act(await body(request));
   }
   return fail('nope', 404);
@@ -196,6 +224,8 @@ td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:to
 <h2>Settings</h2><div id="settings"></div>
 <h2>Computer players, last 14 days</h2><table id="flow"></table>
 <h2>Rematches by day</h2><table id="days"></table>
+<h2>Held friend-table winnings</h2><table id="held"></table>
+<h2>Flags</h2><table id="flags"></table>
 <h2>Leavers, last 7 days</h2><table id="leavers"></table>
 <h2>Log</h2><table id="log"></table>
 </div>
@@ -216,6 +246,8 @@ async function show() {
   $('settings').innerHTML = Object.keys(s).map(k => '<div><b>' + esc(k) + '</b><textarea rows="2" data-k="' + esc(k) + '">' + esc(s[k]) + '</textarea><button data-save="' + esc(k) + '">Save</button></div>').join('');
   const rp = o.reports;
   $('reports').innerHTML = '<tr><th>Report</th><th>Reporter</th><th>Reported</th><th>Where</th><th>Counted</th></tr>' + rp.map(x => '<tr><td>' + x.id + '<br>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '<br>' + esc(x.text) + '</td><td data-id="' + esc(x.reporter) + '">' + esc(x.reporter) + '<br>' + (x.games == null ? 'gone' : x.games + ' matches') + '</td><td data-id="' + esc(x.reported) + '">' + esc(x.reported) + (x.fake ? '<br>computer player' : '') + (x.banned ? '<br>banned' : x.mute > Date.now() ? '<br>muted' : '') + '</td><td>' + esc(x.ctx) + '</td><td>' + (x.counts ? 'yes' : 'no') + '</td></tr>').join('');
+  $('held').innerHTML = '<tr><th>Player</th><th>Chips</th><th>Match</th><th></th></tr>' + o.held.map(x => '<tr><td data-id="' + esc(x.player) + '">' + esc(x.player) + '</td><td>' + x.amount + '</td><td>' + esc(x.match) + '<br>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td><button data-row="release" data-n="' + x.id + '">Release</button> <button data-row="return" data-n="' + x.id + '">Return</button></td></tr>').join('');
+  $('flags').innerHTML = '<tr><th>Kind</th><th>Accounts</th><th>Numbers</th><th>Time</th><th></th></tr>' + o.flags.map(x => '<tr><td>' + esc(x.kind) + '</td><td data-id="' + esc(x.a) + '">' + esc(x.a) + '<br>' + esc(x.b) + '</td><td>' + x.x + ' / ' + x.y + '</td><td>' + new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') + '</td><td><button data-row="clear" data-n="' + x.id + '">Clear</button></td></tr>').join('');
   const v = o.leavers;
   $('leavers').innerHTML = '<tr><th>Player</th><th>Leaves</th><th>Last</th><th>Cooling until</th></tr>' + v.map(x => '<tr><td>' + esc(x.id) + '</td><td>' + x.n + '</td><td>' + new Date(x.last).toISOString().slice(0, 16).replace('T', ' ') + '</td><td>' + (x.cool > Date.now() ? new Date(x.cool).toISOString().slice(0, 16).replace('T', ' ') + ' from ' + x.stake : '') + '</td></tr>').join('');
   $('flow').innerHTML = '<tr><th>Table</th><th>Matches</th><th>Players</th><th>Middle half, units of the stake</th><th>Sharp seats</th></tr>' + o.flow.map(x => '<tr><td>' + esc(x.kind) + ' ' + x.stake + '</td><td>' + x.matches + '</td><td>' + x.players + '</td><td>' + (x.mid == null ? '' : x.mid.toFixed(2)) + '</td><td>' + x.sharp.toFixed(1) + '</td></tr>').join('');
@@ -246,6 +278,17 @@ $('settings').onclick = async e => {
     $('msg').textContent = 'Not saved: ' + err.message;
   }
 };
+document.body.addEventListener('click', async e => {
+  const what = e.target.dataset.row;
+  if (!what) return;
+  try {
+    await api(what, { id: Number(e.target.dataset.n) });
+    $('msg').textContent = '';
+    await show();
+  } catch (err) {
+    $('msg').textContent = what + ': ' + err.message;
+  }
+});
 $('reports').onclick = e => {
   const id = e.target.closest('td[data-id]');
   if (id) $('pid').value = id.dataset.id;

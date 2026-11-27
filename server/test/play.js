@@ -5470,6 +5470,89 @@ async function friendLimits() {
   console.log('friendLimits: public matches are counted when finished');
 }
 
+// Above 100,000 a day, friend-table winnings wait on the admin page: released to the winner or returned to those who lost them.
+async function heldWins() {
+  const mk = async () => {
+    const x = link(level(30, await guest()));
+    sql('UPDATE players SET pub_games = 10, chips = 100000000 WHERE id = ' + who(x));
+    return x;
+  };
+  const [a, b, c] = [await mk(), await mk(), await mk()];
+  const day = Math.floor(Date.now() / DAY);
+  // a already took 150,000 today
+  sql('INSERT INTO friend_day (player, day, match, net) VALUES (' + who(a) + ', ' + day + ", 'earlier', 150000)");
+  const g = await pair(3, 3, [a, b], 2000000);
+  const x = client('/ws/' + g.code);
+  await x.ready;
+  x.send({ t: 'join', auth: c.auth });
+  await x.next(m => m.t === 'joined');
+  const fins = [played(Object.assign(g.a, { seat: g.ja.seat })), played(g.b), played(x)];
+  g.a.send({ t: 'start' });
+  await within(Promise.all(fins), 180000, 'match end');
+  await sleep(1500);
+  const rows = seatsOf(g.code);
+  const match = rows[0].match;
+  assert(rows.some(r => r.net > 100000), 'somebody won more than the cap');
+  const prev = { [a.id]: 150000, [b.id]: 0, [c.id]: 0 };
+  const rowOf = acc => sql('SELECT * FROM held WHERE player = ' + who(acc) + " AND match = '" + match + "'");
+  let first;
+  for (const acc of [a, b, c]) {
+    const net = rows.find(r => r.player === acc.id).net;
+    const over = Math.max(0, Math.min(net, prev[acc.id] + net - 100000));
+    const h = rowOf(acc);
+    assert.deepStrictEqual(h.map(r => [r.amount, r.state]), over ? [[over, 'held']] : [], 'held for ' + net + ' after ' + prev[acc.id]);
+    assert.strictEqual(moved(acc, match), net - over, 'the balance got the rest');
+    assert.strictEqual(sql('SELECT sum(net) AS n FROM friend_day WHERE player = ' + who(acc) + ' AND day = ' + day)[0].n, prev[acc.id] + net, 'the day tally counts all of it');
+    if (over && !first) first = Object.assign({ acc: acc }, h[0]);
+  }
+  console.log('heldWins: what a win takes above 100,000 a day is held, the rest paid');
+
+  // the admin page lists it and releases it once
+  const chips = acc => sql('SELECT chips FROM players WHERE id = ' + who(acc))[0].chips;
+  const listed = (await adm('GET', 'flags', ADMIN, null, '10.9.7.1')).body.held;
+  assert(listed.some(h => h.id === first.id && h.amount === first.amount), 'the page lists it');
+  const before = chips(first.acc);
+  assert.strictEqual((await adm('POST', 'release', ADMIN, { id: first.id }, '10.9.7.2')).status, 200);
+  assert.strictEqual(chips(first.acc), before + first.amount);
+  assert.deepStrictEqual(sql("SELECT delta, reason FROM chip_log WHERE ref = 'held:" + first.id + "'"), [{ delta: first.amount, reason: 'release' }]);
+  assert.strictEqual(sql('SELECT state FROM held WHERE id = ' + first.id)[0].state, 'released');
+  assert.strictEqual((await adm('POST', 'release', ADMIN, { id: first.id }, '10.9.7.3')).status, 409, 'a second click pays nothing');
+  assert.strictEqual((await adm('POST', 'return', ADMIN, { id: first.id }, '10.9.7.4')).status, 409, 'and neither does a return after it');
+  assert.strictEqual(chips(first.acc), before + first.amount);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE action = 'release' AND target = " + who(first.acc))[0].n, 1);
+  console.log('heldWins: release pays the winner once');
+
+  // return: split by what each seat lost, never more than that, and a computer player's share goes to its bank
+  const [w, l1, l2] = [await mk(), await mk(), await mk()];
+  const bot = 'f'.repeat(32);
+  sql("DELETE FROM personas WHERE id = '" + bot + "'");
+  sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) VALUES ('" + bot + "', 7, '1,1,1,0', 1, 0, 0, 0, 1000, 0, NULL, 0, 7)");
+  const seat = (p, net, fake, i) => "('mx', 'MXMX', 'friend', 100, '" + p + "', " + fake + ', ' + i + ', ' + Date.now() + ', ' + net + ')';
+  sql('INSERT INTO match_seat (match, code, kind, stake, player, fake, seat, at, net) VALUES ' + [seat(w.id, 395, 0, 0), seat(l1.id, -105, 0, 1), seat(l2.id, -305, 0, 2), seat(bot, -205, 1, 3)].join(', '));
+  sql('INSERT INTO held (player, amount, match, at) VALUES (' + who(w) + ", 350, 'mx', " + Date.now() + ')');
+  const hid = sql("SELECT id FROM held WHERE match = 'mx'")[0].id;
+  const bank = () => sql("SELECT chips FROM personas WHERE id = '" + bot + "'")[0].chips;
+  const [c1, c2, wc] = [chips(l1), chips(l2), chips(w)];
+  assert.strictEqual((await adm('POST', 'return', ADMIN, { id: hid }, '10.9.7.5')).status, 200);
+  assert.deepStrictEqual([chips(l1) - c1, chips(l2) - c2, bank() - 1000], [58, 176, 116], 'shares of 350 by losses of 100, 300 and 200, the odd chip to the largest');
+  assert.strictEqual(chips(w), wc, 'the winner gets nothing');
+  assert.deepStrictEqual(sql("SELECT reason FROM chip_log WHERE ref LIKE 'held:" + hid + ":%'").map(r => r.reason), ['return', 'return']);
+  assert.strictEqual(sql('SELECT state FROM held WHERE id = ' + hid)[0].state, 'returned');
+  assert.strictEqual((await adm('POST', 'return', ADMIN, { id: hid }, '10.9.7.6')).status, 409);
+  assert.strictEqual((await adm('POST', 'release', ADMIN, { id: hid }, '10.9.7.7')).status, 409);
+  assert.deepStrictEqual([chips(l1) - c1, chips(l2) - c2, bank() - 1000, chips(w) - wc], [58, 176, 116, 0], 'a second click changes nothing');
+  assert.strictEqual((await adm('POST', 'release', ADMIN, { id: 999999 }, '10.9.7.8')).status, 409);
+  sql("DELETE FROM personas WHERE id = '" + bot + "'");
+  sql("DELETE FROM match_seat WHERE match = 'mx'");
+  console.log('heldWins: return splits by losses, capped, computer player to its bank, once');
+
+  // an account takes its tally and held chips with it
+  assert.strictEqual((await call('DELETE', '/api/me', first.acc)).status, 200);
+  const left = t => sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(first.acc))[0].n;
+  assert.deepStrictEqual([left('held'), left('friend_day')], [0, 0]);
+  console.log('heldWins: deleting the account removes them');
+}
+
 let section = 'start';
 // names on the command line run alone, in the normal order
 const only = process.argv.slice(2);
@@ -6322,6 +6405,7 @@ process.on('unhandledRejection', e => {
   await sec('cupAbort', () => cupAbort());
   await sec('leaveKinds', () => leaveKinds());
   await sec('friendLimits', () => friendLimits());
+  await sec('heldWins', () => heldWins());
   await sec('metrics', () => metrics());
   const rc = fakeRc();
   await rc.server.listening$;

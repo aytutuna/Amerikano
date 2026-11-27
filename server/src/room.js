@@ -10,6 +10,7 @@ import { clean, mask, contact } from './filter.js';
 import { look, claim, release, giveBack, keep, spend, payoff, grant, stays } from './persona.js';
 import { setting } from './admin.js';
 import { flowRow, rematches } from './flow.js';
+import { friendPay } from './friend.js';
 import { on, act, slow, may, shut } from './voice.js';
 import { hint, codeRegion, LEADS, PRIVATE, DEFAULT } from './region.js';
 
@@ -1147,7 +1148,9 @@ export class Room extends DurableObject {
         await this.net(x.pid, x.net);
         continue;
       }
-      await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
+      // a friend table's winnings count toward the day's cap, and what is over it waits for the admin
+      if (r.stake && !r.pub && !r.cup) await friendPay(this.env.DB, x.pid, x.pay, x.net, r.id);
+      else await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
       await this.net(x.pid, x.net);
       x.done = true;
       this.save();
