@@ -2102,6 +2102,13 @@ async function flow() {
   assert.deepStrictEqual([total.matches, total.units, total.wins, total.fake_net], [mine.n, mine.u, mine.w, mine.f]);
   await tick(hour);
   assert.strictEqual(sql("SELECT matches FROM persona_day WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0].matches, mine.n, 'a second run leaves it as it is');
+  // the admin page shows each table's matches and the middle half's average result
+  sql('UPDATE persona_flow SET day = day + 1 WHERE player = ' + who(a));
+  const shown = (await adm('GET', 'flow', ADMIN)).body;
+  const t100 = shown.flow.find(x => x.kind === 'pub' && x.stake === 100);
+  assert(t100 && t100.matches >= 1 && t100.players >= 1 && typeof t100.mid === 'number' && t100.sharp === 0, 'the table is listed: ' + JSON.stringify(t100));
+  assert(shown.days.some(x => x.day === day && x.kind === 'pub' && x.stake === 100 && x.matches === mine.n), 'and so are the day totals');
+  sql('UPDATE persona_flow SET day = day - 1 WHERE player = ' + who(a));
   assert.strictEqual((await call('DELETE', '/api/me', a)).status, 200);
   assert.strictEqual(sql("SELECT count(*) AS n FROM persona_flow WHERE player = " + who(a))[0].n, 0, 'the account takes its rows with it');
   assert.strictEqual(sql("SELECT matches FROM persona_day WHERE day = " + day + " AND kind = 'pub' AND stake = 100")[0].matches, mine.n, 'the day total stays');

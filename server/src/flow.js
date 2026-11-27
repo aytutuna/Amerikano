@@ -21,17 +21,16 @@ export async function dayTotals(env, now) {
 
 // per table over the last 14 days: matches, and the average result in units of the stake for the middle half of the players
 export async function middle(env, now) {
-  const { results } = await env.DB.prepare('SELECT kind, stake, sharp, fakes, player, units FROM persona_flow WHERE at > ?').bind(now - 14 * DAY).all();
+  const { results } = await env.DB.prepare('SELECT kind, stake, player, count(*) AS n, avg(units) AS units, sum(sharp) AS sharp FROM persona_flow WHERE at > ? GROUP BY kind, stake, player').bind(now - 14 * DAY).all();
   const tables = {};
   for (const r of results) (tables[r.kind + ' ' + r.stake] = tables[r.kind + ' ' + r.stake] || []).push(r);
   return Object.entries(tables).map(([k, rows]) => {
-    // each player counts once: the average of their own matches
-    const by = {};
-    for (const r of rows) (by[r.player] = by[r.player] || []).push(r.units);
-    const avg = Object.values(by).map(u => u.reduce((a, b) => a + b, 0) / u.length).sort((a, b) => a - b);
+    // each player counts once, by the average of their own matches
+    const avg = rows.map(r => r.units).sort((a, b) => a - b);
     const q = Math.floor(avg.length / 4);
     const mid = avg.slice(q, avg.length - q);
+    const matches = rows.reduce((a, r) => a + r.n, 0);
     const [kind, stake] = k.split(' ');
-    return { kind: kind, stake: Number(stake), matches: rows.length, players: avg.length, mid: mid.length ? mid.reduce((a, b) => a + b, 0) / mid.length : null, sharp: rows.reduce((a, r) => a + r.sharp, 0) / rows.length };
+    return { kind: kind, stake: Number(stake), matches: matches, players: rows.length, mid: mid.reduce((a, b) => a + b, 0) / mid.length, sharp: rows.reduce((a, r) => a + r.sharp, 0) / matches };
   }).sort((a, b) => a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.stake - b.stake);
 }
