@@ -14,6 +14,8 @@ var Net = (function () {
   let hubRetry = 0;
   let hubDone = false;
   let where = 'lobby';
+  // Cancel was pressed while the hub was still seating this player
+  let quickOff = false;
 
   function host() {
     const l = location;
@@ -117,10 +119,21 @@ var Net = (function () {
         break;
       case 'room':
         if (m.cup) break;
+        // the seat was asked for and then withdrawn: leave while the table is still waiting, which costs nothing
+        if (sock && sock.cancel) {
+          sock.cancel = false;
+          if (m.seats.some(s => !s)) {
+            sock.send(JSON.stringify({ t: 'leave' }));
+            drop();
+            detach();
+            break;
+          }
+        }
         if (App.online()) UI.finding();
         else UI.lobby(m);
         break;
       case 'state':
+        if (sock) sock.cancel = false;
         if (App.active() && !App.online()) return detach();
         UI.close();
         save();
@@ -197,13 +210,17 @@ var Net = (function () {
       case 'rooms': UI.rooms(m.n); break;
       case 'cup': UI.cup(m); break;
       case 'cupend': UI.cupEnd(); break;
-      case 'seated':
+      case 'seated': {
         UI.cupSeated();
+        const off = quickOff && !m.cup;
+        quickOff = false;
         // the hub repeats this on every hello, so a table already open stays as it is
         if (sock && ses && ses.code === m.code) break;
         save({ code: m.code, token: m.token, hist: (ses || recent() || {}).code === m.code ? (ses || recent()).hist || [] : [] });
         open('/ws/' + m.code, { t: 'join', token: m.token });
+        if (off) sock.cancel = true;
         break;
+      }
       case 'invited': Social.invited(m); break;
       case 'dm': Social.message(m); break;
       case 'ring': Voice.ring(m); break;
@@ -214,6 +231,7 @@ var Net = (function () {
   }
 
   function hubFail(m) {
+    quickOff = false;
     if (m.k === 'replaced') {
       hubDone = true;
       hubClose();
@@ -300,8 +318,15 @@ var Net = (function () {
   };
 
   N.say = hubSay;
-  N.sit = code => hubSay({ t: 'sit', code: code });
-  N.play = stake => hubSay({ t: 'quick', stake: stake });
+  N.sit = code => {
+    quickOff = false;
+    hubSay({ t: 'sit', code: code });
+  };
+  N.play = stake => {
+    quickOff = false;
+    hubSay({ t: 'quick', stake: stake });
+  };
+  N.cancelQuick = () => { quickOff = true; };
   N.cup = buy => hubSay({ t: 'cup', buy: buy });
 
   N.create = o => {

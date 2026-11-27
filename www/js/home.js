@@ -730,19 +730,25 @@ var UI = (function () {
     });
   }
 
-  // cancel is for a table socket; a request to the hub is answered within moments
+  // cancel is true for a table socket and 'quick' for a request to the hub; Cancel, Back and the scrim all withdraw it
   function connecting(cancel, title) {
     const body = node('div', 'conn');
     body.appendChild(Cards.icon('i-chip', 'chip spin'));
     const p = node('p', 'lead', t('net.connecting'));
     p.setAttribute('role', 'status');
     body.appendChild(p);
+    const off = () => {
+      if (cancel === 'quick') Net.cancelQuick();
+      else Net.cancel();
+      wait = null;
+    };
     const h = Sheet.open({
-      kind: 'center', title: title || t('net.title'), body: body, dismiss: false,
-      actions: cancel ? [{ label: t('cancel'), kind: 'plain', fn: () => { Net.cancel(); wait = null; } }] : []
+      kind: 'center', title: title || t('net.title'), body: body,
+      onDismiss: () => { h.close(); off(); },
+      actions: [{ label: t('cancel'), kind: 'plain', fn: off }]
     });
     wait = { h: h };
-    if (!cancel) {
+    if (cancel !== true) {
       setTimeout(() => {
         if (wait && wait.h === h && !wait.body && document.contains(h.wrap)) {
           close();
@@ -974,7 +980,7 @@ var UI = (function () {
       const why = shut(me, s);
       const ok = !why;
       const b = raw('room', () => {
-        connecting(false, t('hall.finding'));
+        connecting('quick', t('hall.finding'));
         Net.play(s);
       });
       b.disabled = !ok;
@@ -1283,7 +1289,7 @@ var UI = (function () {
       const ok = at.stakes.filter(s => afford(me, s));
       const q = ok[Math.min(1, ok.length - 1)];
       const quick = twoLines('primary', t('hall.quick'), q ? t('hall.quickAt', { n: fmt(q) }) : t('hall.locked'), () => {
-        connecting(false, t('hall.finding'));
+        connecting('quick', t('hall.finding'));
         Net.play(q);
       });
       quick.disabled = !q;
@@ -1382,7 +1388,7 @@ var UI = (function () {
     }
     Sheet.closeAll();
     if (Net.busy()) Net.leave(false);
-    connecting(true, t('net.title'));
+    connecting(m.pub ? 'quick' : true, t('net.title'));
     if (m.pub) Net.sit(m.code);
     else account().then(() => Net.join(m.code), () => { close(); notice(t('net.err.lost')); });
   }

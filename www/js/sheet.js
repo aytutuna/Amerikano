@@ -53,7 +53,7 @@ var Sheet = (function () {
     if (o.modal !== false) {
       const scrim = Cards.node('div', 'scrim');
       // the click that ends a long press lands on the sheet that press just opened
-      scrim.addEventListener('click', () => { if (o.dismiss !== false && down >= born) h.close(); });
+      scrim.addEventListener('click', () => { if (o.dismiss !== false && down >= born) dismiss(h); });
       wrap.appendChild(scrim);
     }
     const el = Cards.node('section', 'sheet' + (o.tall ? ' tall' : ''));
@@ -121,12 +121,18 @@ var Sheet = (function () {
     return h;
   }
 
+  // a sheet that has to do more than close when it is dismissed says so in onDismiss, which then closes it itself
+  function dismiss(h) {
+    if (h.o.onDismiss) h.o.onDismiss();
+    else h.close();
+  }
+
   // false lets the caller treat back as its own (the pause menu, leaving the app)
   function back() {
     const top = stack[stack.length - 1];
     if (!top) return false;
     if (top.o.dismiss !== false) {
-      top.close();
+      dismiss(top);
       return true;
     }
     return top.o.modal !== false;

@@ -6072,6 +6072,52 @@ async function fee() {
 }
 
 // leaving a started public match counts, costs chips from the third in a week and cools the table down
+// withdrawing a quick play before the match starts costs nothing and leaves no trace; one that starts on the sit is no leave either
+async function quickCancel() {
+  const rows = (acc, q) => sql('SELECT count(*) AS n FROM ' + q + ' WHERE player = ' + who(acc))[0].n;
+  const acc = await guest();
+  const before = sql('SELECT chips FROM players WHERE id = ' + who(acc))[0].chips;
+  for (let i = 0; i < 2; i++) {
+    const h = await hub(acc);
+    const sat = h.next(m => m.t === 'seated' || m.t === 'error');
+    h.send({ t: 'quick', stake: 100 });
+    const s = await sat;
+    assert.strictEqual(s.t, 'seated', 'quick again after a withdrawal: ' + s.k);
+    const r = seated(s);
+    const room = await r.next(m => m.t === 'room');
+    assert(room.seats.some(x => !x), 'the table is still waiting');
+    r.send({ t: 'leave' });
+    await sleep(400);
+    r.ws.close();
+    h.ws.close();
+  }
+  assert.strictEqual(sql('SELECT chips FROM players WHERE id = ' + who(acc))[0].chips, before, 'no stake was taken');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM chip_log WHERE player = ' + who(acc) + " AND reason IN ('escrow', 'fee', 'match', 'leave')")[0].n, 0, 'nothing was logged');
+  assert.strictEqual(rows(acc, 'leaves') + rows(acc, 'match_seat'), 0, 'no leave and no match');
+  console.log('quickCancel: two quick plays withdrawn before the start left nothing behind');
+
+  // the fourth person fills the last seat, so the match starts on the sit and nobody has left
+  const four = [];
+  for (let i = 0; i < 4; i++) four.push(await guest());
+  const socks = [];
+  const states = [];
+  for (const a of four) {
+    const h = await hub(a);
+    const sat = h.next(m => m.t === 'seated');
+    h.send({ t: 'quick', stake: 100 });
+    const r = seated(await sat);
+    states.push(r.next(m => m.t === 'state'));
+    socks.push(h, r);
+  }
+  await Promise.all(states);
+  for (const a of four) {
+    assert.strictEqual(rows(a, 'leaves'), 0, 'no leave row');
+    assert.strictEqual(rows(a, 'match_seat'), 1, 'one match');
+  }
+  for (const c of socks) c.ws.close();
+  console.log('quickCancel: a quick play that started on the sit leaves no leave row');
+}
+
 async function leaves() {
   const stamp = Date.now();
   sql('DELETE FROM personas WHERE created = 1');
@@ -6781,6 +6827,7 @@ process.on('unhandledRejection', e => {
   await sec('fee', () => fee());
   await sec('gates', () => gates());
   await sec('leaves', () => leaves());
+  await sec('quickCancel', () => quickCancel());
   await sec('lapseRematch', () => lapseRematch());
   await sec('lapseStandIn', () => lapseStandIn());
   await sec('missedClock', () => missedClock());

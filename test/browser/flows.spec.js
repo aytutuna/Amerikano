@@ -252,3 +252,93 @@ test('tables above the player level are locked and say what they need', async ({
   await signedIn(page, 4);
   await expect(page.locator('[data-k=room500]')).toBeEnabled();
 });
+
+// A friend table that waits for its host, with the second seat held by a test client: the app's quick play is answered with that
+// seat, but only when the test says so, so the finding sheet stays up as long as the test wants.
+async function waitingSeat(page) {
+  const WebSocket = require('../../server/node_modules/ws');
+  const ws = path => new WebSocket(process.env.AMK_API.replace('http', 'ws') + path);
+  let n = Math.floor(Math.random() * 15000);
+  const account = async () => {
+    n++;
+    const r = await fetch(process.env.AMK_API + '/api/guest', { method: 'POST', headers: { 'cf-connecting-ip': '10.7.' + Math.floor(n / 250) + '.' + (n % 250) } });
+    const g = await r.json();
+    return g.id + '.' + g.secret;
+  };
+  const talk = (sock, hello) => new Promise((res, rej) => {
+    const seen = [];
+    sock.on('open', () => sock.send(JSON.stringify(hello)));
+    sock.on('error', rej);
+    sock.on('message', d => {
+      const m = JSON.parse(d.toString());
+      seen.push(m);
+      if (m.t === 'joined') res(Object.assign(m, { seen: seen }));
+    });
+  });
+  const [a, b] = [await account(), await account()];
+  const host = ws('/ws/new');
+  const first = await talk(host, { t: 'create', auth: a, players: 4, games: 4, stake: 0 });
+  const other = ws('/ws/' + first.code);
+  const second = await talk(other, { t: 'join', auth: b });
+  let release = null;
+  await page.routeWebSocket(/\/ws\/hub$/, route => {
+    const server = route.connectToServer();
+    route.onMessage(m => {
+      let t = '';
+      try { t = JSON.parse(m).t; } catch (e) { /* a ping */ }
+      if (t !== 'quick') return server.send(m);
+      release = () => route.send(JSON.stringify({ t: 'seated', code: second.code, seat: second.seat, token: second.token }));
+    });
+    server.onMessage(m => route.send(m));
+  });
+  const rooms = [];
+  host.on('message', d => { const m = JSON.parse(d.toString()); if (m.t === 'room') rooms.push(m); });
+  return {
+    answer: () => release(),
+    seats: () => (rooms.length ? rooms[rooms.length - 1].seats.filter(Boolean).length : 2),
+    close: () => { host.close(); other.close(); },
+  };
+}
+
+test('Cancel on the finding sheet withdraws the seat and no table sheet follows', async ({ page }) => {
+  const table = await waitingSeat(page);
+  await guest(page);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('.sheet .sh-title')).toHaveText('Finding players');
+  await page.locator('.sheet .btn', { hasText: 'Cancel' }).click();
+  await expect(page.locator('.sw')).toHaveCount(0);
+  await expect(page.locator('[data-k=quick]')).toBeVisible();
+  // the hub's answer comes back: the app sits down, leaves again and shows nothing
+  table.answer();
+  await expect.poll(() => table.seats(), { timeout: 10000 }).toBe(1);
+  await page.waitForTimeout(3000);
+  await expect(page.locator('.sw')).toHaveCount(0);
+  await expect(page.locator('[data-k=quick]')).toBeVisible();
+  table.close();
+});
+
+test('Escape and a tap outside cancel the finding sheet', async ({ page }) => {
+  const table = await waitingSeat(page);
+  await guest(page);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('.sw')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.sw')).toHaveCount(0);
+  table.answer();
+  await expect.poll(() => table.seats(), { timeout: 10000 }).toBe(1);
+  await expect(page.locator('.sw')).toHaveCount(0);
+  table.close();
+});
+
+test('a tap outside the finding sheet cancels it', async ({ page }) => {
+  const table = await waitingSeat(page);
+  await guest(page);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('.sw')).toHaveCount(1);
+  await page.locator('.scrim').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('.sw')).toHaveCount(0);
+  table.answer();
+  await expect.poll(() => table.seats(), { timeout: 10000 }).toBe(1);
+  await expect(page.locator('.sw')).toHaveCount(0);
+  table.close();
+});
