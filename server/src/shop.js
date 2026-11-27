@@ -227,6 +227,7 @@ async function pack(db, e) {
   if (e.type === 'INITIAL_PURCHASE' || e.type === 'NON_RENEWING_PURCHASE') await take(db, id, e.product_id, tx, { env: e.environment, country: e.country_code });
   else if (e.type === 'CANCELLATION' && e.cancel_reason === 'CUSTOMER_SUPPORT') await refund(db, tx, id, e.product_id);
   else if (e.type === 'REFUND_REVERSED') await reverse(db, tx);
+  else console.log('rc: ' + e.type + ' needs nothing');
 }
 
 // RevenueCat's webhook; everything it sends that is not a token purchase, the subscription, a transfer or their refunds is acknowledged and left alone
