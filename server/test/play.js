@@ -1632,7 +1632,7 @@ async function boards() {
   const w = WEEK();
   const big = 2e9;
   const hex = c => c.repeat(32);
-  const bot = (c, won, level, xp, factor = 1) => sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, week, week_won, factor) VALUES ('" + hex(c) + "', 950, '1,1,1,0', " + level + ', ' + xp + ', 9, 3, 5000, 0, 0, 6, ' + w + ', ' + won + ', ' + factor + ')');
+  const bot = (c, won, level, xp, factor = 1) => sql("INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created, week, week_won, factor) VALUES ('" + hex(c) + "', 950, '1,1,1,0', " + level + ', ' + xp + ', 9, 3, 5000, 0, ' + (Date.now() - 86400000) + ', 6, ' + w + ', ' + won + ', ' + factor + ')');
   sql('DELETE FROM personas WHERE created = 6');
   const me = await guest();
   const set = n => sql('UPDATE players SET week = ' + w + ', week_won = ' + n + ', xp = 5, level = 1 WHERE id = ' + who(me));
@@ -1697,6 +1697,8 @@ async function boards() {
   bot('e', 0, 3, 300, 1.5);
   sql("UPDATE personas SET busy = 'table', busy_at = " + Date.now() + " WHERE id = '" + hex('e') + "'");
   bot('f', 0, 3, 300, 1);
+  bot('g', 0, 3, 300, 1);
+  sql("UPDATE personas SET busy_at = 0 WHERE id = '" + hex('g') + "'");
   const hour = Math.floor(Date.now() / 3600000) * 3600000;
   await tick(hour);
   const row = c => sql("SELECT week, week_won, week_xp, prev_week, prev_won FROM personas WHERE id = '" + hex(c) + "'")[0];
@@ -1706,6 +1708,10 @@ async function boards() {
   assert(d.week_won >= 1000 * 0.5 * 0.7 && d.week_won <= 1000 * 0.5 * 1.3, 'inside the band of its factor: ' + d.week_won);
   assert(d.week_xp >= 100 * 0.5 * 0.7 && d.week_xp <= 100 * 0.5 * 1.3, 'xp too: ' + d.week_xp);
   assert.deepStrictEqual(row('e'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'not while it is at a table');
+  assert.deepStrictEqual(row('g'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'nor one nobody has claimed for two weeks');
+  const gw = c => sql("SELECT games, wins FROM personas WHERE id = '" + hex(c) + "'")[0];
+  assert.deepStrictEqual(gw('g'), { games: 9, wins: 3 }, 'its games and wins stay too');
+  assert(gw('f').games >= 11 && gw('f').games <= 12 && gw('f').wins >= 3 && gw('f').wins <= 4, 'a free one gains the games and wins that go with its xp: ' + JSON.stringify(gw('f')));
   const fr1 = row('f');
   assert(fr1.week_won >= 700 && fr1.week_won <= 1300 && fr1.week_xp >= 70 && fr1.week_xp <= 130, 'a factor of one: ' + fr1.week_won + ' ' + fr1.week_xp);
   await tick(hour);

@@ -165,16 +165,20 @@ async function pace(env, now) {
   return { won: mid(results.map(r => r.won / hours)), xp: mid(results.map(r => r.n * MATCH_XP / hours)) };
 }
 
-// Hourly, each computer player that is not at a table adds wins and xp as a player who plays every week would: its own factor, fixed
-// when it was made, times that rate, a little different each hour. Real results at public tables add to it.
+// Hourly, each computer player in use lately that is not at a table adds wins and xp as a player who plays every week would: its own
+// factor, fixed when it was made, times that rate, a little different each hour, with the games and wins that would have earned it.
+// Real results at public tables add to it. One not claimed for two weeks is left alone, so its card does not grow for nobody.
+// (a match is worth about 45 xp, and about a quarter of the games are won)
 export async function simulate(env, now) {
   const set = env.PACE && await setting(env.DB, 'simrate');
   const rate = set ? JSON.parse(set) : await pace(env, now);
   const jitter = '(0.7 + abs(random()) % 600 / 1000.0)';
   await env.DB.prepare('UPDATE personas SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, ' +
     'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + CAST(?2 * factor * ' + jitter + ' AS INTEGER), ' +
-    'week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + CAST(?3 * factor * ' + jitter + ' AS INTEGER), week = ?1 WHERE busy IS NULL OR busy_at < ?4')
-    .bind(week(now), Math.round(rate.won), Math.round(rate.xp), now - 3 * 3600000).run();
+    'week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + CAST(?3 * factor * ' + jitter + ' AS INTEGER), ' +
+    'games = games + CAST(?3 * factor / 45 + abs(random()) % 1000 / 1000.0 AS INTEGER), wins = wins + CAST(?3 * factor / 180 + abs(random()) % 1000 / 1000.0 AS INTEGER), ' +
+    'week = ?1 WHERE (busy IS NULL OR busy_at < ?4) AND busy_at >= ?5')
+    .bind(week(now), Math.round(rate.won), Math.round(rate.xp), now - 3 * 3600000, now - 14 * 86400000).run();
 }
 
 // the requests to computer players whose time has come are dropped, as a person declining would
