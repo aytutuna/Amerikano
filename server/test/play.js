@@ -1758,6 +1758,7 @@ async function rematchPersona() {
   });
   await within(run.done, 240000, 'match end');
   await sleep(1500);
+        assert(!(m.clock && m.clock.p === k), 'an away computer player shows no turn clock, as an away person never does');
   assert(away.includes(true), 'a computer player was shown away');
   assert(away.lastIndexOf(true) < away.length - 1 && away.slice(away.indexOf(true)).includes(false), 'and it came back');
   assert(flagged > 0 && run.r.st.phase === 'matchend', 'the match went on to its end');

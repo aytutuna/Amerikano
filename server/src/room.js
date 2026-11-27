@@ -1346,7 +1346,7 @@ export class Room extends DurableObject {
     if (st.phase === 'gameend' || st.phase === 'matchend') return null;
     const i = this.actor();
     const s = r.seats[i];
-    if (s.auto || s.cover === this.turn() || !s.bot && !this.here(i)) return null;
+    if (s.auto || s.cover === this.turn() || this.away(s) || !s.bot && !this.here(i)) return null;
     return { p: i, left: Math.max(0, r.since + this.idle() * this.k - Date.now()), span: this.idle() * this.k };
   }
 
