@@ -8,7 +8,8 @@ var I18n = (function () {
   const PLURAL = ['', 'aces', 'twos', 'threes', 'fours', 'fives', 'sixes', 'sevens', 'eights', 'nines', 'tens', 'jacks', 'queens', 'kings'];
   const SUITS = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
   const cards = n => n === 1 ? '1 card' : n + ' cards';
-  const chips = n => n === 1 ? '1 chip' : n + ' chips';
+  // n may arrive already formatted, so "1" counts as one too
+  const chips = (n, shown) => String(n) === '1' ? '1 chip' : (shown === undefined ? n : shown) + ' chips';
   const ord = n => ['1st', '2nd', '3rd', '4th'][n - 1];
   const num = n => String(n).replace('-', '−');
   const lc = s => s.charAt(0).toLowerCase() + s.slice(1);
@@ -128,7 +129,7 @@ var I18n = (function () {
     cancel: 'Cancel',
 
     claimTitle: v => 'Take the ' + v.card + '?',
-    claimBody: v => 'You can take ' + (v.left === 1 ? '1 more discard' : v.left + ' more discards') + ' this game.',
+    claimBody: v => 'You put 1 chip in the pot and draw a penalty card from the stock. You can take ' + (v.left === 1 ? '1 more discard' : v.left + ' more discards') + ' this game.',
     costPill: '1 chip + 1 penalty card',
     take: 'Take',
     pass: 'Pass',
@@ -297,14 +298,14 @@ var I18n = (function () {
       rmLine: v => v.want + ' of ' + v.n + ' want a rematch. ' + v.s + ' s left.',
       rmFind: 'Finding players for the rematch.',
       lobby: 'Back to the lobby',
-      change: v => v.n > 0 ? 'You won ' + v.abs + ' chips.' : v.n < 0 ? 'You lost ' + v.abs + ' chips.' : 'You got your stake back.',
+      change: v => v.n > 0 ? 'You won ' + chips(v.n, v.abs) + '.' : v.n < 0 ? 'You lost ' + chips(-v.n, v.abs) + '.' : 'You got your stake back.',
       xp: v => '+' + v.n + ' XP',
       level: v => 'Level ' + v.n + '!',
-      tokens: v => '+' + v.n + ' tokens',
-      bonus: v => '+' + v.n + ' chips',
+      tokens: v => '+' + pl(v.n, { one: '# token', other: '# tokens' }),
+      bonus: v => '+' + chips(v.n),
       winnings: 'Your chips this match',
       scores: 'Score sheet',
-      unit: v => 'Stake ' + v.stake + ': each chip on the table is worth ' + v.unit + '.'
+      unit: v => 'Stake ' + v.stake + ': each unit in the pot is worth ' + chips(v.n, v.unit) + '.'
     },
 
     net: {
@@ -368,7 +369,7 @@ var I18n = (function () {
       quick: 'Quick play',
       fill: 'The match starts as soon as every seat is taken.',
       stake: 'Stake',
-      stakeAt: v => 'Stake ' + v.n + ' chips',
+      stakeAt: v => 'Stake ' + chips(v.n),
       stakeNote: v => 'At the start, ' + fmt(v.h) + ' chips are set aside: the most you can lose at this stake. What you do not lose is paid back when the match ends.',
       noStake: 'No chips at stake.',
       stakeHint: 'A multiple of 10. With 0, no chips are played for.',
@@ -439,7 +440,7 @@ var I18n = (function () {
       dailyTitle: 'Daily bonus',
       dailyDone: 'Come back tomorrow for more.',
       streakDay: v => 'Day ' + v.n,
-      got: v => 'You got ' + v.n + ' chips.',
+      got: v => 'You got ' + chips(v.n) + '.',
       reroll: 'New name',
       limit: 'You have used all of today’s new names.',
       bailout: 'Top up to 1,000 chips',
@@ -587,7 +588,7 @@ var I18n = (function () {
       title: 'Send a gift',
       note: 'A gift costs chips and nobody receives them.',
       tea: 'Tea', sweet: 'Turkish delight', rose: 'Rose', crown: 'Crown',
-      cost: v => v.n + ' chips',
+      cost: v => chips(v.n),
       gifted: v => v.from + ' sent ' + v.to + ' a gift: ' + v.gift
     },
 
@@ -625,7 +626,7 @@ var I18n = (function () {
       playing: 'Playing',
       at: { lobby: 'In the lobby', training: 'In training', table: 'At a table' },
       lateNote: v => v.name + ' invited you',
-      invText: v => v.name + ' invites you to a table. Stake ' + v.n + ' chips.',
+      invText: v => v.name + ' invites you to a table. Stake ' + chips(v.n) + '.',
       invFree: v => v.name + ' invites you to a table. No chips at stake.',
       join: 'Join',
       later: 'Later'
@@ -648,7 +649,7 @@ var I18n = (function () {
       set: 'Set',
       run: 'Run',
       secs: [
-        { h: 'The goal', p: [['Get rid of your cards before the others do. When a game ends, every card left in your hand counts against you. After the last game, the lowest total wins the pot.']] },
+        { h: 'The goal', p: [['Get rid of your cards before the others do. When a game ends, every card left in your hand counts against you. After the last game the pot is shared: the lowest total takes the larger part, and whoever went out in the last game takes the smaller part.']] },
         { h: 'A turn', p: [['Draw one card from the stock, or take the top card of the discard pile. Then lay melds if you may, and end your turn by discarding one card.']] },
         { h: 'Sets and runs', demo: true, p: [
           ['A set (küt) is three or more cards of one rank, in any suits. A run (seri) is three or more cards in order, all of one suit. A joker stands in for any card.'],
@@ -978,7 +979,7 @@ var I18n = (function () {
       bonus: v => '+' + v.n + ' çip',
       winnings: 'Bu maçtaki çipin',
       scores: 'Puan kağıdı',
-      unit: v => 'Masa değeri ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
+      unit: v => 'Masa değeri ' + v.stake + ': kasadaki her birim ' + v.unit + ' çip eder.'
     },
 
     net: {
@@ -1322,7 +1323,7 @@ var I18n = (function () {
       set: 'Küt',
       run: 'Seri',
       secs: [
-        { h: 'Amaç', p: [['Elindeki kağıtları diğerlerinden önce bitir. Oyun bitince elde kalan her kağıt sana puan yazar. Son oyundan sonra toplamı en düşük olan kasayı alır.']] },
+        { h: 'Amaç', p: [['Elindeki kağıtları diğerlerinden önce bitir. Oyun bitince elde kalan her kağıt sana puan yazar. Son oyundan sonra kasa paylaşılır: toplamı en düşük olan büyük payı, son oyunu bitiren küçük payı alır.']] },
         { h: 'Sıra', p: [['Desteden bir kağıt çek ya da yerdeki üstteki kağıdı al. Sonra elini açtıysan küt ve seri indirebilirsin. Sırayı bir kağıt atarak bitirirsin.']] },
         { h: 'Küt ve seri', demo: true, p: [
           ['Küt, aynı sayıdan, her renkten üç ya da daha fazla kağıttır. Seri, aynı renkten arka arkaya üç ya da daha fazla kağıttır. Joker her kağıdın yerine geçer.'],

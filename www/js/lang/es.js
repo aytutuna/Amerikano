@@ -138,7 +138,7 @@
     cancel: 'Cancelar',
 
     claimTitle: v => '¿Tomar ' + v.card + '?',
-    claimBody: v => 'En esta mano puedes tomar ' + pl(v.left, { one: 'un descarte más', other: '# descartes más' }) + '.',
+    claimBody: v => 'Pones 1 ficha en el pozo y robas una carta de castigo del mazo. En esta mano puedes tomar ' + pl(v.left, { one: 'un descarte más', other: '# descartes más' }) + '.',
     costPill: '1 ficha + 1 carta de castigo',
     take: 'Tomar',
     pass: 'Pasar',
@@ -307,14 +307,14 @@
       rmLine: v => v.want + ' de ' + v.n + ' quieren revancha. Quedan ' + v.s + ' s.',
       rmFind: 'Buscando jugadores para la revancha.',
       lobby: 'Volver al lobby',
-      change: v => v.n > 0 ? 'Ganaste ' + v.abs + ' fichas.' : v.n < 0 ? 'Perdiste ' + v.abs + ' fichas.' : 'Recuperaste tu entrada.',
+      change: v => v.n > 0 ? 'Ganaste ' + chips(Math.abs(v.n)) + '.' : v.n < 0 ? 'Perdiste ' + chips(Math.abs(v.n)) + '.' : 'Recuperaste tu entrada.',
       xp: v => '+' + v.n + ' XP',
       tokens: v => '+' + pl(v.n, { one: '# gema', other: '# gemas' }),
       level: v => '¡Nivel ' + v.n + '!',
       bonus: v => '+' + v.n + ' fichas',
       winnings: 'Tus fichas en esta partida',
       scores: 'Marcador',
-      unit: v => 'Entrada ' + v.stake + ': cada ficha de la mesa vale ' + v.unit + '.'
+      unit: v => 'Entrada ' + v.stake + ': cada unidad del pozo vale ' + chips(v.n) + '.'
     },
 
     net: {
@@ -658,7 +658,7 @@
       set: 'Grupo',
       run: 'Escalera',
       secs: [
-        { h: 'La meta', p: [['Quédate sin cartas antes que los demás. Cuando termina una mano, cada carta que te queda en la mano te suma puntos. Después de la última mano, gana el pozo quien tenga el total más bajo.']] },
+        { h: 'La meta', p: [['Quédate sin cartas antes que los demás. Cuando termina una mano, cada carta que te queda en la mano te suma puntos. Después de la última mano se reparte el pozo: quien tenga el total más bajo se lleva la parte más grande, y quien cerró en la última mano, la más pequeña.']] },
         { h: 'Un turno', p: [['Roba una carta del mazo o toma la de arriba del descarte. Luego baja combinaciones si ya puedes y termina tu turno descartando una carta.']] },
         { h: 'Grupos y escaleras', demo: true, p: [
           ['Un grupo (küt) son tres o más cartas del mismo valor, de cualquier palo: un trío si son tres, un cuarteto si son cuatro. Una escalera (seri) son tres o más cartas en orden, todas del mismo palo. Un comodín vale por cualquier carta.'],

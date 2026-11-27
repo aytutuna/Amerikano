@@ -139,7 +139,7 @@
     cancel: 'Annuleren',
 
     claimTitle: v => 'Pak je ' + v.card + '?',
-    claimBody: v => 'In dit spel mag je nog ' + pl(v.left, { one: 'één kaart', other: '# kaarten' }) + ' van de aflegstapel pakken.',
+    claimBody: v => 'Je legt 1 fiche in de pot en trekt een strafkaart van de trekstapel. In dit spel mag je nog ' + pl(v.left, { one: 'één kaart', other: '# kaarten' }) + ' van de aflegstapel pakken.',
     costPill: '1 fiche + 1 strafkaart',
     take: 'Pakken',
     pass: 'Passen',
@@ -315,7 +315,7 @@
       bonus: v => '+' + v.n + ' fiches',
       winnings: 'Jouw fiches in deze partij',
       scores: 'Scores',
-      unit: v => 'Inzet ' + v.stake + ': elke fiche aan tafel is ' + v.unit + ' waard.'
+      unit: v => 'Inzet ' + v.stake + ': elke eenheid in de pot is ' + chips(v.n) + ' waard.'
     },
 
     net: {
@@ -659,7 +659,7 @@
       set: 'Groep',
       run: 'Reeks',
       secs: [
-        { h: 'Het doel', p: [['Raak al je kaarten kwijt voordat de anderen dat doen. Als een spel eindigt, geeft elke kaart die je nog in je hand hebt punten. Na het laatste spel wint wie het laagste totaal heeft de pot.']] },
+        { h: 'Het doel', p: [['Raak al je kaarten kwijt voordat de anderen dat doen. Als een spel eindigt, geeft elke kaart die je nog in je hand hebt punten. Na het laatste spel wordt de pot verdeeld: wie het laagste totaal heeft krijgt het grootste deel, wie in het laatste spel uitging het kleinste.']] },
         { h: 'Een beurt', p: [['Pak een kaart van de trekstapel of de bovenste van de aflegstapel. Leg daarna combinaties neer als je dat al mag en sluit je beurt af door een kaart af te leggen.']] },
         { h: 'Groepen en reeksen', demo: true, p: [
           ['Een groep (küt) bestaat uit drie of meer kaarten met dezelfde waarde, van elke soort. Een reeks (seri) bestaat uit drie of meer kaarten op volgorde, allemaal van dezelfde soort. Een joker kan elke kaart vervangen.'],

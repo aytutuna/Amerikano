@@ -138,7 +138,7 @@
     cancel: 'Annuler',
 
     claimTitle: v => 'Prendre ' + v.card + ' ?',
-    claimBody: v => 'Dans cette manche, tu peux encore prendre ' + pl(v.left, { one: 'une carte', other: '# cartes' }) + ' dans la défausse.',
+    claimBody: v => 'Tu mets 1 jeton dans la cagnotte et tu pioches une carte de pénalité. Dans cette manche, tu peux encore prendre ' + pl(v.left, { one: 'une carte', other: '# cartes' }) + ' dans la défausse.',
     costPill: '1 jeton + 1 carte de pénalité',
     take: 'Prendre',
     pass: 'Passer',
@@ -307,14 +307,14 @@
       rmLine: v => v.want + ' sur ' + v.n + ' veulent une revanche. Encore ' + v.s + ' s.',
       rmFind: 'Recherche de joueurs pour la revanche.',
       lobby: 'Retour au salon',
-      change: v => v.n > 0 ? 'Tu as gagné ' + v.abs + ' jetons.' : v.n < 0 ? 'Tu as perdu ' + v.abs + ' jetons.' : 'Tu as récupéré ton entrée.',
+      change: v => v.n > 0 ? 'Tu as gagné ' + chips(Math.abs(v.n)) + '.' : v.n < 0 ? 'Tu as perdu ' + chips(Math.abs(v.n)) + '.' : 'Tu as récupéré ton entrée.',
       xp: v => '+' + v.n + ' XP',
       tokens: v => '+' + pl(v.n, { one: '# gemme', many: '# de gemmes', other: '# gemmes' }),
       level: v => 'Niveau ' + v.n + ' !',
       bonus: v => '+' + v.n + ' jetons',
       winnings: 'Tes jetons sur cette partie',
       scores: 'Scores',
-      unit: v => 'Entrée ' + v.stake + ' : chaque jeton de la table vaut ' + v.unit + '.'
+      unit: v => 'Entrée ' + v.stake + ' : chaque unité de la cagnotte vaut ' + chips(v.n) + '.'
     },
 
     net: {
@@ -658,7 +658,7 @@
       set: 'Groupe',
       run: 'Suite',
       secs: [
-        { h: 'But du jeu', p: [['Te retrouver sans cartes avant les autres. À la fin d’une manche, chaque carte qui te reste en main te fait marquer des points. Après la dernière manche, celui qui a le total le plus bas remporte la cagnotte.']] },
+        { h: 'But du jeu', p: [['Te retrouver sans cartes avant les autres. À la fin d’une manche, chaque carte qui te reste en main te fait marquer des points. Après la dernière manche, la cagnotte est partagée : celui qui a le total le plus bas prend la plus grosse part, et celui qui a fermé à la dernière manche la plus petite.']] },
         { h: 'Un tour', p: [['Pioche une carte ou prends celle du dessus de la défausse. Pose ensuite des combinaisons si tu peux, et termine ton tour en te défaussant d’une carte.']] },
         { h: 'Groupes et suites', demo: true, p: [
           ['Un groupe (küt) réunit trois cartes ou plus de même valeur, de n’importe quelle couleur : un brelan à trois, un carré à quatre. Une suite (seri) réunit trois cartes ou plus qui se suivent, toutes de la même couleur. Un joker remplace n’importe quelle carte.'],

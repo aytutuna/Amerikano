@@ -139,7 +139,7 @@
     cancel: 'Anuluj',
 
     claimTitle: v => 'Wziąć kartę: ' + v.card + '?',
-    claimBody: v => 'W tym rozdaniu możesz wziąć jeszcze ' + pl(v.left, { one: 'jedną kartę', few: '# karty', many: '# kart', other: '# karty' }) + ' ze stosu odrzuconych.',
+    claimBody: v => 'Wkładasz 1 żeton do puli i dobierasz kartę karną ze stosu. W tym rozdaniu możesz wziąć jeszcze ' + pl(v.left, { one: 'jedną kartę', few: '# karty', many: '# kart', other: '# karty' }) + ' ze stosu odrzuconych.',
     costPill: '1 żeton + 1 karta karna',
     take: 'Weź',
     pass: 'Pas',
@@ -315,7 +315,7 @@
       bonus: v => '+' + v.n + ' żetonów',
       winnings: 'Twoje żetony w tej partii',
       scores: 'Wyniki',
-      unit: v => 'Stawka ' + v.stake + ': każdy żeton przy stole jest wart ' + v.unit + '.'
+      unit: v => 'Stawka ' + v.stake + ': każda jednostka w puli jest warta ' + chips(v.n) + '.'
     },
 
     net: {
@@ -659,7 +659,7 @@
       set: 'Grupa',
       run: 'Sekwens',
       secs: [
-        { h: 'Cel', p: [['Pozbądź się wszystkich kart przed innymi. Gdy rozdanie się kończy, każda karta, która została ci na ręce, dodaje punkty. Po ostatnim rozdaniu pulę wygrywa ten, kto ma najniższą sumę.']] },
+        { h: 'Cel', p: [['Pozbądź się wszystkich kart przed innymi. Gdy rozdanie się kończy, każda karta, która została ci na ręce, dodaje punkty. Po ostatnim rozdaniu pula się dzieli: kto ma najniższą sumę, dostaje większą część, a kto wyszedł w ostatnim rozdaniu, mniejszą.']] },
         { h: 'Tura', p: [['Dobierz kartę ze stosu albo weź wierzchnią ze stosu odrzuconych. Potem, jeśli już możesz, wyłóż układy i zakończ turę, odrzucając kartę.']] },
         { h: 'Grupy i sekwensy', demo: true, p: [
           ['Grupa (küt) to trzy lub więcej kart o tej samej wartości w dowolnych kolorach. Sekwens (seri) to trzy lub więcej kart po kolei, wszystkie w jednym kolorze. Joker zastępuje dowolną kartę.'],

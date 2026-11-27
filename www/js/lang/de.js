@@ -137,7 +137,7 @@
     cancel: 'Abbrechen',
 
     claimTitle: v => v.card + ' nehmen?',
-    claimBody: v => 'In diesem Spiel darfst du noch ' + pl(v.left, { one: 'einmal', other: '#-mal' }) + ' eine Karte vom Ablagestapel nehmen.',
+    claimBody: v => 'Du legst 1 Chip in den Topf und ziehst eine Strafkarte vom Nachziehstapel. In diesem Spiel darfst du noch ' + pl(v.left, { one: 'einmal', other: '#-mal' }) + ' eine Karte vom Ablagestapel nehmen.',
     costPill: '1 Chip + 1 Strafkarte',
     take: 'Nehmen',
     pass: 'Passen',
@@ -313,7 +313,7 @@
       bonus: v => '+' + v.n + ' Chips',
       winnings: 'Deine Chips in dieser Partie',
       scores: 'Spielstand',
-      unit: v => 'Einsatz ' + v.stake + ': Jeder Chip am Tisch ist ' + v.unit + ' wert.'
+      unit: v => 'Einsatz ' + v.stake + ': Jede Einheit im Topf ist ' + chips(v.n) + ' wert.'
     },
 
     net: {
@@ -657,7 +657,7 @@
       set: 'Satz',
       run: 'Reihe',
       secs: [
-        { h: 'Das Ziel', p: [['Werde deine Karten vor den anderen los. Wenn ein Spiel endet, zählt jede Karte, die du noch auf der Hand hast, als Punkte. Nach dem letzten Spiel gewinnt den Topf, wer die niedrigste Gesamtsumme hat.']] },
+        { h: 'Das Ziel', p: [['Werde deine Karten vor den anderen los. Wenn ein Spiel endet, zählt jede Karte, die du noch auf der Hand hast, als Punkte. Nach dem letzten Spiel wird der Topf geteilt: Wer die niedrigste Gesamtsumme hat, bekommt den größeren Teil, wer im letzten Spiel ausgestiegen ist, den kleineren.']] },
         { h: 'Ein Zug', p: [['Zieh eine Karte vom Nachziehstapel oder nimm die oberste vom Ablagestapel. Lege dann Kombinationen aus, wenn du schon darfst, und beende deinen Zug, indem du eine Karte ablegst.']] },
         { h: 'Sätze und Reihen', demo: true, p: [
           ['Ein Satz (küt) besteht aus drei oder mehr Karten mit gleichem Wert in beliebigen Farben. Eine Reihe (seri) besteht aus drei oder mehr Karten in der richtigen Reihenfolge, alle in derselben Farbe. Ein Joker steht für jede beliebige Karte.'],

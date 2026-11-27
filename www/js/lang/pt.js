@@ -138,7 +138,7 @@
     cancel: 'Cancelar',
 
     claimTitle: v => 'Pegar ' + v.card + '?',
-    claimBody: v => 'Nesta rodada você ainda pode pegar ' + pl(v.left, { one: 'mais um descarte', other: 'mais # descartes' }) + '.',
+    claimBody: v => 'Você coloca 1 ficha no pote e compra uma carta de penalidade do monte. Nesta rodada você ainda pode pegar ' + pl(v.left, { one: 'mais um descarte', other: 'mais # descartes' }) + '.',
     costPill: '1 ficha + 1 carta de penalidade',
     take: 'Pegar',
     pass: 'Passar',
@@ -307,14 +307,14 @@
       rmLine: v => v.want + ' de ' + v.n + ' querem revanche. Faltam ' + v.s + ' s.',
       rmFind: 'Procurando jogadores para a revanche.',
       lobby: 'Voltar ao lobby',
-      change: v => v.n > 0 ? 'Você ganhou ' + v.abs + ' fichas.' : v.n < 0 ? 'Você perdeu ' + v.abs + ' fichas.' : 'Você recuperou sua entrada.',
+      change: v => v.n > 0 ? 'Você ganhou ' + chips(Math.abs(v.n)) + '.' : v.n < 0 ? 'Você perdeu ' + chips(Math.abs(v.n)) + '.' : 'Você recuperou sua entrada.',
       xp: v => '+' + v.n + ' XP',
       tokens: v => '+' + pl(v.n, { one: '# gema', many: '# de gemas', other: '# gemas' }),
       level: v => 'Nível ' + v.n + '!',
       bonus: v => '+' + v.n + ' fichas',
       winnings: 'Suas fichas nesta partida',
       scores: 'Placar',
-      unit: v => 'Entrada ' + v.stake + ': cada ficha da mesa vale ' + v.unit + '.'
+      unit: v => 'Entrada ' + v.stake + ': cada unidade do pote vale ' + chips(v.n) + '.'
     },
 
     net: {
@@ -658,7 +658,7 @@
       set: 'Trinca',
       run: 'Sequência',
       secs: [
-        { h: 'Como ganhar', p: [['Fique sem cartas antes dos outros. Quando a rodada termina, cada carta que sobrou na sua mão soma pontos. Depois da última rodada, quem tiver o menor total leva o pote.']] },
+        { h: 'Como ganhar', p: [['Fique sem cartas antes dos outros. Quando a rodada termina, cada carta que sobrou na sua mão soma pontos. Depois da última rodada, o pote é dividido: quem tiver o menor total leva a parte maior, e quem bateu na última rodada leva a menor.']] },
         { h: 'Sua vez', p: [['Compre uma carta do monte ou pegue a do topo do descarte. Depois baixe jogos, se já puder, e termine a vez descartando uma carta.']] },
         { h: 'Trincas e sequências', demo: true, p: [
           ['Uma trinca (küt) são três ou mais cartas do mesmo valor, de qualquer naipe (trinca se forem três, quadra se forem quatro). Uma sequência (seri) são três ou mais cartas em ordem, todas do mesmo naipe. O coringa vale qualquer carta.'],

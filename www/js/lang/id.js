@@ -135,7 +135,7 @@
     cancel: 'Batal',
 
     claimTitle: v => 'Ambil ' + v.card + '?',
-    claimBody: v => 'Di ronde ini kamu masih bisa mengambil ' + v.left + ' kartu buangan lagi.',
+    claimBody: v => 'Kamu menaruh 1 chip ke pot dan menarik satu kartu penalti dari tumpukan. Di ronde ini kamu masih bisa mengambil ' + v.left + ' kartu buangan lagi.',
     costPill: '1 chip + 1 kartu penalti',
     take: 'Ambil',
     pass: 'Lewati',
@@ -311,7 +311,7 @@
       bonus: v => '+' + v.n + ' chip',
       winnings: 'Chip-mu di pertandingan ini',
       scores: 'Papan skor',
-      unit: v => 'Modal ' + v.stake + ': setiap chip di meja bernilai ' + v.unit + '.'
+      unit: v => 'Modal ' + v.stake + ': setiap satuan di pot bernilai ' + v.unit + ' chip.'
     },
 
     net: {
@@ -655,7 +655,7 @@
       set: 'Set',
       run: 'Urutan',
       secs: [
-        { h: 'Tujuan', p: [['Habiskan kartumu sebelum yang lain. Saat ronde selesai, setiap kartu yang masih ada di tanganmu menambah poin. Setelah ronde terakhir, pemain dengan total poin paling rendah menang dan membawa pulang pot.']] },
+        { h: 'Tujuan', p: [['Habiskan kartumu sebelum yang lain. Saat ronde selesai, setiap kartu yang masih ada di tanganmu menambah poin. Setelah ronde terakhir, pot dibagi: pemain dengan total poin paling rendah mendapat bagian yang lebih besar, dan yang tutup di ronde terakhir mendapat bagian yang lebih kecil.']] },
         { h: 'Satu giliran', p: [['Ambil satu kartu dari tumpukan atau ambil kartu teratas di tumpukan buangan. Lalu turunkan kombinasi kalau sudah bisa, dan akhiri giliran dengan membuang satu kartu.']] },
         { h: 'Set dan urutan', demo: true, p: [
           ['Set (küt) adalah tiga kartu atau lebih dengan angka yang sama, jenis apa saja: tiga kartu disebut set 3, empat kartu set 4. Urutan (seri) adalah tiga kartu atau lebih yang berurutan dan berjenis sama. Joker bisa menggantikan kartu apa pun.'],

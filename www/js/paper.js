@@ -409,7 +409,7 @@
       }
       body.appendChild(node('p', 'pline', sentence));
       if (st.res && st.stake) {
-        body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.loc()), unit: (st.stake / 10).toLocaleString(I18n.loc()) })));
+        body.appendChild(node('p', 'pline', t('end.unit', { stake: st.stake.toLocaleString(I18n.loc()), unit: (st.stake / 10).toLocaleString(I18n.loc()), n: st.stake / 10 })));
       }
     }
 

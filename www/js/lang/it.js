@@ -138,7 +138,7 @@
     cancel: 'Annulla',
 
     claimTitle: v => 'Prendere ' + v.card + '?',
-    claimBody: v => 'In questa mano puoi prendere ancora ' + pl(v.left, { one: 'uno scarto', other: '# scarti' }) + '.',
+    claimBody: v => 'Metti 1 fiche nel piatto e peschi una carta di penalità dal mazzo. In questa mano puoi prendere ancora ' + pl(v.left, { one: 'uno scarto', other: '# scarti' }) + '.',
     costPill: '1 fiche + 1 carta di penalità',
     take: 'Prendi',
     pass: 'Passa',
@@ -307,14 +307,14 @@
       rmLine: v => v.want + ' su ' + v.n + ' vogliono la rivincita. Ancora ' + v.s + ' s.',
       rmFind: 'Cerco giocatori per la rivincita.',
       lobby: 'Torna alla lobby',
-      change: v => v.n > 0 ? 'Hai vinto ' + v.abs + ' fiches.' : v.n < 0 ? 'Hai perso ' + v.abs + ' fiches.' : 'Hai riavuto il tuo ingresso.',
+      change: v => v.n > 0 ? 'Hai vinto ' + chips(Math.abs(v.n)) + '.' : v.n < 0 ? 'Hai perso ' + chips(Math.abs(v.n)) + '.' : 'Hai riavuto il tuo ingresso.',
       xp: v => '+' + v.n + ' XP',
       tokens: v => '+' + pl(v.n, { one: '# gemma', other: '# gemme' }),
       level: v => 'Livello ' + v.n + '!',
       bonus: v => '+' + v.n + ' fiches',
       winnings: 'Le tue fiches in questa partita',
       scores: 'Punteggi',
-      unit: v => 'Ingresso ' + v.stake + ': ogni fiche del tavolo vale ' + v.unit + '.'
+      unit: v => 'Ingresso ' + v.stake + ': ogni unità del piatto vale ' + chips(v.n) + '.'
     },
 
     net: {
@@ -658,7 +658,7 @@
       set: 'Tris',
       run: 'Scala',
       secs: [
-        { h: 'L’obiettivo', p: [['Restare senza carte prima degli altri. Quando la mano finisce, ogni carta che hai ancora in mano ti dà punti. Dopo l’ultima mano, chi ha il totale più basso vince il piatto.']] },
+        { h: 'L’obiettivo', p: [['Restare senza carte prima degli altri. Quando la mano finisce, ogni carta che hai ancora in mano ti dà punti. Dopo l’ultima mano il piatto si divide: chi ha il totale più basso prende la parte più grande, e chi ha chiuso l’ultima mano quella più piccola.']] },
         { h: 'Un turno', p: [['Pesca una carta dal mazzo o prendi quella in cima agli scarti. Poi cala le combinazioni, se puoi, e finisci il turno scartando una carta.']] },
         { h: 'Tris e scale', demo: true, p: [
           ['Un tris (küt) è formato da tre o più carte dello stesso valore, di semi qualsiasi: tris con tre carte, quartetto con quattro. Una scala (seri) è formata da tre o più carte in sequenza, tutte dello stesso seme. Un jolly vale qualsiasi carta.'],

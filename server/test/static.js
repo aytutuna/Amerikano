@@ -47,6 +47,26 @@ for (const k of ['cards', 'playing', 'stockEmpty', 'st.sel', 'start.fan', 'setup
   if (keys.includes(k)) fail('removed text is back: ' + k);
 }
 
+// lines that were wrong and must not come back, in English and Turkish
+const get = (tbl, k) => k.split('.').reduce((o, x) => (o ? o[x] : undefined), tbl);
+const wrong = [
+  ['en', /each chip on the table|Opponent speed|lowest total wins the pot/i],
+  ['tr', /masadaki her çip|toplamı en düşük olan kasayı alır|Rakip hızı/i]
+];
+for (const [code, re] of wrong) {
+  for (const k of flat(S[code], '', [])) {
+    const v = get(S[code], k);
+    if (typeof v === 'string' && re.test(v)) fail('wrong line in ' + code + ': ' + k);
+  }
+}
+// one chip and one token read in the singular
+const one = { 'end.change': { n: 1, abs: '1' }, 'end.tokens': { n: 1 }, 'end.bonus': { n: 1 }, 'hall.stakeAt': { n: 1 }, 'pf.got': { n: 1 }, 'gift.cost': { n: 1 }, 'fr.invText': { name: 'A', n: 1 }, 'end.unit': { stake: 10, unit: '1', n: 1 } };
+for (const [k, v] of Object.entries(one)) {
+  const s = get(S.en, k)(v);
+  if (/1 (chips|tokens)/.test(s)) fail('plural of one in ' + k + ': ' + s);
+}
+if (!/penalty card/.test(S.en.claimBody({ left: 2 }))) fail('claimBody does not name the cost');
+
 if (bad.length) {
   for (const m of bad) console.log(m);
   process.exit(1);
