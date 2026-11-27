@@ -60,8 +60,9 @@ test('signing out and deleting the account clear the plugin and tell the server'
   await page.evaluate(() => Account.forget());
   await expect.poll(() => seen).toContain('POST /api/signout');
   await expect.poll(() => stored(page)).toBeNull();
-  const again = await page.request.get(process.env.AMK_API + '/api/me', { headers: { Authorization: 'Bearer ' + key.id + '.' + key.secret } });
-  expect(again.status()).toBe(401);
+  // the request is seen when it leaves the page, so the server may not have answered yet
+  const status = async () => (await page.request.get(process.env.AMK_API + '/api/me', { headers: { Authorization: 'Bearer ' + key.id + '.' + key.secret } })).status();
+  await expect.poll(status).toBe(401);
 
   await page.reload();
   await page.click('[data-k=guest]');
