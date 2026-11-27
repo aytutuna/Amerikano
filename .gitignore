@@ -19,3 +19,4 @@ ios/DerivedData/
 .wrangler/
 server/test/dev.vars
 test/browser/out/
+test-results/
