@@ -42,7 +42,15 @@ async function guest(page, lang) {
 // a statement straight into the test database
 function sql(q) {
   const wrangler = path.join(__dirname, '../../server/node_modules/wrangler/bin/wrangler.js');
-  execFileSync(process.execPath, [wrangler, 'd1', 'execute', 'amerikano', '--local', '--persist-to', process.env.AMK_PERSIST, '--command', q], { cwd: path.join(__dirname, '../../server'), stdio: 'ignore', timeout: 60000 });
+  // wrangler now and then dies on a busy machine; a statement that is really wrong fails the same way each time
+  for (let i = 0; ; i++) {
+    try {
+      execFileSync(process.execPath, [wrangler, 'd1', 'execute', 'amerikano', '--local', '--persist-to', process.env.AMK_PERSIST, '--command', q], { cwd: path.join(__dirname, '../../server'), stdio: 'ignore', timeout: 60000 });
+      return;
+    } catch (e) {
+      if (i === 2) throw e;
+    }
+  }
 }
 
 // Gives the page's account an Apple identity and a level straight in the test database; the cups and the larger tables are not for guests.
