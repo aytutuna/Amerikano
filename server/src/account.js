@@ -169,18 +169,24 @@ export async function strike(db, id, match, code, stake, now = Date.now()) {
 }
 
 // The only way tokens change, with the same ref rule as credit(). A cap makes it an earning: the day's total may not pass it.
-export async function grantTokens(db, id, delta, reason, ref, cap) {
+// opts is for a store purchase: env marks the log row, pre and post are statements in the same batch around the grant, and
+// guard (sql with ? marks, args) lets the grant through only while the purchase row stands unrefunded.
+export async function grantTokens(db, id, delta, reason, ref, cap, opts = {}) {
   if (!delta) return true;
   if (ref && await db.prepare('SELECT 1 FROM token_log WHERE ref = ?').bind(ref).first()) return true;
   const day = today();
+  const pre = opts.pre || [];
+  const guard = opts.guard ? ' AND (' + opts.guard + ')' : '';
   try {
     const r = await db.batch([
+      ...pre,
       cap
         ? db.prepare('UPDATE players SET tokens = tokens + ?1, earn_day = ?3, earned = CASE WHEN earn_day = ?3 THEN earned + ?1 ELSE ?1 END WHERE id = ?2 AND (earn_day <> ?3 OR earned + ?1 <= ?4)').bind(delta, id, day, cap)
-        : db.prepare('UPDATE players SET tokens = tokens + ?1 WHERE id = ?2 AND tokens + ?1 >= 0').bind(delta, id),
-      db.prepare('INSERT INTO token_log (player, delta, reason, ref, at) SELECT ?1, ?2, ?3, ?4, ?5 WHERE changes() > 0').bind(id, delta, reason, ref || null, Date.now())
+        : db.prepare('UPDATE players SET tokens = tokens + ?1 WHERE id = ?2 AND tokens + ?1 >= 0' + guard).bind(delta, id, ...(opts.args || [])),
+      db.prepare('INSERT INTO token_log (player, delta, reason, ref, at, env) SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE changes() > 0').bind(id, delta, reason, ref || null, Date.now(), opts.env || null),
+      ...(opts.post || [])
     ]);
-    return r[0].meta.changes === 1;
+    return r[pre.length].meta.changes === 1;
   } catch (e) {
     if (ref && /UNIQUE/.test(e.message)) return true;
     throw e;

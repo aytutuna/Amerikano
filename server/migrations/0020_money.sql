@@ -1,0 +1,2 @@
+ALTER TABLE token_log ADD COLUMN env TEXT;
+ALTER TABLE purchases ADD COLUMN country TEXT;

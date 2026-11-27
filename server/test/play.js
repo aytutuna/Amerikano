@@ -3296,7 +3296,7 @@ async function shop(rc) {
 // the VIP subscription through RevenueCat's webhook and the app's own sync
 async function vip(rc) {
   sql('DELETE FROM purchases');
-  sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%'");
+  sql("DELETE FROM token_log WHERE ref LIKE 'rc:%' OR ref LIKE 'refund:%' OR ref LIKE 'reversed:%'");
   const M = 30 * DAY;
   const now = Date.now();
   const sub = (type, acc, tx, until, more) => hook(event(type, acc, VIP, tx, Object.assign({ expiration_at_ms: until }, more)));
@@ -3326,9 +3326,9 @@ async function vip(rc) {
   assert.strictEqual(sql("SELECT env FROM purchases WHERE tx = 'vtx-b'")[0].env, 'PRODUCTION');
   // a subscriber without a transaction id gets the date, and the tokens come with the webhook
   const n = await guest();
-  rc.vip[n.id] = { expires_date: new Date(u1).toISOString() };
+  rc.vip[n.id] = { expires_date: new Date(u1 + 1234).toISOString() };
   s = (await call('POST', '/api/shop/sync', n)).body;
-  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, u1]);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, u1 + 1234]);
 
   // a renewal extends and pays again; an older event that arrives late neither cuts nor repeats it
   await sub('RENEWAL', a, 'vtx-2', u2);
@@ -3436,6 +3436,174 @@ async function vip(rc) {
   sql('UPDATE players SET sync_at = 0 WHERE id = ' + who(e));
   assert.strictEqual((await call('POST', '/api/shop/sync', e)).body.vipUntil, now + 2 * DAY, 'sync honours a grace period');
   console.log('vip: expiration and grace period');
+
+  // a refund ends VIP whatever date it carries: the stored end of the month decides, not the refund's own time
+  const sum = acc => sql('SELECT coalesce(sum(delta), 0) AS n FROM token_log WHERE player = ' + who(acc))[0].n;
+  const ends = async (name, more) => {
+    const x = await guest();
+    await sub('INITIAL_PURCHASE', x, 'vtx-r-' + name, now + M);
+    assert.strictEqual((await shopOf(x)).vipUntil, now + M, name);
+    await sub('CANCELLATION', x, 'vtx-r-' + name, now + M, Object.assign({ cancel_reason: 'CUSTOMER_SUPPORT' }, more));
+    s = await shopOf(x);
+    assert.deepStrictEqual([s.vipUntil, s.tokens], [0, 0], name + ' ends VIP now and takes the tokens');
+  };
+  await ends('time', { expiration_at_ms: Date.now() });
+  await ends('absent', { expiration_at_ms: undefined });
+  await ends('later', { expiration_at_ms: now + 90 * DAY });
+  const r1 = await guest();
+  await sub('INITIAL_PURCHASE', r1, 'vtx-q1', now + 10 * DAY);
+  await sub('RENEWAL', r1, 'vtx-q2', now + 40 * DAY);
+  await sub('CANCELLATION', r1, 'vtx-q1', Date.now(), { cancel_reason: 'CUSTOMER_SUPPORT' });
+  assert.strictEqual((await shopOf(r1)).vipUntil, now + 40 * DAY, 'an older month refunded at the refund time leaves the current one');
+  // an id that is not ours leaves nothing behind, for a month and for a pack
+  for (const id of ['0'.repeat(32), 'not-an-id']) {
+    await hook(event('CANCELLATION', { id: id }, VIP, 'vtx-ghost-' + id.length, { cancel_reason: 'CUSTOMER_SUPPORT', expiration_at_ms: now + M }));
+    await hook(event('CANCELLATION', { id: id }, PACK(500), 'ptx-ghost-' + id.length, { cancel_reason: 'CUSTOMER_SUPPORT' }));
+  }
+  assert.strictEqual(sql("SELECT count(*) AS n FROM purchases WHERE tx LIKE '%ghost%'")[0].n, 0, 'a refund for an unknown id is not written down');
+  // a refund that cannot take the tokens back after three tries is flagged for the admin page
+  const stuck = await guest();
+  await sub('INITIAL_PURCHASE', stuck, 'vtx-stuck', now + M);
+  sql('CREATE TRIGGER stuck BEFORE UPDATE OF tokens ON players WHEN NEW.tokens < OLD.tokens AND OLD.id = ' + who(stuck) + ' BEGIN SELECT RAISE(IGNORE); END');
+  try {
+    await sub('CANCELLATION', stuck, 'vtx-stuck', now + M, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  } finally {
+    sql('DROP TRIGGER stuck');
+  }
+  assert.deepStrictEqual(sql("SELECT kind, a, b, x FROM flags WHERE kind = 'refund' AND a = " + who(stuck)), [{ kind: 'refund', a: stuck.id, b: 'vtx-stuck', x: 500 }]);
+  assert.strictEqual(sql("SELECT refunded FROM purchases WHERE tx = 'vtx-stuck'")[0].refunded, 0, 'not marked as refunded while the tokens are still there');
+  console.log('vip: a refund ends VIP by the stored end, ignores unknown ids and flags what it cannot take back');
+
+  // a purchase and its refund at the same moment never leave tokens or VIP behind, whichever lands first
+  for (let i = 0; i < 12; i++) {
+    const x = await guest();
+    const [t, pt] = ['vtx-race-' + i, 'ptx-race-' + i];
+    await Promise.all([sub('INITIAL_PURCHASE', x, t, now + M), hook(event('NON_RENEWING_PURCHASE', x, PACK(500), pt))]);
+    await Promise.all([sub('CANCELLATION', x, t, now + M, { cancel_reason: 'CUSTOMER_SUPPORT' }), hook(event('CANCELLATION', x, PACK(500), pt, { cancel_reason: 'CUSTOMER_SUPPORT' }))]);
+    s = await shopOf(x);
+    assert.deepStrictEqual([s.tokens, s.vipUntil, sum(x)], [0, 0, 0], 'a settled pair, round ' + i);
+    const y = await guest();
+    const [u, pu] = ['vtx-racing-' + i, 'ptx-racing-' + i];
+    await Promise.all([sub('CANCELLATION', y, u, now + M, { cancel_reason: 'CUSTOMER_SUPPORT' }), sub('INITIAL_PURCHASE', y, u, now + M),
+      hook(event('CANCELLATION', y, PACK(500), pu, { cancel_reason: 'CUSTOMER_SUPPORT' })), hook(event('NON_RENEWING_PURCHASE', y, PACK(500), pu))]);
+    s = await shopOf(y);
+    assert.deepStrictEqual([s.tokens, s.vipUntil, sum(y)], [0, 0, 0], 'the same at once, round ' + i);
+    assert.deepStrictEqual(sql("SELECT refunded FROM purchases WHERE tx IN ('" + u + "', '" + pu + "')").map(r => r.refunded), [1, 1]);
+  }
+  console.log('vip: a purchase racing its refund leaves nothing behind');
+
+  // the other events: an extension, a reversed refund, and what is only acknowledged
+  const x1 = await guest();
+  const e1 = now + 5 * DAY;
+  await sub('INITIAL_PURCHASE', x1, 'vtx-x1', e1);
+  await sub('SUBSCRIPTION_EXTENDED', x1, 'vtx-x1', e1 + 7 * DAY);
+  assert.strictEqual((await shopOf(x1)).vipUntil, e1 + 7 * DAY, 'an extension moves the end');
+  await sub('SUBSCRIPTION_EXTENDED', x1, 'vtx-x1', e1);
+  assert.strictEqual((await shopOf(x1)).vipUntil, e1 + 7 * DAY, 'and never back');
+  await sub('CANCELLATION', x1, 'vtx-x1', e1, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  await hook(event('NON_RENEWING_PURCHASE', x1, PACK(80), 'ptx-x1'));
+  await hook(event('CANCELLATION', x1, PACK(80), 'ptx-x1', { cancel_reason: 'CUSTOMER_SUPPORT' }));
+  s = await shopOf(x1);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, 0]);
+  await sub('REFUND_REVERSED', x1, 'vtx-x1', e1);
+  await hook(event('REFUND_REVERSED', x1, PACK(80), 'ptx-x1'));
+  s = await shopOf(x1);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [580, e1 + 7 * DAY], 'a reversed refund gives the month and its tokens back, and the pack');
+  await sub('REFUND_REVERSED', x1, 'vtx-x1', e1);
+  await hook(event('REFUND_REVERSED', x1, PACK(80), 'ptx-x1'));
+  assert.deepStrictEqual([(await shopOf(x1)).tokens, sum(x1)], [580, 580], 'twice changes nothing');
+  assert.strictEqual(sql("SELECT refunded FROM purchases WHERE tx = 'vtx-x1'")[0].refunded, 0);
+  // refund first, reversed, then the purchase arrives: it counts
+  const x2 = await guest();
+  await sub('CANCELLATION', x2, 'vtx-x2', e1, { cancel_reason: 'CUSTOMER_SUPPORT' });
+  await sub('REFUND_REVERSED', x2, 'vtx-x2', e1);
+  await sub('INITIAL_PURCHASE', x2, 'vtx-x2', e1);
+  s = await shopOf(x2);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [500, e1]);
+  for (const type of ['TEST', 'SUBSCRIPTION_PAUSED', 'INVOICE_ISSUANCE', 'TEMPORARY_ENTITLEMENT_GRANT']) assert.strictEqual((await sub(type, x2, 'vtx-x2', e1 + DAY)).status, 200, type + ' is acknowledged');
+  assert.deepStrictEqual([(await shopOf(x2)).tokens, (await shopOf(x2)).vipUntil], [500, e1], 'and changes nothing');
+  console.log('vip: extension, reversed refund and events that are only acknowledged');
+
+  // a trial or an offer gives access and no tokens; the renewal that is paid gives them, once
+  const t1 = await guest();
+  const trial = { period_type: 'TRIAL', price: 0, environment: 'PRODUCTION' };
+  await sub('INITIAL_PURCHASE', t1, 'vtx-t1', now + 7 * DAY, trial);
+  s = await shopOf(t1);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, now + 7 * DAY], 'a trial is VIP without tokens');
+  assert.deepStrictEqual(sql("SELECT tokens, env FROM purchases WHERE tx = 'vtx-t1'"), [{ tokens: 0, env: 'PRODUCTION' }], 'it still has its purchase row');
+  const paidRenewal = { period_type: 'NORMAL', price: 4.99, environment: 'PRODUCTION' };
+  await sub('RENEWAL', t1, 'vtx-t2', now + 7 * DAY + M, paidRenewal);
+  await sub('RENEWAL', t1, 'vtx-t2', now + 7 * DAY + M, paidRenewal);
+  s = await shopOf(t1);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [500, now + 7 * DAY + M], 'the first paid month pays 500, once');
+  const t2 = await guest();
+  await sub('INITIAL_PURCHASE', t2, 'vtx-t3', now + M, { period_type: 'NORMAL', price: 0, environment: 'PRODUCTION' });
+  await sub('RENEWAL', t2, 'vtx-t4', now + 2 * M, { period_type: 'INTRO', price: 0.99, environment: 'PRODUCTION' });
+  await sub('RENEWAL', t2, 'vtx-t5', now + 3 * M, { period_type: 'NORMAL', price: 4.99, is_family_share: true, environment: 'PRODUCTION' });
+  s = await shopOf(t2);
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, now + 3 * M], 'a price of 0, an intro period and a family share give no tokens');
+  await sub('RENEWAL', t2, 'vtx-t6', now + 4 * M, { period_type: 'NORMAL', price: 0, environment: 'SANDBOX' });
+  assert.strictEqual((await shopOf(t2)).tokens, 500, 'a sandbox month is paid whatever its price');
+  const t3 = await guest();
+  rc.vip[t3.id] = { expires_date: new Date(now + M).toISOString(), store_transaction_id: 'vtx-t7', is_sandbox: false, period_type: 'trial' };
+  s = (await call('POST', '/api/shop/sync', t3)).body;
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, now + M], 'a trial found by sync is the same');
+  console.log('vip: only paid periods pay tokens');
+
+  // Restore on a second account moves VIP and leaves the tokens where they were paid
+  const [m1, m2] = [await guest(), await guest()];
+  const mu = now + 11 * DAY;
+  rc.vip[m1.id] = { expires_date: new Date(mu).toISOString(), store_transaction_id: 'vtx-m1', is_sandbox: false };
+  assert.strictEqual((await call('POST', '/api/shop/sync', m1)).body.tokens, 500);
+  assert.strictEqual((await wear(m1, 'frame', 'frame-gold')).status, 200);
+  delete rc.vip[m1.id];
+  rc.vip[m2.id] = { expires_date: new Date(mu).toISOString(), store_transaction_id: 'vtx-m1', is_sandbox: false };
+  s = (await call('POST', '/api/shop/sync', m2)).body;
+  assert.deepStrictEqual([s.tokens, s.vipUntil], [0, mu], 'the account that restored has VIP and no tokens');
+  s = await shopOf(m1);
+  assert.deepStrictEqual([s.tokens, s.vipUntil, s.worn, (await me(m1)).wear], [500, 0, {}, {}], 'the first account keeps the tokens and loses VIP and its items');
+  assert.strictEqual(sql("SELECT player FROM purchases WHERE tx = 'vtx-m1'")[0].player, m2.id);
+  assert.strictEqual(sum(m1) + sum(m2), 500, 'the month paid tokens once');
+  await sub('RENEWAL', m2, 'vtx-m1', mu);
+  assert.strictEqual(sum(m1) + sum(m2), 500, 'and the webhook for it adds nothing');
+  // and back again
+  delete rc.vip[m2.id];
+  rc.vip[m1.id] = { expires_date: new Date(mu).toISOString(), store_transaction_id: 'vtx-m1', is_sandbox: false };
+  sql('UPDATE players SET sync_at = 0 WHERE id = ' + who(m1));
+  s = (await call('POST', '/api/shop/sync', m1)).body;
+  assert.deepStrictEqual([s.tokens, s.vipUntil, (await shopOf(m2)).vipUntil, (await shopOf(m2)).tokens], [500, mu, 0, 0], 'a move back');
+  // an account that holds a later paid month keeps VIP when an earlier one leaves
+  const [n1, n2] = [await guest(), await guest()];
+  await sub('INITIAL_PURCHASE', n1, 'vtx-n1', now + 20 * DAY);
+  await sub('RENEWAL', n1, 'vtx-n2', now + 50 * DAY);
+  rc.vip[n2.id] = { expires_date: new Date(now + 20 * DAY).toISOString(), store_transaction_id: 'vtx-n1', is_sandbox: false };
+  await call('POST', '/api/shop/sync', n2);
+  assert.deepStrictEqual([(await shopOf(n1)).vipUntil, (await shopOf(n2)).vipUntil], [now + 50 * DAY, now + 20 * DAY]);
+  // a sync that has no transaction id finds the month by its end date
+  const [k1, k2] = [await guest(), await guest()];
+  await sub('INITIAL_PURCHASE', k1, 'vtx-k1', now + 21 * DAY);
+  rc.vip[k2.id] = { expires_date: new Date(now + 21 * DAY).toISOString() };
+  s = (await call('POST', '/api/shop/sync', k2)).body;
+  assert.deepStrictEqual([s.vipUntil, (await shopOf(k1)).vipUntil, s.tokens, (await shopOf(k1)).tokens], [now + 21 * DAY, 0, 0, 500]);
+  // the transfer webhook: the accounts it comes from lose VIP, the one it goes to gets the months
+  const [f1, f2, f3] = [await guest(), await guest(), await guest()];
+  await sub('INITIAL_PURCHASE', f1, 'vtx-f1', now + 22 * DAY);
+  await sub('INITIAL_PURCHASE', f2, 'vtx-f2', now + 23 * DAY);
+  const transfer = (from, to) => hook({ api_version: '1.0', event: { type: 'TRANSFER', transferred_from: from, transferred_to: to, environment: 'SANDBOX' } });
+  assert.strictEqual((await transfer([f1.id, f2.id, 'not-ours'], [f3.id])).status, 200);
+  assert.deepStrictEqual([(await shopOf(f1)).vipUntil, (await shopOf(f2)).vipUntil, (await shopOf(f3)).vipUntil], [0, 0, now + 23 * DAY]);
+  assert.deepStrictEqual([sum(f1), sum(f2), sum(f3)], [500, 500, 0], 'tokens stay with who paid');
+  const f4 = await guest();
+  await transfer([f3.id], ['$RCAnonymousID:abc']);
+  await transfer([f4.id], [f3.id]);
+  assert.strictEqual((await shopOf(f3)).vipUntil, 0, 'a transfer to an id that is not ours still ends VIP on the account it left');
+  console.log('vip: a restore moves VIP and leaves the tokens, a transfer ends it where it came from');
+
+  // the store country is kept on the purchase
+  const cc = await guest();
+  await sub('INITIAL_PURCHASE', cc, 'vtx-cc', now + M, { country_code: 'TR' });
+  await hook(event('NON_RENEWING_PURCHASE', cc, PACK(80), 'ptx-cc', { country_code: 'tr' }));
+  assert.deepStrictEqual(sql("SELECT tx, country FROM purchases WHERE tx IN ('vtx-cc', 'ptx-cc') ORDER BY tx"), [{ tx: 'ptx-cc', country: null }, { tx: 'vtx-cc', country: 'TR' }]);
 }
 
 // the day's earnings stop at the cap, and a new UTC day starts again
