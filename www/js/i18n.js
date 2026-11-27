@@ -991,13 +991,13 @@ var I18n = (function () {
       rmLine: v => v.n + ' kişiden ' + v.want + ' rövanş istiyor. ' + v.s + ' sn kaldı.',
       rmFind: 'Rövanş için oyuncu aranıyor.',
       lobby: 'Lobiye dön',
-      change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Bahsin geri döndü.',
+      change: v => v.n > 0 ? v.abs + ' çip kazandın.' : v.n < 0 ? v.abs + ' çip kaybettin.' : 'Masa değerin geri döndü.',
       xp: v => '+' + v.n + ' XP',
       tokens: v => '+' + v.n + ' jeton',
       level: v => v.n + '. seviye!',
       bonus: v => '+' + v.n + ' çip',
       winnings: 'Bu maçtaki çipin',
-      scores: 'Skor kâğıdı',
+      scores: 'Puan kağıdı',
       unit: v => 'Masa değeri ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
     },
 

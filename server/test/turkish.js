@@ -22,16 +22,16 @@ const TERMS = [
   ['stake', 'masa değeri', 'masa bedeli'],
   ['fee', 'masa ücreti', 'komisyon|masa payı'],
   ['card back', 'kart arkası', 'kağıt sırt|kart sırt|arka yüz|kağıt arka'],
-  ['score paper', 'puan kağıdı', 'skor kağıt|skor tablo|puan tablo|puan çizelge'],
-  ['spelling', 'kağıt', 'kâğıt|kagit|kâgıt|kağit'],
+  ['score paper', 'puan kağıdı', 'skor kâğ|skor kağ|skor tablo|puan tablo|puan çizelge'],
+  ['spelling', 'kağıt', 'kâğıd|kâğıt|kagit|kagid|kâgıt|kağit|kağid'],
   ['seat', 'koltuk', 'sandalye|oturak'],
   ['invite', 'davet', 'çağır|çağrı'],
   ['daily bonus', 'günlük bonus', 'günlük ödül|günlük hediye|günlük ikramiye'],
   ['season pass', 'sezon kartı', 'sezon bilet|sezon geçiş|sezon pas'],
   ['cup entry', 'katılım bedeli', 'giriş bedel|giriş ücret|katılım ücret|kayıt ücret']
 ];
-const NEVER = 'bahis|kumar|casino|kazino|kasino|para kazan';
-const word = p => new RegExp('(?<![\p{L}])(?:' + p + ')', 'giu');
+const NEVER = 'bahs|bahis|kumar|casino|kazino|kasino|para kazan';
+const word = p => new RegExp('(?<![\\p{L}])(?:' + p + ')', 'giu');
 
 const bad = [];
 const lower = s => s.toLocaleLowerCase('tr');
