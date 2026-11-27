@@ -57,6 +57,9 @@ export function barred(p, stake, pub) {
   return pub && p.cool_until > Date.now() && stake >= p.cool_stake ? { k: 'cool', left: p.cool_until - Date.now() } : null;
 }
 
+// the level a seat at this table or cup needs, so a computer player is never below what a person could be
+export const levelNeed = (stake, buy) => (buy ? CUP_GATES[buy] : GATES[tier(stake)]) || 1;
+
 export function cupBarred(p, buy) {
   if (!signedIn(p)) return { k: 'guest' };
   return p.level < CUP_GATES[buy] ? { k: 'level', need: CUP_GATES[buy] } : null;

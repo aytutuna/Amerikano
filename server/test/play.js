@@ -5660,6 +5660,26 @@ async function dealfail() {
   g.a.send({ t: 'start' });
   await within(Promise.all(off), 20000, 'both are told the deal failed');
   assert.deepStrictEqual([rows(g.accA, ':in'), rows(g.accA, ':back'), rows(g.accB, ':in'), rows(g.accB, ':back')], [[-220], [220], [], []]);
+// a computer player is never below the level the table asks of a person
+async function review() {
+  const t0 = Date.now();
+  const low = Array.from({ length: 30 }, (x, i) => ({ id: 'floor' + crypto.randomBytes(12).toString('hex'), seed: 200 + i }));
+  sql('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created) VALUES ' +
+    low.map(x => "('" + x.id + "', " + x.seed + ", '0,0,0,0', 1, 0, 0, 0, 100000000, " + t0 + ', 0, ' + t0 + ')').join(', '));
+  sql("UPDATE personas SET busy = 'hold', busy_at = " + t0 + " WHERE busy IS NULL AND id NOT LIKE 'floor%'");
+  const acc = link(level(4, await guest()));
+  sql('UPDATE players SET chips = 5000000 WHERE id = ' + who(acc));
+  const run = await quickAt(acc, 500);
+  await run.first;
+  const lv = sql("SELECT level FROM personas WHERE busy = '" + run.code + "'");
+  assert(lv.length >= 3 && lv.every(x => x.level >= 4), 'every computer seat at the 500 table is level 4 or more: ' + JSON.stringify(lv));
+  run.r.ws.close();
+  run.h.ws.close();
+  sql("DELETE FROM personas WHERE id LIKE 'floor%'");
+  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
+  console.log('review: computer players are not below the table gate');
+}
+
   assert.deepStrictEqual([rows(g.accA, ':fee'), rows(g.accA, ':feeback')], [[-5], [5]], 'the fee goes back with it');
   assert.deepStrictEqual([await chips(g.accA), await chips(g.accB)], [5000, 5000]);
   mendDeal();
@@ -6058,7 +6078,8 @@ async function fee() {
   for (const x of [xa, xb, xc]) x.ws.close();
 
   // a public table: the fee of the stake, from the human and from all three computer players
-  sql('UPDATE personas SET chips = 100000 WHERE created = 1');
+  // the 500 table takes computer players of level 4 and up only
+  sql('UPDATE personas SET chips = 100000, level = 4 WHERE created = 1');
   const hh = await hub(level(4, link(await guest())));
   const ss = hh.next(m => m.t === 'seated');
   hh.send({ t: 'quick', stake: 500 });
@@ -6877,6 +6898,7 @@ process.on('unhandledRejection', e => {
   if (bad.length) throw new Error('no such section: ' + bad.join(', ') + ' (have ' + [...names].join(' ') + ')');
   console.log('ok');
   reached = true;
+  await sec('review', () => review());
   process.exit(0);
 })().catch(e => {
   console.error('in "' + section + '":', e);

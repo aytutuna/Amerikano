@@ -605,7 +605,7 @@ export class Hub extends DurableObject {
   async persona(f, mem) {
     const hs = mem.filter(x => !x.fake);
     const avg = hs.length ? Math.round(hs.reduce((n, x) => n + x.level, 0) / hs.length) : 1;
-    const p = await claim(this.env.DB, f.id, avg, f.buy / ENTRY, mem.map(x => x.seed));
+    const p = await claim(this.env.DB, f.id, avg, f.buy / ENTRY, mem.map(x => x.seed), 0, f.buy);
     return { pid: p.id, seed: p.name_seed, av: p.avatar.split(',').map(Number), level: p.level, fake: true, ...look(p) };
   }
 

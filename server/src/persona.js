@@ -1,7 +1,7 @@
 import Names from '../../www/js/names.js';
 import Avatar from '../../www/js/avatar.js';
 import Catalog from '../../www/js/catalog.js';
-import { levelAt, ENTRY } from './account.js';
+import { levelAt, levelNeed, ENTRY } from './account.js';
 
 const DAY = 86400000;
 const BONUS = 750;
@@ -29,6 +29,7 @@ function history(level) {
     h = { xp: 40 * games + 30 * wins + 5 * firsts, games: games, wins: wins };
     if (levelAt(h.xp) === level) break;
   }
+  if (levelAt(h.xp) < level) h.xp = 50 * level * (level - 1) + 40;
   return h;
 }
 
@@ -55,10 +56,10 @@ export function look(p) {
   return { wear: Object.fromEntries(Object.entries(wear).filter(([, id]) => Catalog.item(id) && worn(Catalog.item(id)))), vip: false };
 }
 
-async function make(db, code, level, stake, avoid, now, fee) {
+async function make(db, code, level, stake, avoid, now, fee, floor) {
   let seed;
   do seed = Names.pick(); while (avoid.includes(seed));
-  const h = history(Math.max(1, Math.round(level + rnd(-3, 2))));
+  const h = history(Math.max(floor, Math.round(level + rnd(-3, 2))));
   const lv = levelAt(h.xp);
   // what a player of that level would plausibly hold, and enough to sit at this stake
   const chips = Math.round(Math.max(rnd(0.4, 1.6) * (4000 + 500 * lv * (lv + 1)), rnd(1.2, 3.5) * (ENTRY * stake + fee)) / 10) * 10;
@@ -70,13 +71,14 @@ async function make(db, code, level, stake, avoid, now, fee) {
 
 // A free persona near this level who can cover the entry and the table fee, else a new one. The pool only grows
 // while few fit, so the same faces come back without the same few being the only ones.
-export async function claim(db, code, level, stake, avoid, fee = 0) {
+export async function claim(db, code, level, stake, avoid, fee = 0, buy = 0) {
+  const floor = levelNeed(stake, buy);
   const now = Date.now();
   // every full day since the last top-up adds the bonus, counted when the persona is next looked at
   const days = `CAST((?1 - topup) / ${DAY} AS INTEGER)`;
   const seeds = avoid.map((x, i) => '?' + (6 + i)).join(',');
   const where = `level BETWEEN ?3 AND ?4 AND (busy IS NULL OR busy_at < ?5) AND chips + ${days} * ${BONUS} >= ?2 AND name_seed NOT IN (${seeds})`;
-  const args = [now, ENTRY * stake + fee, Math.max(1, level - 3), level + 3, now - LIFE, ...avoid];
+  const args = [now, ENTRY * stake + fee, Math.max(floor, level - 3), Math.max(floor, level + 3), now - LIFE, ...avoid];
   const { n } = await db.prepare(`SELECT count(*) AS n FROM personas WHERE ${where}`).bind(...args).first();
   if (Math.random() * POOL < n) {
     const row = await db.prepare(
@@ -92,7 +94,7 @@ export async function claim(db, code, level, stake, avoid, fee = 0) {
       return row;
     }
   }
-  return make(db, code, level, stake, avoid, now, fee);
+  return make(db, code, level, stake, avoid, now, fee, floor);
 }
 
 // whether a computer player stays for the next match: a little more often after a win, and only with the bank to cover entry and fee
