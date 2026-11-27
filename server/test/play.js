@@ -1751,6 +1751,7 @@ async function rematchPersona() {
     aw.forEach((x, k) => {
       if (k && x) {
         flagged++;
+        assert(!(m.clock && m.clock.p === k), 'an away computer player shows no turn clock, as an away person never does');
         for (const e of m.log) if (e.p === k) assert(!forbidden.includes(e.k), 'an away seat makes only safe moves: ' + e.k);
       }
     });
@@ -1758,7 +1759,6 @@ async function rematchPersona() {
   });
   await within(run.done, 240000, 'match end');
   await sleep(1500);
-        assert(!(m.clock && m.clock.p === k), 'an away computer player shows no turn clock, as an away person never does');
   assert(away.includes(true), 'a computer player was shown away');
   assert(away.lastIndexOf(true) < away.length - 1 && away.slice(away.indexOf(true)).includes(false), 'and it came back');
   assert(flagged > 0 && run.r.st.phase === 'matchend', 'the match went on to its end');
@@ -5620,6 +5620,26 @@ async function probe() {
   console.log('probe: the code alphabet and length are unchanged');
 }
 
+// a computer player is never below the level the table asks of a person
+async function review() {
+  const t0 = Date.now();
+  const low = Array.from({ length: 30 }, (x, i) => ({ id: 'floor' + crypto.randomBytes(12).toString('hex'), seed: 200 + i }));
+  sql('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created) VALUES ' +
+    low.map(x => "('" + x.id + "', " + x.seed + ", '0,0,0,0', 1, 0, 0, 0, 100000000, " + t0 + ', 0, ' + t0 + ')').join(', '));
+  sql("UPDATE personas SET busy = 'hold', busy_at = " + t0 + " WHERE busy IS NULL AND id NOT LIKE 'floor%'");
+  const acc = link(level(4, await guest()));
+  sql('UPDATE players SET chips = 5000000 WHERE id = ' + who(acc));
+  const run = await quickAt(acc, 500);
+  await run.first;
+  const lv = sql("SELECT level FROM personas WHERE busy = '" + run.code + "'");
+  assert(lv.length >= 3 && lv.every(x => x.level >= 4), 'every computer seat at the 500 table is level 4 or more: ' + JSON.stringify(lv));
+  run.r.ws.close();
+  run.h.ws.close();
+  sql("DELETE FROM personas WHERE id LIKE 'floor%'");
+  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
+  console.log('review: computer players are not below the table gate');
+}
+
 const breakDeal = h => sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('faildeal', '" + JSON.stringify(h) + "')");
 const mendDeal = () => sql("DELETE FROM settings WHERE key = 'faildeal'");
 
@@ -5661,26 +5681,6 @@ async function dealfail() {
   g.a.send({ t: 'start' });
   await within(Promise.all(off), 20000, 'both are told the deal failed');
   assert.deepStrictEqual([rows(g.accA, ':in'), rows(g.accA, ':back'), rows(g.accB, ':in'), rows(g.accB, ':back')], [[-220], [220], [], []]);
-// a computer player is never below the level the table asks of a person
-async function review() {
-  const t0 = Date.now();
-  const low = Array.from({ length: 30 }, (x, i) => ({ id: 'floor' + crypto.randomBytes(12).toString('hex'), seed: 200 + i }));
-  sql('INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy_at, created) VALUES ' +
-    low.map(x => "('" + x.id + "', " + x.seed + ", '0,0,0,0', 1, 0, 0, 0, 100000000, " + t0 + ', 0, ' + t0 + ')').join(', '));
-  sql("UPDATE personas SET busy = 'hold', busy_at = " + t0 + " WHERE busy IS NULL AND id NOT LIKE 'floor%'");
-  const acc = link(level(4, await guest()));
-  sql('UPDATE players SET chips = 5000000 WHERE id = ' + who(acc));
-  const run = await quickAt(acc, 500);
-  await run.first;
-  const lv = sql("SELECT level FROM personas WHERE busy = '" + run.code + "'");
-  assert(lv.length >= 3 && lv.every(x => x.level >= 4), 'every computer seat at the 500 table is level 4 or more: ' + JSON.stringify(lv));
-  run.r.ws.close();
-  run.h.ws.close();
-  sql("DELETE FROM personas WHERE id LIKE 'floor%'");
-  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
-  console.log('review: computer players are not below the table gate');
-}
-
   assert.deepStrictEqual([rows(g.accA, ':fee'), rows(g.accA, ':feeback')], [[-5], [5]], 'the fee goes back with it');
   assert.deepStrictEqual([await chips(g.accA), await chips(g.accB)], [5000, 5000]);
   mendDeal();
@@ -6845,6 +6845,7 @@ process.on('unhandledRejection', e => {
   await sec('personas', () => personas());
   await sec('pool', () => pool());
   await sec('strong', () => strong());
+  await sec('review', () => review());
   await sec('flow', () => flow());
   await sec('slowJoin', () => slowJoin());
   await sec('fee', () => fee());
@@ -6899,7 +6900,6 @@ process.on('unhandledRejection', e => {
   if (bad.length) throw new Error('no such section: ' + bad.join(', ') + ' (have ' + [...names].join(' ') + ')');
   console.log('ok');
   reached = true;
-  await sec('review', () => review());
   process.exit(0);
 })().catch(e => {
   console.error('in "' + section + '":', e);
