@@ -45,6 +45,7 @@ jobs:
         with:
           node-version: 22
       - run: node server/test/langs.js
+      - run: node server/test/turkish.js
 
   android:
     runs-on: ubuntu-latest

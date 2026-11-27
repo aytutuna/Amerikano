@@ -37,7 +37,7 @@ const KIND = {
   dm: { col: 'push_dm', ttl: 86400, gap: 600000, tap: () => ({ t: 'dm' }) }
 };
 
-const TEXT = {
+export const TEXT = {
   en: {
     invite: v => ['Table invite', Names.text(v.seed, 'en') + ' invited you to a table.'],
     req: v => ['Friend request', Names.text(v.seed, 'en') + ' wants to be your friend.'],
@@ -51,7 +51,7 @@ const TEXT = {
     req: v => ['Arkadaşlık isteği', Names.text(v.seed, 'tr') + ' seninle arkadaş olmak istiyor.'],
     accept: v => ['Yeni arkadaş', Names.text(v.seed, 'tr') + ' arkadaşlık isteğini kabul etti.'],
     dm: v => ['Yeni mesaj', Names.text(v.seed, 'tr') + ' sana bir mesaj gönderdi.'],
-    daily: v => ['Günlük ödül', v.n.toLocaleString('tr') + ' çiplik günlük ödülün hazır.'],
+    daily: v => ['Günlük bonus', v.n.toLocaleString('tr') + ' çiplik günlük bonusun hazır.'],
     week: v => ['Haftalık sıralama', 'Geçen hafta ' + v.won.toLocaleString('tr') + ' çip kazandın ve sıralamada ' + v.rank + '. oldun.']
   }
 };

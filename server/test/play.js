@@ -4509,7 +4509,7 @@ async function push() {
   const everyone = [d1, d2, d3, n1, n2, n3, n4, d4, n5].flatMap(p => p.tokens);
   const hit = () => [...f.apns, ...f.fcm].filter(m => everyone.includes(m.token)).map(m => m.token).sort();
   assert.deepStrictEqual(hit(), [d1.tokens[0], d2.tokens[0], d3.tokens[0], d4.tokens[0]].sort(), 'ready, evening until 22:00, switched on; only the device in its evening');
-  assert.deepStrictEqual(to(f.apns, d1.tokens[0])[0].body, { aps: { alert: { title: 'Günlük ödül', body: '1.500 çiplik günlük ödülün hazır.' }, sound: 'default' }, t: 'daily' });
+  assert.deepStrictEqual(to(f.apns, d1.tokens[0])[0].body, { aps: { alert: { title: 'Günlük bonus', body: '1.500 çiplik günlük bonusun hazır.' }, sound: 'default' }, t: 'daily' });
   assert.deepStrictEqual(to(f.fcm, d2.tokens[0])[0].message.notification, { title: 'Daily bonus', body: 'Your daily bonus of 750 chips is ready.' });
   assert.deepStrictEqual(to(f.fcm, d2.tokens[0])[0].message.data, { t: 'daily' });
   seen.push(...f.apns, ...f.fcm);

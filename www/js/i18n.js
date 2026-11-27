@@ -804,7 +804,7 @@ var I18n = (function () {
       blocked: 'Bu oyuncuya hediye gönderemezsin.',
       mute: 'Şu an mesaj yazamazsın.',
       typedoff: 'Yazılı sohbet kapalı. Ayarlar bölümünden açabilirsin.',
-      other: 'Olmadı.'
+      other: 'Bu işlem yapılamadı. Biraz sonra tekrar dene.'
     },
 
     typeTitle: 'Küt mü, seri mi?',
@@ -899,7 +899,7 @@ var I18n = (function () {
       slow: 'Yavaş',
       normal: 'Normal',
       fast: 'Hızlı',
-      back: 'Kağıt sırtı',
+      back: 'Kart arkası',
       felt: 'Masa çuhası',
       red: 'Kırmızı',
       blue: 'Mavi',
@@ -911,7 +911,7 @@ var I18n = (function () {
       push: {
         on: 'Bildirimlere izin ver',
         invite: 'Masa davetleri',
-        daily: 'Günlük ödül',
+        daily: 'Günlük bonus',
         friend: 'Arkadaşlık istekleri',
         week: 'Haftalık sıralama',
         dm: 'Mesajlar',
@@ -998,7 +998,7 @@ var I18n = (function () {
       bonus: v => '+' + v.n + ' çip',
       winnings: 'Bu maçtaki çipin',
       scores: 'Skor kâğıdı',
-      unit: v => 'Bahis ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
+      unit: v => 'Masa değeri ' + v.stake + ': masadaki her çip ' + v.unit + ' çip eder.'
     },
 
     net: {
@@ -1011,11 +1011,11 @@ var I18n = (function () {
       joinTitle: v => v.code + ' odasına katıl',
       connecting: 'Bağlanılıyor.',
       room: 'Oda',
-      hintHost: 'Kodu arkadaşlarınla paylaş. Onlar gelince başlat; boş yerler senin için doldurulur.',
+      hintHost: 'Kodu arkadaşlarınla paylaş. Onlar gelince başlat; boş koltuklar senin için doldurulur.',
       hintGuest: 'Odayı kuranın başlatması bekleniyor.',
-      finding: v => v.n === 1 ? 'Son yer için oyuncu aranıyor.' : v.n + ' yer için oyuncu aranıyor.',
+      finding: v => v.n === 1 ? 'Son koltuk için oyuncu aranıyor.' : v.n + ' koltuk için oyuncu aranıyor.',
       looking: 'Aranıyor',
-      free: 'Boş yer',
+      free: 'Boş koltuk',
       arrived: v => v.name + ' oturdu, ' + v.n + '. seviye.',
       you: '(sen)',
       hostTag: 'Kurucu',
@@ -1034,9 +1034,9 @@ var I18n = (function () {
         taken: 'Bu kod kullanımda, tekrar dene.',
         auth: 'Hesabın doğrulanamadı. Tekrar dene.',
         poor: 'Bunun için yeterli çipin yok.',
-        busy: 'Başka bir masada zaten yerin var.',
+        busy: 'Başka bir masada zaten koltuğun var.',
         held: v => v.name + ' başka bir masada oturuyor, bu yüzden maç henüz başlayamaz.',
-        elsewhere: 'Başka bir masada yerin var, bu yüzden bu maç başlayamıyor. Önce o masadan ayrıl.',
+        elsewhere: 'Başka bir masada koltuğun var, bu yüzden bu maç başlayamıyor. Önce o masadan ayrıl.',
         dealfail: 'Maç başlatılamadı. Çiplerin iade edildi. Tekrar dene.',
         left: 'Bu maçtan ayrıldığın için koltuğuna geri dönemezsin.',
         cool: v => 'Masalardan çok sık ayrıldın. ' + v.n + ' dk boyunca bu masaya ya da daha büyük bir masaya oturamazsın.',
@@ -1049,7 +1049,7 @@ var I18n = (function () {
         lost: 'Bağlanılamadı. İnternetini kontrol edip tekrar dene.',
         replaced: 'Bu maça başka bir pencereden girdin.',
         ended: 'Maç sona erdi.',
-        other: 'Olmadı.'
+        other: 'Bu işlem yapılamadı. Biraz sonra tekrar dene.'
       }
     },
 
@@ -1063,9 +1063,9 @@ var I18n = (function () {
       quickAt: v => v.n + ' masasına oturur',
       friendsNote: 'Masa kur ya da kod gir',
       quick: 'Hızlı oyna',
-      fill: 'Her yer dolunca maç başlar.',
-      stake: 'Bahis',
-      stakeAt: v => v.n + ' çip bahis',
+      fill: 'Her koltuk dolunca maç başlar.',
+      stake: 'Masa değeri',
+      stakeAt: v => v.n + ' çip masa değeri',
       stakeNote: v => 'Maç başlarken ' + fmt(v.h) + ' çip ayrılır; bu, bu masada kaybedebileceğin en yüksek tutardır. Kaybetmediğin kısım maç bitince geri ödenir.',
       noStake: 'Masada çip yok.',
       stakeHint: '10’un katı olmalı. 0 olursa çip oynanmaz.',
@@ -1074,7 +1074,7 @@ var I18n = (function () {
       locked: 'Kilitli',
       lockGuest: 'Kilidi açmak için giriş yap',
       fee: v => 'Masa ücreti: ' + fmt(v.n) + ' çip',
-      minFee: v => 'En az ' + v.n + ' · ücret ' + v.f,
+      minFee: v => 'En az ' + v.n + ' · masa ücreti ' + v.f,
       cool: v => v.n + ' dk bekle',
       level: v => v.n + '. sv'
     },
@@ -1086,23 +1086,23 @@ var I18n = (function () {
       prize: v => 'Birincilik ödülü ' + v.n,
       cap: 'Son sıralama ve puanlar',
       table: 'Turnuva',
-      buy: v => 'Giriş ' + v.n,
+      buy: v => 'Katılım ' + v.n,
       seats: v => '8 koltuktan ' + v.n + ' tanesi dolu',
       prizes: 'Ödüller',
       place: v => v.n + '.',
-      note: 'Tüm 8 koltuk dolunca başlar. Giriş bedeli o zaman alınır; şimdi vazgeçersen hiçbir şey alınmaz.',
+      note: 'Tüm 8 koltuk dolunca başlar. Katılım bedeli o zaman alınır; şimdi vazgeçersen hiçbir şey alınmaz.',
       round: { first: '1. tur', final: 'Final' },
       through: 'Finale yükseldin',
       out: '1. turda elendin',
       finished: v => 'Masanda ' + v.n + '. oldun. Diğer masa bekleniyor.',
       outNote: v => 'Masanda ' + v.n + '. oldun. Finale yalnızca ilk ikisi çıkar.',
-      off: 'Turnuva iptal edildi. Giriş bedelin iade edildi.',
+      off: 'Turnuva iptal edildi. Katılım bedelin iade edildi.',
       starting: 'Başlıyor...',
       won: v => v.you ? 'Turnuvayı sen kazandın' : v.name + ' turnuvayı kazandı',
       final: v => 'Finalde ' + v.n + '. oldun.',
       yourPrize: 'Ödülün',
       giveUp: 'Turnuvadan çık',
-      leaveNote: 'Çıkarsan turnuvadaki yerini ve olası ödülü kaybedersin. Senin yerine oynanır.'
+      leaveNote: 'Çıkarsan turnuvadaki koltuğunu ve olası ödülü kaybedersin. Senin yerine oynanır.'
     },
 
     nonet: {
@@ -1120,7 +1120,7 @@ var I18n = (function () {
       apple: 'Apple ile giriş yap',
       guest: 'Misafir olarak devam et',
       note: 'Misafir hesabı bu cihazda kalır.',
-      fail: 'Olmadı. Tekrar dene.'
+      fail: 'Giriş yapılamadı. Biraz sonra tekrar dene.'
     },
 
     pf: {
@@ -1131,9 +1131,9 @@ var I18n = (function () {
       chips: 'Çip',
       games: 'Maç',
       wins: 'Galibiyet',
-      daily: v => 'Günlük ödül +' + v.n,
+      daily: v => 'Günlük bonus +' + v.n,
       claim: 'Al',
-      dailyTitle: 'Günlük ödül',
+      dailyTitle: 'Günlük bonus',
       dailyDone: 'Daha fazlası için yarın gel.',
       streakDay: v => v.n + '. gün',
       got: v => v.n + ' çip kazandın.',
@@ -1225,7 +1225,7 @@ var I18n = (function () {
     shop: {
       title: 'Mağaza',
       count: v => pl(v.n, { other: '# jeton' }),
-      tab: { tokens: 'Jetonlar', frame: 'Çerçeveler', plate: 'İsim levhaları', back: 'Kağıt sırtları', felt: 'Masa çuhaları', emote: 'İfadeler', vip: 'VIP' },
+      tab: { tokens: 'Jetonlar', frame: 'Çerçeveler', plate: 'İsim levhaları', back: 'Kart arkaları', felt: 'Masa çuhaları', emote: 'İfadeler', vip: 'VIP' },
       loading: 'Mağaza yükleniyor.',
       buyFor: v => 'Satın al: ' + v.name + ', ' + v.n,
       ask: v => v.n + ' karşılığında alınsın mı?',
@@ -1237,7 +1237,7 @@ var I18n = (function () {
       owned: 'Sende',
       bought: v => v.name + ' artık senin.',
       added: (v, t) => t('shop.count', v) + ' hesabına eklendi.',
-      failed: 'Olmadı. Biraz sonra tekrar dene.',
+      failed: 'İşlem tamamlanamadı. Biraz sonra tekrar dene.',
       broke: 'Yeterli jetonun yok.',
       late: 'Alışveriş tamamlandı, jetonların birazdan gelir.',
       android: 'Android için yakında',
@@ -1256,9 +1256,9 @@ var I18n = (function () {
         per: v => v.price + ' / ay',
         badge: 'Her masada VIP rozeti',
         frame: 'Hareketli altın çerçeve',
-        items: 'VIP isim levhası ve kağıt sırtı',
+        items: 'VIP isim levhası ve kart arkası',
         monthly: (v, t) => t('shop.count', { n: v.n }) + ' her ay',
-        pass: 'Premium sezon bileti (yakında)',
+        pass: 'Premium sezon kartı (yakında)',
         subscribe: 'Abone ol',
         restore: 'Satın alımları geri yükle',
         manage: 'Aboneliği yönet',
@@ -1316,15 +1316,15 @@ var I18n = (function () {
       invite: 'Davet et',
       invited: 'Davet edildi',
       away: 'Ulaşılamıyor',
-      inviteFriends: 'Arkadaşlarını çağır',
+      inviteFriends: 'Arkadaşlarını davet et',
       inviteNote: 'Çevrimiçi arkadaşlar masana davet edilebilir.',
-      createFirst: 'Arkadaş davet etmek için bir masa kur. Masasında yer olan bir arkadaşına katıl.',
+      createFirst: 'Arkadaş davet etmek için bir masa kur. Masasında boş koltuk olan bir arkadaşına katıl.',
       playing: 'Oynuyor',
       at: { lobby: 'Lobide', training: 'Antrenmanda', table: 'Bir masada' },
-      lateNote: v => v.name + ' seni çağırdı',
+      lateNote: v => v.name + ' seni davet etti',
       invTitle: 'Davet',
-      invText: v => v.name + ' seni bir masaya çağırıyor. Bahis ' + v.n + ' çip.',
-      invFree: v => v.name + ' seni bir masaya çağırıyor. Masada çip yok.',
+      invText: v => v.name + ' seni bir masaya davet ediyor. Masa değeri ' + v.n + ' çip.',
+      invFree: v => v.name + ' seni bir masaya davet ediyor. Masada çip yok.',
       join: 'Katıl',
       later: 'Sonra'
     },
