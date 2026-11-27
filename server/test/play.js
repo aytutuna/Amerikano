@@ -1366,7 +1366,8 @@ async function personas() {
   const h = await hub(acc);
   const t0 = Date.now();
   const s = h.next(m => m.t === 'seated');
-  h.send({ t: 'quick', stake: 500 });
+  // the window is stretched, so a persona claimed from the database never takes longer than the gap to the next one
+  h.send({ t: 'quick', stake: 500, scale: 10 });
   const sat = await s;
   const r = seated(sat);
   const all = [];
@@ -1385,7 +1386,7 @@ async function personas() {
   const steps = counts.map(x => x[1]);
   assert.deepStrictEqual(steps.filter((n, i) => i === 0 || n !== steps[i - 1]), [1, 2, 3, 4], 'seats fill one at a time, the last one when the window ends');
   const two = counts.find(x => x[1] === 2)[0];
-  assert(two - t0 <= 8000 * 0.02 + 1500, 'the first fill comes inside the window: ' + (two - t0) + 'ms');
+  assert(two - t0 <= 8000 * 0.02 * 10 + 1500, 'the first fill comes inside the window: ' + (two - t0) + 'ms');
   const st = r.st;
   assert.strictEqual(st.players.length, 4);
   const others = st.players.slice(1);
