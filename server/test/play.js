@@ -3838,6 +3838,64 @@ async function purge() {
   console.log('dm: the cron deletes messages after 30 days');
 }
 
+// Chip-trade phrases are recorded, never blocked: the label, the table or dm and the player, not the words.
+async function trade() {
+  const g = await pair(3, 3);
+  const [sa, sb] = await begin(g);
+  const seatA = sb.players.findIndex(p => p.pid === g.accA.id);
+  const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
+  sql("UPDATE players SET lang = 'tr' WHERE id = " + who(g.accA));
+  sql("UPDATE players SET lang = 'en' WHERE id = " + who(g.accB));
+  const hits = acc => sql('SELECT ctx, term FROM trade_hits WHERE player = ' + who(acc) + ' ORDER BY id');
+  const said = async (from, to, seat, lines) => {
+    const got = [];
+    to.handlers.push(m => { if (m.t === 'typed' && m.p === seat) got.push(m.x); });
+    for (const x of lines) from.send({ t: 'text', x: x });
+    await within((async () => { while (got.length < lines.length) await sleep(50); })(), 5000, 'lines arriving');
+    return got;
+  };
+
+  const lines = ['çip satılık 100 tl', 'iban ver', 'papara var mı'];
+  assert.deepStrictEqual(await said(g.a, g.b, seatA, lines), lines, 'the lines arrive as typed');
+  assert.deepStrictEqual(hits(g.accA), [{ ctx: g.code, term: 'chip-sale tl' }, { ctx: g.code, term: 'iban' }, { ctx: g.code, term: 'papara' }]);
+  const plain = ['merhaba nasılsın', 'tl', 'kaç çip kaldı?'];
+  assert.deepStrictEqual(await said(g.b, g.a, seatB, plain), plain);
+  assert.deepStrictEqual(hits(g.accB), [], 'ordinary lines and a lone tl record nothing');
+  await sleep(2100);
+  assert.deepStrictEqual(await said(g.b, g.a, seatB, ['selling chips']), ['selling chips']);
+  assert.deepStrictEqual(hits(g.accB), [{ ctx: g.code, term: 'chip-sale' }], 'an English account is recorded too');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM trade_hits')[0].n >= 4, true);
+  console.log('trade: table lines are recorded by phrase and delivered unchanged');
+
+  await befriend(g.accA, g.accB);
+  const r = await call('POST', '/api/dm', g.accA, { to: g.accB.id, text: 'iban ver' });
+  assert.deepStrictEqual([r.status, r.body.message.text], [200, 'iban ver']);
+  await within((async () => { while (hits(g.accA).length < 4) await sleep(50); })(), 5000, 'dm hit');
+  assert.deepStrictEqual(hits(g.accA)[3], { ctx: 'dm', term: 'iban' });
+  assert.strictEqual((await call('POST', '/api/dm', g.accA, { to: g.accB.id, text: 'iyi geceler' })).status, 200);
+  await sleep(300);
+  assert.strictEqual(hits(g.accA).length, 4);
+  console.log('trade: private messages are recorded too');
+
+  const list = (await adm('GET', 'trades', ADMIN)).body.trades;
+  assert.deepStrictEqual(list.slice(0, 2).map(x => [x.player, x.term, x.n]), [[g.accA.id, 'iban', 4], [g.accB.id, 'chip-sale', 1]], 'newest first with a count per player');
+  assert(list.every(x => !('text' in x)));
+  assert((await adm('GET', 'overview', ADMIN)).body.trades.length >= 5);
+  assert.strictEqual((await adm('GET', 'trades')).status, 401);
+  console.log('trade: the admin list');
+
+  const T = Date.UTC(2031, 5, 20, 3, 5);
+  const add = at => sql("INSERT INTO trade_hits (player, ctx, term, at) VALUES (" + who(g.accB) + ", 'ZZZZ', 'iban', " + at + ")");
+  add(T - 91 * DAY);
+  add(T - 89 * DAY);
+  await tick(T);
+  assert.deepStrictEqual(sql("SELECT at FROM trade_hits WHERE ctx = 'ZZZZ'").map(x => x.at), [T - 89 * DAY], 'hits older than 90 days are purged');
+  assert.strictEqual((await call('DELETE', '/api/me', g.accA)).status, 200);
+  assert.strictEqual(hits(g.accA).length, 0, 'deleting the account removes its hits');
+  assert(hits(g.accB).length > 0);
+  console.log('trade: purge after 90 days and removal with the account');
+}
+
 async function typedOff() {
   const g = await pair(3, 3);
   const [sa, sb] = await begin(g);
@@ -6727,6 +6785,7 @@ process.on('unhandledRejection', e => {
   await sec('chipfn', () => chipfn());
   await sec('dealfail', () => dealfail());
   await sec('typedOff', () => typedOff());
+  await sec('trade', () => trade());
   await sec('reports', () => reports());
   await sec('reportMail', () => reportMail(rs));
   await sec('personas', () => personas());

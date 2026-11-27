@@ -517,6 +517,7 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM reports WHERE reporter = ?1 OR reported = ?1').bind(p.id),
       db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),
+      db.prepare('DELETE FROM trade_hits WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM persona_flow WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friend_day WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM held WHERE player = ?').bind(p.id),

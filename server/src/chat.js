@@ -1,6 +1,6 @@
 import { verify, who, json, fail } from './account.js';
 import { rel } from './social.js';
-import { clean, mask, contact } from './filter.js';
+import { clean, mask, contact, trade } from './filter.js';
 import { mail } from './mail.js';
 import { logAdmin } from './admin.js';
 
@@ -9,6 +9,14 @@ const TEXT = 300;
 const PAGE = 50;
 const REPORTS = 20;
 const ID = /^[0-9a-f]{32}$/;
+
+// A line that looks like chip trading is noted and delivered as it is: the label of the phrase, where it was said and who said it,
+// never the words themselves.
+export function noteTrade(db, player, where, text) {
+  const terms = trade(text);
+  if (!terms.length) return Promise.resolve();
+  return db.prepare('INSERT INTO trade_hits (player, ctx, term, at) VALUES (?, ?, ?, ?)').bind(player, where, terms.join(' '), Date.now()).run().catch(() => {});
+}
 
 const hub = env => env.HUB.get(env.HUB.idFromName('h'));
 
@@ -28,6 +36,7 @@ async function send(env, ctx, p, request) {
   // contact details are delivered only after the sender has agreed to a warning
   if (contact(x) && b.ok !== true) return fail('contact', 409);
   const text = mask(x, [p.lang, q.lang]);
+  ctx.waitUntil(noteTrade(env.DB, p.id, 'dm', x));
   const at = Date.now();
   const r = await env.DB.prepare('INSERT INTO messages (sender, recipient, text, at) VALUES (?, ?, ?, ?)').bind(p.id, b.to, text, at).run();
   const m = { id: r.meta.last_row_id, text: text, c: contact(text), at: at };

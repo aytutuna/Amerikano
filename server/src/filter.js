@@ -89,6 +89,28 @@ export function mask(text, langs = []) {
   return chars.join('');
 }
 
+// Chip trading is a phrase, not a word: a chip word next to a selling word, a payment channel, or an amount in lira. Found with the same
+// folding as the swear list, so look-alikes and accents do not hide it. Only recorded by the caller; the line is never changed.
+const CHIP = 'cip|cips|cipi|cipim|cipimi|cipler|cipleri|chip|chips';
+const SELL = 'sat|satilik|satiyorum|satiyom|satarim|satan|alim|alirim|alicam|fiyat|fiyati|sell|selling|sold|sale|buy|buying|price|verkaufe|vendo|vends|compro';
+const solo = p => new RegExp('(?<!' + WORD + ')(?:' + p + ')(?!' + WORD + ')', 'u');
+const HAS = { chip: solo(CHIP), sell: solo(SELL), tl: solo('tl'), iban: solo('iban') };
+const OPEN = { papara: new RegExp('(?<!' + WORD + ')papara', 'u'), ininal: new RegExp('(?<!' + WORD + ')ininal', 'u'), bozdur: new RegExp('(?<!' + WORD + ')bozdur', 'u') };
+const AMOUNT = /(?<![\p{L}\p{N}])(?:\p{Nd}+(?:[.,]\p{Nd}+)?\s*(?:tl|₺)|(?:tl|₺)\s*\p{Nd}+)(?!\p{L})/u;
+
+// the labels of the trade phrases in the text, none when it holds no trade phrase
+export function trade(text) {
+  const raw = text.normalize('NFKC').toLowerCase();
+  const s = fold(raw);
+  const out = [];
+  const chip = HAS.chip.test(s);
+  if (chip && HAS.sell.test(s)) out.push('chip-sale');
+  if (HAS.iban.test(s)) out.push('iban');
+  for (const k of Object.keys(OPEN)) if (OPEN[k].test(s)) out.push(k);
+  if (AMOUNT.test(raw) || chip && HAS.tl.test(s)) out.push('tl');
+  return out;
+}
+
 // what a person typed: one line, no control or format characters, at most max characters
 export function clean(text, max) {
   if (typeof text !== 'string') return '';

@@ -7,6 +7,7 @@ import { verify, player, award, seat, credit, charge, strike, grantTokens, payou
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
+import { noteTrade } from './chat.js';
 import { look, claim, release, giveBack, keep, spend, payoff, grant, stays } from './persona.js';
 import { setting } from './admin.js';
 import { flowRow, rematches } from './flow.js';
@@ -879,6 +880,8 @@ export class Room extends DurableObject {
     if (!me || !me.typed) return this.fail(ws, 'typedoff');
     if (me.mute_until > Date.now()) return this.fail(ws, 'mute');
     for (const q of rows.results) if (!q.typed) away.add(q.id);
+    await noteTrade(this.env.DB, s.pid, this.r.code, x);
+    if (!this.r) return;
     this.lines.push({ i: i, pid: s.pid, lang: me.lang, x: x, c: c });
     if (this.lines.length > LINES) this.lines.shift();
     const n = this.r.n;

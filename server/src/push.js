@@ -276,6 +276,7 @@ async function cleanup(env, now) {
     env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(now - 180 * DAY),
     env.DB.prepare('DELETE FROM match_seat WHERE at < ?').bind(now - 35 * DAY),
     env.DB.prepare('DELETE FROM leaves WHERE at < ?').bind(now - 35 * DAY),
+    env.DB.prepare('DELETE FROM trade_hits WHERE at < ?').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM persona_flow WHERE at < ?').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM mail_log WHERE at < ?').bind(now - 7 * DAY),
     env.DB.prepare('DELETE FROM friend_day WHERE day < ?').bind(Math.floor(now / DAY) - 2),
