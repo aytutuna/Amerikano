@@ -2705,7 +2705,7 @@ async function rematchFriends() {
   link(accA, accB);
   const a = client('/ws/new');
   await a.ready;
-  a.send({ t: 'create', auth: accA.auth, players: 3, games: 3, stake: 100 });
+  a.send({ t: 'create', auth: accA.auth, players: 3, games: 15, stake: 100 });
   const ja = await a.next(m => m.t === 'joined');
   const b = client('/ws/' + ja.code);
   await b.ready;
@@ -2713,12 +2713,22 @@ async function rematchFriends() {
   await b.next(m => m.t === 'joined');
   const offer = [a, b].map(c => c.next(m => m.t === 'state' && m.rm));
   for (const c of [a, b]) play(c, { finish: () => {} });
+  const dealt = a.next(m => m.t === 'state');
+  let gaveUp = false;
+  a.handlers.push(m => { if (m.t === 'error' && m.k === 'dealfail') gaveUp = true; });
   a.send({ t: 'start' });
+  // a failure while dealing again is retried, though the first deal is long past; set once the first deal is done, since the
+  // rematch window is too short to stop for a database call
+  await dealt;
+  breakDeal({ kind: 'friend', n: 1, seat: 0 });
   await within(Promise.all(offer), 120000, 'match end');
   const next = [a, b].map(c => c.next(m => m.t === 'state' && m.phase !== 'matchend'));
   a.send({ t: 'rematch' });
   b.send({ t: 'rematch' });
   await within(Promise.all(next), 30000, 'new match');
+  assert.strictEqual(JSON.parse(sql("SELECT value FROM settings WHERE key = 'faildeal'")[0].value).n, 0, 'the hook fired once');
+  assert(!gaveUp, 'the failed deal was retried, not given up');
+  mendDeal();
   assert.strictEqual(escrows(accA).length, 2);
   assert.strictEqual(escrows(accB).length, 2);
   assert.deepStrictEqual([fees(accA), fees(accB)], [[-5, -5], [-5, -5]]);

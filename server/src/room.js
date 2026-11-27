@@ -1308,7 +1308,7 @@ export class Room extends DurableObject {
       for (const k of ['esc', 'held', 'fee', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv', 'awayAt', 'away']) delete s[k];
       return s;
     });
-    for (const k of ['id', 'res', 'paid', 'wait', 'sharp', 'rolled']) delete r[k];
+    for (const k of ['id', 'res', 'paid', 'wait', 'sharp', 'rolled', 'tries', 'dealt', 'retry', 'giveup']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: r.pub ? Date.now() + KEEP * this.k : 0 });
     this.st = null;
     this.ctx.storage.delete('st');
