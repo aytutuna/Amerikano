@@ -1478,6 +1478,7 @@ var UI = (function () {
 
   return {
     show: show, pause: pause, settings: settings, howTo: howTo, lobby: lobby, close: close, notice: notice, held: held, link: link, tab: tab,
-    accept: accept, up: up, hub: hub, rooms: rooms, cup: cupForm, cupSeated: cupSeated, cupEnd: cupEnd, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry
+    accept: accept, up: up, hub: hub, rooms: rooms, cup: cupForm, cupSeated: cupSeated, cupEnd: cupEnd, conn: conn, retry: retry, redraw: redraw, entry: () => at.entry,
+    signing: () => at.gate === 'busy'
   };
 })();

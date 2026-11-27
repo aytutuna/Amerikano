@@ -923,7 +923,8 @@ var App = (function () {
     });
     const stored = Promise.race([Account.ready, new Promise(res => setTimeout(res, 1500))]);
     Promise.all([fonts, bars, stored]).then(show);
-    Account.ready.then(() => { if (late && Account.has()) UI.retry(); });
+    // a guest button already pressed makes its own way into the lobby once the read is in
+    Account.ready.then(() => { if (late && Account.has() && !UI.signing()) UI.retry(); });
   }
 
   return A;
