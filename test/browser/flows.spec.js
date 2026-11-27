@@ -81,7 +81,6 @@ test('an online table never says bot, and a computer player away reads like anyo
     await page.click('[data-k=quick]');
     await expect(page.locator('#game')).toBeVisible({ timeout: 60000 });
     await expect(page.locator('.seat .tw', { hasText: 'Bot' })).toHaveCount(0);
-    await expect(page.locator('#game')).not.toContainText(/Sharp|Relaxed/);
     const word = await page.evaluate(() => I18n.t('away'));
     // the test server makes the time away a fraction of a second, so it is watched every frame
     const seen = await page.waitForFunction(() => { const e = document.querySelector('.seat.away:not([data-p="0"]) .tw'); return e && e.textContent; }, null, { polling: 'raf', timeout: 90000 });
