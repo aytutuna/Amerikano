@@ -2119,7 +2119,8 @@ async function flow() {
   console.log('flow: the day total is written once and outlives the rows and the account');
 
   // rows are kept 90 days
-  const T = (Math.floor(Date.now() / DAY) + 1) * DAY + 3 * 3600000 + 5 * 60000;
+  // a time of its own: a run for tomorrow would write today's stats row before the metrics section does
+  const T = Date.UTC(2032, 2, 9, 3, 5);
   const old = (id, at) => sql("INSERT INTO persona_flow (match, player, day, kind, stake, sharp, fakes, humans, net, units, won, fake_net, at) VALUES ('" + id + "', 'purge', " + Math.floor(at / DAY) + ", 'pub', 100, 0, 3, 1, 0, 0, 0, 0, " + at + ')');
   old('old', T - 91 * DAY);
   old('new', T - 89 * DAY);
