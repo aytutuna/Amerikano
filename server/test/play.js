@@ -1669,6 +1669,7 @@ async function boards() {
   const bots = m => m.players.slice(1).map(p => p.pid);
   const snap = ids => sql("SELECT id, week, week_won, week_xp FROM personas WHERE id IN ('" + ids.join("','") + "')");
   const before = snap(bots(sf));
+  const start = snap(bots(sp));
   await Promise.all([within(pub.done, 240000, 'public match'), within(fr.done, 240000, 'friend match')]);
   await sleep(1000);
   assert.deepStrictEqual(snap(bots(sf)), before, 'a friend table counts for no computer player');
@@ -1677,12 +1678,15 @@ async function boards() {
   st.players.slice(1).forEach((p, j) => {
     const k = j + 1;
     const row = snap([p.pid])[0];
+    const was = start.find(x => x.id === p.pid);
+    // a computer player may already have a week behind it from the hourly job or an earlier table
+    const base = was.week === w ? was : { week_won: 0, week_xp: 0 };
     const win = st.final.low === k;
     const fin = st.stats.filter(f => f.fin === k).length;
     const gain = Math.max(0, payout(100, 4, p.chips) - hold(100, 4));
     assert.strictEqual(row.week, w);
-    assert.strictEqual(row.week_won, gain, 'a computer player counts what it won at the table');
-    assert.strictEqual(row.week_xp, 40 + (win ? 30 : 0) + 5 * fin, 'and the xp of the match');
+    assert.strictEqual(row.week_won - base.week_won, gain, 'a computer player counts what it won at the table');
+    assert.strictEqual(row.week_xp - base.week_xp, 40 + (win ? 30 : 0) + 5 * fin, 'and the xp of the match');
   });
   assert.strictEqual(sp.players.length, 4);
   console.log('boards: a public table counts for the computer players, a friend table for nobody');
@@ -3605,7 +3609,8 @@ async function mate(match, code, games, at) {
 }
 
 async function reports() {
-  const g = await pair(3, 3);
+  // a long match, so the table is still there after the many slow sql calls below
+  const g = await pair(5, 5);
   const [sa, sb] = await begin(g);
   const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
   await befriend(g.accA, g.accB);
