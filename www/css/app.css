@@ -157,7 +157,8 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .ok { display: none; position: absolute; left: calc(-6 * var(--u)); top: calc(-4 * var(--u)); width: calc(22 * var(--u)); height: calc(22 * var(--u)); padding: calc(3 * var(--u)); border-radius: 50%; background: var(--gold); fill: var(--ink); border: 2px solid var(--cream); }
 .seat.open .ok { display: block; }
 .si { display: flex; flex-direction: column; align-items: center; min-width: calc(76 * var(--u)); max-width: calc(140 * var(--u)); padding: calc(2 * var(--u)) calc(6 * var(--u)) calc(3 * var(--u)); border-radius: calc(10 * var(--u)); background: var(--cream); color: var(--ink); box-shadow: 0 calc(2 * var(--u)) 0 #9b7b4a; line-height: 1.2; }
-.nm { max-width: 100%; font-weight: 700; font-size: calc(12.5 * var(--r)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a long name goes on a second line before it is cut: the fallback fonts for Arabic differ in width */
+.nm { max-width: 100%; font-weight: 700; font-size: calc(12.5 * var(--r)); line-height: 1.15; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .sb { display: flex; align-items: center; justify-content: center; gap: calc(6 * var(--u)); font-weight: 700; font-size: calc(12 * var(--r)); color: var(--brown); white-space: nowrap; }
 .bk { display: inline-flex; align-items: center; gap: calc(4 * var(--u)); }
 .tw { font-weight: 700; font-size: calc(11 * var(--r)); color: var(--madder); white-space: nowrap; }
@@ -343,7 +344,7 @@ body[data-back=blue] .cv.bk, body[data-back=blue] .fc, body[data-back=blue] .pil
 .me { display: flex; align-items: center; gap: calc(10 * var(--u)); min-width: calc(96 * var(--u)); height: calc(46 * var(--u)); padding: 0 calc(16 * var(--u)) 0 calc(5 * var(--u)); border: 0; border-radius: calc(23 * var(--u)); background: var(--cream); color: var(--text); box-shadow: 0 calc(3 * var(--u)) 0 var(--edge), 0 calc(5 * var(--u)) calc(10 * var(--u)) rgba(0, 0, 0, .3); text-align: start; }
 .me:active { transform: translateY(calc(2 * var(--u))); box-shadow: 0 calc(1 * var(--u)) 0 var(--edge); }
 .me .tx { flex: 1 1 auto; min-width: 0; display: grid; gap: calc(5 * var(--u)); width: calc(110 * var(--u)); }
-.me .tx b { font-weight: 800; font-size: calc(14 * var(--r)); line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.me .tx b { font-weight: 800; font-size: calc(14 * var(--r)); line-height: 1.1; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .mypic { position: relative; flex: none; display: block; }
 .mypic .apic { border-radius: 50%; box-shadow: 0 0 0 calc(2 * var(--u)) var(--brass); }
 .mypic .lv { left: auto; right: calc(-7 * var(--u)); bottom: calc(-5 * var(--u)); min-width: calc(18 * var(--u)); height: calc(18 * var(--u)); padding: 0 calc(3 * var(--u)); font-size: calc(10 * var(--r)); line-height: 1; display: flex; align-items: center; justify-content: center; }
