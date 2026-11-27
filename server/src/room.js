@@ -310,8 +310,11 @@ export class Room extends DurableObject {
   // A join that failed counts against the account and the address; past the budget even a good code is refused. Whatever
   // the reason, a stranger is told the same thing.
   async miss(ws, a, p, k, more) {
-    const over = !!a.ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: a.ip })).success;
-    await this.hub().miss(p ? p.id : null, a.ip, over).catch(() => {});
+    // only a code that is unknown, full or started is a probe; a refusal for level, games, chips or a busy account is an ordinary
+    // one, charged to the account alone so people sharing an address are not shut out by each other
+    const probe = !k || ['nocode', 'auth', 'banned'].includes(k);
+    const over = probe && !!a.ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: a.ip })).success;
+    await this.hub().miss(p ? p.id : null, probe ? a.ip : null, over).catch(() => {});
     this.refuse(ws, k || 'nocode', more);
   }
 

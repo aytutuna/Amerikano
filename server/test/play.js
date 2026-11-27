@@ -5527,15 +5527,15 @@ async function limits() {
   const fresh = client('/ws/new', null, { 'X-Addr': addr() });
   await fresh.ready;
   fresh.ws.close();
-  // and every socket is held to 30 a minute
+  // and every socket is held to 300 a minute, which many phones behind one carrier address can share
   const S = addr();
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 300; i++) {
     const c2 = client('/ws/hub', null, { 'X-Addr': S });
     await c2.ready;
     c2.ws.close();
   }
-  assert.strictEqual(await refused(client('/ws/hub', null, { 'X-Addr': S })), 429, 'the 31st socket in a minute is refused');
-  console.log('limits: 10 new tables and 30 sockets a minute per address');
+  assert.strictEqual(await refused(client('/ws/hub', null, { 'X-Addr': S })), 429, 'the 301st socket in a minute is refused');
+  console.log('limits: 10 new tables and 300 sockets a minute per address');
 }
 
 async function probe() {
@@ -5592,6 +5592,22 @@ async function probe() {
   jd.ws.close();
   h2.ws.close();
   console.log('probe: an address past 5 failed joins a minute is refused');
+
+  // refusals for a guest, a level or too few matches are ordinary: they do not shut an address that many phones may share
+  const host2 = level(4, link(await guest()));
+  const stakeTable = client('/ws/new');
+  await stakeTable.ready;
+  stakeTable.send({ t: 'create', auth: host2.auth, players: 3, games: 3, stake: 500 });
+  const sj = await stakeTable.next(m => m.t === 'joined');
+  const [plain, pcode] = await made(await guest(), 3);
+  const Y = { 'X-Addr': addr() };
+  for (let i = 0; i < 8; i++) assert.strictEqual((await tryJoin(await guest(), sj.code, Y))[0], 'guest');
+  const [okY, jy] = await tryJoin(await guest(), pcode, Y);
+  assert.strictEqual(okY, 'joined', 'the address is not shut by ordinary refusals');
+  jy.ws.close();
+  plain.ws.close();
+  stakeTable.ws.close();
+  console.log('probe: ordinary refusals do not count against an address');
 
   // a table can only be made at a code /ws/new handed out
   const acc = await guest();

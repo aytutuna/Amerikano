@@ -53,7 +53,7 @@ simple = { limit = 30, period = 60 }
 [[ratelimits]]
 name = "SOCKETS"
 namespace_id = "1004"
-simple = { limit = 30, period = 60 }
+simple = { limit = 300, period = 60 }
 
 [[ratelimits]]
 name = "NEWCODES"

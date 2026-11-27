@@ -480,7 +480,7 @@ export class Hub extends DurableObject {
 
   async stray(ws, pid, k) {
     const ip = ws.deserializeAttachment().ip;
-    const over = !!ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: ip })).success;
+    const over = k === 'nocode' && !!ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: ip })).success;
     this.miss(pid, ip, over);
     this.put(ws, { t: 'error', k: k });
   }
