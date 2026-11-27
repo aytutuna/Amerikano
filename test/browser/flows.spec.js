@@ -357,3 +357,13 @@ test('the best-value ribbon sits on the pack that gives the most tokens, and the
   await page.click('[data-k=tabvip]');
   await expect(page.locator('.sheet')).toContainText('Premium season pass (coming soon)');
 });
+
+test('voice stays off in the build even when the server says it is on', async ({ page }) => {
+  await guest(page);
+  await page.evaluate(() => Voice.hub(true));
+  expect(await page.evaluate(() => [Voice.can(), Voice.on()])).toEqual([false, false]);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('#hand .rc').first()).toBeVisible({ timeout: 60000 });
+  await expect(page.locator('#mic')).toBeHidden();
+  await expect(page.locator('#spk')).toBeHidden();
+});

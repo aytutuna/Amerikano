@@ -67,6 +67,12 @@ for (const [k, v] of Object.entries(one)) {
 }
 if (!/penalty card/.test(S.en.claimBody({ left: 2 }))) fail('claimBody does not name the cost');
 
+// what the privacy page has to name
+const page = read('www/privacy.html');
+for (const w of ['35 days', '90 days', 'Resend', 'player number', 'trade-word', 'the country your internet address belongs to', '35 gün', '90 gün', 'çip alım satımı']) {
+  if (!page.includes(w)) fail('the privacy page lacks: ' + w);
+}
+
 if (bad.length) {
   for (const m of bad) console.log(m);
   process.exit(1);
