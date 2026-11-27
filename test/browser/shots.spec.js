@@ -3,6 +3,9 @@ const path = require('path');
 const { test, expect, guest } = require('./fixtures');
 
 const out = path.join(__dirname, 'out');
+
+// WebKit's screenshots add an inline stylesheet, which the page's policy refuses; the other specs run under the policy
+test.use({ bypassCSP: true });
 const variants = [
   { name: 'phone', w: 844, h: 390 },
   { name: 'large-text', w: 844, h: 390, scale: 1.3 },
