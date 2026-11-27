@@ -1599,7 +1599,7 @@ async function board() {
   assert.strictEqual((await call('GET', '/api/player/' + old.id, a)).body.rank, null);
   console.log('leaderboard: ordered by chips won this week and by level, last week left out, own rank');
 
-  // two humans: the winner's net is counted, and a player from an earlier week starts again
+  // two humans at a friend table: whoever wins, it counts for nobody and an old week is left as it was
   const g = await pair(3, 3);
   sql('UPDATE players SET week = ' + (w - 1) + ', week_won = 999 WHERE id IN (' + who(g.accA) + ', ' + who(g.accB) + ')');
   const fin = [];
@@ -1614,10 +1614,10 @@ async function board() {
   for (const [acc, x] of [[g.accA, g.a], [g.accB, g.b]]) {
     const net = x.st.res.net;
     const p = (await call('GET', '/api/player/' + acc.id, acc)).body;
-    assert.strictEqual(p.won, net > 0 ? net : 0, 'weekly chips ' + p.won + ' for net ' + net);
-    assert.strictEqual(sql('SELECT week AS n FROM players WHERE id = ' + who(acc))[0].n, net > 0 ? w : w - 1);
+    assert.strictEqual(p.won, 0, 'weekly chips ' + p.won + ' for net ' + net);
+    assert.strictEqual(sql('SELECT week AS n FROM players WHERE id = ' + who(acc))[0].n, w - 1);
     const pv = sql('SELECT prev_week, prev_won FROM players WHERE id = ' + who(acc))[0];
-    assert.deepStrictEqual([pv.prev_week, pv.prev_won], net > 0 ? [w - 1, 999] : [0, 0], 'a new week keeps the old one for the weekly push');
+    assert.deepStrictEqual([pv.prev_week, pv.prev_won], [0, 0], 'nothing rolled over');
     console.log('two humans: net', net, 'counted', p.won);
   }
   g.a.ws.close();
