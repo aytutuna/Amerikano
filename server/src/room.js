@@ -337,7 +337,7 @@ export class Room extends DurableObject {
     if (no) return this.refuse(ws, no.k, no);
     if (p.chips < ENTRY * stake) return this.refuse(ws, 'poor');
     this.r = {
-      code: a.code, n: n, games: g, pub: false, stake: stake, region: p.region || DEFAULT, host: -1,
+      code: a.code, n: n, games: g, pub: false, stake: stake, region: p.region || DEFAULT, host: -1, scale: this.env.PACE ? Number(m.scale) || undefined : undefined,
       seats: Array(n).fill(null), started: false, over: false, since: 0, ready: [], dead: 0
     };
     this.join(ws, a, m, p);

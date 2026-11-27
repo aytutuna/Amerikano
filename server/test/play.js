@@ -5766,7 +5766,7 @@ async function friendLimits() {
     sql('UPDATE players SET pub_games = ' + games + ', chips = 50000000 WHERE id = ' + who(x));
     return x;
   };
-  const made = async (acc, stake, players = 3) => {
+  const made = async (acc, stake, players = 3, scale) => {
     const c = client('/ws/new');
     await c.ready;
     const r = c.next(m => m.t === 'joined' || m.t === 'error');
@@ -5811,7 +5811,8 @@ async function friendLimits() {
   // an opened room: sit by code and quick play meet the same rule, a computer player does not
   // the accounts first: the table fills with computer players a few seconds after it opens
   const [young, vet, hostAcc] = [await mk(9, 4), await mk(10, 4), await mk(10, 4)];
-  const [op, oc] = await made(hostAcc, 500);
+  // the window is stretched, so the sits below land inside it however slow the machine
+  const [op, oc] = await made(hostAcc, 500, 3, 25);
   const opened = oc.next(m => m.t === 'room' && m.finding === 2);
   oc.send({ t: 'start' });
   await opened;
@@ -5821,7 +5822,7 @@ async function friendLimits() {
   assert.strictEqual(quick.t, 'seated');
   assert.notStrictEqual(quick.code, op.code, 'quick play finds the young account a public table, not the friend room');
   const old = await ask(vet, { t: 'sit', code: op.code });
-  assert.strictEqual(old.t, 'seated', 'ten can sit there');
+  assert.strictEqual(old.t, 'seated', 'ten can sit there: ' + JSON.stringify(old));
   oc.ws.close();
   console.log('friendLimits: an opened room and quick play meet the same rule');
 
