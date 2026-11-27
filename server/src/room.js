@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, award, seat, credit, charge, strike, grantTokens, payout, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
+import { verify, player, award, seat, credit, charge, strike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -544,18 +544,16 @@ export class Room extends DurableObject {
     const { r } = this;
     r.giveup = true;
     this.save();
-    const held = hold(r.stake, r.games);
-    const fee = feeFor(r.stake);
     try {
       for (const s of r.seats) {
         if (!s || !s.esc || s.back) continue;
         if (s.fake) {
           s.back = true;
           this.save();
-          await grant(this.env.DB, s.pid, held + fee);
+          await grant(this.env.DB, s.pid, this.heldOf(s) + this.feeOf(s));
         } else {
-          await credit(this.env.DB, s.pid, held, 'escrow', r.id + ':back');
-          await credit(this.env.DB, s.pid, fee, 'fee', r.id + ':feeback');
+          await credit(this.env.DB, s.pid, this.heldOf(s), 'escrow', r.id + ':back');
+          await credit(this.env.DB, s.pid, this.feeOf(s), 'fee', r.id + ':feeback');
           s.back = true;
           this.save();
         }
@@ -582,7 +580,7 @@ export class Room extends DurableObject {
     }
     for (const s of r.seats) if (s && s.fake) await giveBack(this.env.DB, s.pid);
     r.seats = r.seats.map((s, i) => gone[i] ? null : s);
-    for (const s of r.seats) if (s) for (const k of ['esc', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover', 'awayAt', 'away']) delete s[k];
+    for (const s of r.seats) if (s) for (const k of ['esc', 'held', 'fee', 'from', 'bank', 'back', 'acts', 'autos', 'auto', 'misses', 'cover', 'awayAt', 'away']) delete s[k];
     for (const k of ['id', 'res', 'paid', 'wait', 'tries', 'dealt', 'retry', 'giveup', 'aborted', 'sharp', 'rolled']) delete r[k];
     Object.assign(r, { started: false, over: false, since: 0, go: 0, ready: [], dead: 0 });
     if (r.open) this.window();
@@ -612,7 +610,7 @@ export class Room extends DurableObject {
         if (!s.esc) {
           await this.broken(i);
           s.bank = await spend(this.env.DB, s.pid, held + fee);
-          s.esc = true;
+          Object.assign(s, { esc: true, held: held, fee: fee });
           this.save();
         }
         continue;
@@ -623,7 +621,9 @@ export class Room extends DurableObject {
       // a ban lands while the table waits, when match_seat holds no row yet: the seat is taken out here and costs nothing
       const banned = await this.env.DB.prepare('SELECT banned FROM players WHERE id = ?').bind(s.pid).first();
       if (!(banned && banned.banned) && await charge(this.env.DB, s.pid, held, fee, r.id)) {
-        s.esc = true;
+        // saved at once: if the next read fails for good, the refund still knows what was taken
+        Object.assign(s, { esc: true, held: held, fee: fee });
+        this.save();
         const p = await player(this.env.DB, s.pid);
         s.bank = p ? p.chips : 0;
         s.from = p ? p.xp : 0;
@@ -1104,6 +1104,16 @@ export class Room extends DurableObject {
     if (r.over && !r.paid) this.ctx.waitUntil(this.settle().catch(() => {}));
   }
 
+  // What a seat had set aside and paid as the fee, as recorded at the deal. A match dealt before the money rules changed
+  // (a restart can land in the middle of one) set aside only the stake and took no fee.
+  heldOf(s) {
+    return s.held === undefined ? this.r.stake : s.held;
+  }
+
+  feeOf(s) {
+    return s.fee === undefined ? 0 : s.fee;
+  }
+
   // What each human gets, worked out once at the end, and xp only when this one played.
   outcome() {
     const { r, st } = this;
@@ -1115,9 +1125,9 @@ export class Room extends DurableObject {
     r.res = r.seats.map((s, i) => {
       if (!s.pid || !s.esc) return null;
       const win = st.final.low === i;
-      const held = hold(r.stake, r.games);
-      const fee = feeFor(r.stake);
-      let pay = payout(r.stake, r.games, st.players[i].chips);
+      const held = this.heldOf(s);
+      const fee = this.feeOf(s);
+      let pay = held + st.players[i].chips * r.stake / 10;
       // what is held covers the worst loss, so this is only a guard
       if (pay < 0) {
         console.error('loss past the hold', r.code, s.pid, pay);
@@ -1295,7 +1305,7 @@ export class Room extends DurableObject {
     }
     r.seats = r.seats.map((s, i) => {
       if (!want.includes(i)) return null;
-      for (const k of ['esc', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv', 'awayAt', 'away']) delete s[k];
+      for (const k of ['esc', 'held', 'fee', 'from', 'acts', 'autos', 'auto', 'misses', 'cover', 'lv', 'awayAt', 'away']) delete s[k];
       return s;
     });
     for (const k of ['id', 'res', 'paid', 'wait', 'sharp', 'rolled']) delete r[k];
