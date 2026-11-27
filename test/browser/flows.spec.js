@@ -317,6 +317,34 @@ test('Cancel on the finding sheet withdraws the seat and no table sheet follows'
   table.close();
 });
 
+test('Cancel after the hub seated the player but before the table answered still leaves', async ({ page }) => {
+  const table = await waitingSeat(page);
+  const held = [];
+  let hold = true;
+  await page.routeWebSocket(/\/ws\/(?!hub$|new$)[^/]+$/, route => {
+    const server = route.connectToServer();
+    route.onMessage(m => server.send(m));
+    server.onMessage(m => {
+      if (hold) held.push(m);
+      else route.send(m);
+    });
+    page.release = () => { hold = false; held.splice(0).forEach(m => route.send(m)); };
+  });
+  await guest(page);
+  await page.click('[data-k=quick]');
+  await expect(page.locator('.sw')).toHaveCount(1);
+  table.answer();
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await page.locator('.sheet .btn', { hasText: 'Cancel' }).click();
+  await expect(page.locator('.sw')).toHaveCount(0);
+  page.release();
+  await expect.poll(() => table.seats(), { timeout: 10000 }).toBe(1);
+  await page.waitForTimeout(3000);
+  await expect(page.locator('.sw')).toHaveCount(0);
+  await expect(page.locator('[data-k=quick]')).toBeVisible();
+  table.close();
+});
+
 test('Escape and a tap outside cancel the finding sheet', async ({ page }) => {
   const table = await waitingSeat(page);
   await guest(page);

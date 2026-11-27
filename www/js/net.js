@@ -119,6 +119,8 @@ var Net = (function () {
         break;
       case 'room':
         if (m.cup) break;
+        quickOff = false;
+        if (sock) sock.seen = true;
         // the seat was asked for and then withdrawn: leave while the table is still waiting, which costs nothing
         if (sock && sock.cancel) {
           sock.cancel = false;
@@ -133,7 +135,8 @@ var Net = (function () {
         else UI.lobby(m);
         break;
       case 'state':
-        if (sock) sock.cancel = false;
+        quickOff = false;
+        if (sock) { sock.cancel = false; sock.seen = true; }
         if (App.active() && !App.online()) return detach();
         UI.close();
         save();
@@ -326,7 +329,11 @@ var Net = (function () {
     quickOff = false;
     hubSay({ t: 'quick', stake: stake });
   };
-  N.cancelQuick = () => { quickOff = true; };
+  N.cancelQuick = () => {
+    // the seat may already be taken and the table socket still joining
+    if (sock && !sock.seen) sock.cancel = true;
+    else quickOff = true;
+  };
   N.cup = buy => hubSay({ t: 'cup', buy: buy });
 
   N.create = o => {
