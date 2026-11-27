@@ -11,30 +11,50 @@ const variants = [
   { name: 'ipad-pro-13', w: 1376, h: 1032 },
 ];
 
-// visible elements that hold text of their own and have more content than room
+// visible elements that hold text of their own and have more content than room, and boxes whose text reaches past their edge
 function cutOff() {
   const found = [];
+  const name = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).join('.') : '');
   for (const e of document.querySelectorAll('body *')) {
     const r = e.getBoundingClientRect();
     if (r.width < 3 || r.height < 3 || getComputedStyle(e).visibility === 'hidden') continue;
     if (![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
     if (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1) {
-      found.push({ el: e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).join('.') : ''),
-        text: e.textContent.trim().slice(0, 60), scroll: e.scrollWidth + 'x' + e.scrollHeight, box: e.clientWidth + 'x' + e.clientHeight });
+      found.push({ el: name(e), text: e.textContent.trim().slice(0, 60), scroll: e.scrollWidth + 'x' + e.scrollHeight, box: e.clientWidth + 'x' + e.clientHeight });
+    }
+  }
+  // a card or button whose wording runs out of it
+  for (const b of document.querySelectorAll('.room, .btn, .tab, .pill, .me, .tk, .itile')) {
+    const r = b.getBoundingClientRect();
+    if (r.width < 3 || getComputedStyle(b).visibility === 'hidden' || b.closest('[hidden]')) continue;
+    for (const c of b.querySelectorAll('b, i, span, p')) {
+      if (c.classList.contains('lock') || ![...c.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+      const q = c.getBoundingClientRect();
+      if (q.width < 3 || getComputedStyle(c).display === 'none') continue;
+      if (q.top < r.top - 1 || q.bottom > r.bottom + 1 || q.left < r.left - 1 || q.right > r.right + 1) {
+        found.push({ el: name(b) + ' > ' + name(c), text: c.textContent.trim().slice(0, 60), scroll: Math.round(q.width) + 'x' + Math.round(q.height), box: Math.round(r.width) + 'x' + Math.round(r.height) });
+      }
     }
   }
   return found;
 }
+
+// rows that are known and explained; each line is "project | variant | screen | element | text"
+const baseline = (() => {
+  try { return fs.readFileSync(path.join(__dirname, 'cutoff-baseline.txt'), 'utf8').split(/\r?\n/).filter(l => l && !l.startsWith('#')); } catch (e) { return []; }
+})();
 
 for (const v of variants) {
   test('Arabic screens, ' + v.name, async ({ page }, info) => {
     await page.setViewportSize({ width: v.w, height: v.h });
     await guest(page, 'ar');
     if (v.scale) {
-      await page.evaluate(s => {
-        document.documentElement.style.setProperty('font-size', 17 * s + 'px', 'important');
-        window.dispatchEvent(new Event('resize'));
-      }, v.scale);
+      await page.evaluate(s => document.documentElement.style.setProperty('font-size', 17 * s + 'px', 'important'), v.scale);
+      // the stage reads the new size on a resize and then marks the root zoomed
+      await expect(async () => {
+        await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+        expect(await page.locator('html').getAttribute('class')).toContain('zoomed');
+      }).toPass();
     }
     const dir = path.join(out, 'shots');
     fs.mkdirSync(dir, { recursive: true });
@@ -72,5 +92,7 @@ for (const v of variants) {
 
     fs.appendFileSync(path.join(out, 'cutoff.txt'), lines.map(l => l + '\n').join(''));
     expect(await page.locator('html').getAttribute('class')).toContain('rtl');
+    const key = l => l.split(' | ').slice(0, 4).join(' | ');
+    expect(lines.filter(l => !baseline.some(b => key(b) === key(l))), 'text that does not fit').toEqual([]);
   });
 }

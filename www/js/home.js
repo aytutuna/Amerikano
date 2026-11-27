@@ -381,7 +381,7 @@ var UI = (function () {
 
   // the tokens, with the shop behind it
   function tokens(me) {
-    const b = raw('pq tk', () => Shop.open(redraw));
+    const b = raw('pq tok', () => Shop.open(redraw));
     b.dataset.k = 'tokens';
     b.setAttribute('aria-label', t('shop.title') + ', ' + t('shop.count', { n: me.tokens }));
     b.appendChild(Cards.icon('i-token', 'chip'));
