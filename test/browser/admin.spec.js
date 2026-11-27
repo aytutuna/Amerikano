@@ -10,7 +10,10 @@ test('the admin page asks for the key and saves a setting', async ({ page }) => 
   await page.click('#go');
   await expect(page.locator('#main')).toBeVisible();
   await page.fill('textarea[data-k=chipsoff]', 'TR');
+  // the page refreshes after the save; a reload while that request is in flight is an error in WebKit
+  const refreshed = page.waitForResponse(r => r.url().endsWith('/admin/api/overview'));
   await page.click('button[data-save=chipsoff]');
+  await refreshed;
   await expect(page.locator('#log tr', { hasText: 'chipsoff' }).first()).toBeVisible();
   await page.reload();
   await expect(page.locator('textarea[data-k=chipsoff]')).toHaveValue('TR');
