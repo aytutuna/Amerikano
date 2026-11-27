@@ -8,6 +8,8 @@ const allowed = [
   /429.*\/api\/shop\/sync/,
   // the admin spec tries a wrong key first
   /401.*\/admin\/api\//,
+  // the site spec asks for addresses that do not exist
+  /404.*\/(no\/such\/page|missing)$/,
 ];
 
 let ips = Math.floor(Math.random() * 15000);

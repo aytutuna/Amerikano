@@ -10,18 +10,45 @@ const www = path.join(root, 'www');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// the rules of www/_headers: a path on a line of its own, then its headers indented
+function headerRules() {
+  const rules = [];
+  for (const l of fs.readFileSync(path.join(www, '_headers'), 'utf8').split('\n')) {
+    if (!l.trim()) continue;
+    if (l[0] !== ' ') rules.push({ path: l.trim(), headers: {} });
+    else {
+      const i = l.indexOf(':');
+      rules[rules.length - 1].headers[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+    }
+  }
+  return rules;
+}
+
 function site(api) {
+  const rules = headerRules();
+  // the page talks to the test server, which the policy does not know
+  const own = h => h.replace('connect-src', 'connect-src http://localhost:' + api + ' ws://localhost:' + api);
+  const send = (s, code, p, extra) => {
+    const h = Object.assign({ 'Cache-Control': 'no-store' }, extra);
+    for (const r of rules) {
+      if (r.path !== '/*' && r.path !== p) continue;
+      for (const [k, v] of Object.entries(r.headers)) h[k] = k === 'Content-Security-Policy' ? own(v) : v;
+    }
+    s.writeHead(code, h);
+  };
   return http.createServer((q, s) => {
     let p = decodeURIComponent(q.url.split('?')[0]);
+    const asked = p;
     if (p === '/' || /^\/t\/[A-Za-z]{4}$/.test(p)) p = '/index.html';
-    const f = path.join(www, p);
+    let f = path.join(www, p);
+    let code = 200;
     if (!f.startsWith(www) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) {
-      s.writeHead(404);
-      return s.end();
+      f = path.join(www, '404.html');
+      code = 404;
     }
     let b = fs.readFileSync(f);
     if (f.endsWith('.js')) b = Buffer.from(b.toString('utf8').replace(/localhost:8787/g, 'localhost:' + api));
-    s.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    send(s, code, asked, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' });
     s.end(b);
   });
 }
