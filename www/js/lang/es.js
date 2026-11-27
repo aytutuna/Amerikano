@@ -472,6 +472,7 @@
       none: 'Ninguno',
       delete: 'Eliminar cuenta',
       deleteAsk: 'Esto borra tu perfil, tus fichas y tus estadísticas para siempre. No se puede deshacer.',
+      deleteVip: 'Borrar tu cuenta no cancela tu suscripción VIP. Cancélala antes en los ajustes de suscripciones de App Store o Google Play. También perderás tus gemas y tus objetos.',
       deleteGo: 'Eliminar para siempre',
       keep: 'Conservar mi cuenta',
       appleNote: 'Conserva tus fichas y juega en otros dispositivos.',

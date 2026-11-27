@@ -524,7 +524,8 @@ export async function api(request, env, ctx) {
     ]);
     // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion
     if (env.RC_SECRET_KEY && ctx) ctx.waitUntil(fetch(rcBase(env) + '/v1/subscribers/' + p.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + env.RC_SECRET_KEY } }).catch(() => {}));
-    return json({ ok: true });
+    // an old client that did not warn can still tell the player the subscription is theirs to stop
+    return json({ ok: true, vip: isVip(p) });
   }
   if (path === '/api/me' && method === 'GET') return json(profile(p));
   if (path === '/api/signout' && method === 'POST') return signout(env, p, request);

@@ -473,6 +473,7 @@
       none: 'Geen',
       delete: 'Account verwijderen',
       deleteAsk: 'Hiermee verwijder je je profiel, je fiches en je statistieken voorgoed. Dit kan niet ongedaan worden gemaakt.',
+      deleteVip: 'Als je je account verwijdert, wordt je VIP-abonnement niet opgezegd. Zeg het eerst op in de abonnementsinstellingen van de App Store of Google Play. Ook je tokens en items gaan verloren.',
       deleteGo: 'Voorgoed verwijderen',
       keep: 'Mijn account behouden',
       appleNote: 'Bewaar je fiches en speel op andere apparaten.',

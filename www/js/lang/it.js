@@ -472,6 +472,7 @@
       none: 'Nessuno',
       delete: 'Elimina account',
       deleteAsk: 'Questo cancella per sempre il tuo profilo, le tue fiches e le tue statistiche. Non si può annullare.',
+      deleteVip: 'Cancellare il tuo account non annulla l’abbonamento VIP. Annullalo prima nelle impostazioni degli abbonamenti di App Store o Google Play. Perderai anche le tue gemme e i tuoi oggetti.',
       deleteGo: 'Elimina per sempre',
       keep: 'Tieni il mio account',
       appleNote: 'Tieni al sicuro le tue fiches e gioca su altri dispositivi.',

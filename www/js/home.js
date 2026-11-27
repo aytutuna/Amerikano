@@ -674,6 +674,12 @@ var UI = (function () {
         const p = node('p', '', t('pf.deleteAsk'));
         p.setAttribute('role', 'alert');
         del.appendChild(p);
+        // deleting the account does not stop the store from charging for it
+        if (me.vipUntil) {
+          const v = node('p', '', t('pf.deleteVip'));
+          v.dataset.f = 'deleteVip';
+          del.appendChild(v);
+        }
         const go = button(t('pf.deleteGo'), 'plain', () => {
           go.disabled = true;
           (again ? Apple.signIn().then(c => Account.remove(c)) : Account.remove()).then(() => {

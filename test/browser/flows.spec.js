@@ -221,6 +221,23 @@ test('a cooldown from leaving locks the tables it covers and shows the time left
   }
 });
 
+test('deleting an account tells a VIP subscriber to stop the subscription first, and nobody else', async ({ page }) => {
+  await guest(page);
+  const ask = async () => {
+    await page.click('[data-k=me]');
+    await page.click('.sheet [data-f=delete]');
+    await expect(page.locator('.sheet [data-f=deleteGo]')).toBeVisible();
+  };
+  await ask();
+  await expect(page.locator('.sheet [data-f=deleteVip]')).toHaveCount(0);
+  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('amerikano.account')).id);
+  sql("UPDATE players SET vip_until = " + (Date.now() + 30 * 86400000) + " WHERE id = '" + id + "'");
+  await page.reload();
+  await page.waitForSelector('[data-k=quick]');
+  await ask();
+  await expect(page.locator('.sheet [data-f=deleteVip]')).toContainText('does not cancel your VIP subscription');
+});
+
 test('tables above the player level are locked and say what they need', async ({ page }) => {
   await guest(page);
   await expect(page.locator('[data-k=room100]')).toBeEnabled();

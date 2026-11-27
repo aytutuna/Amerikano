@@ -471,6 +471,7 @@
       none: 'Keine',
       delete: 'Konto löschen',
       deleteAsk: 'Damit werden dein Profil, deine Chips und deine Statistiken für immer gelöscht. Das lässt sich nicht rückgängig machen.',
+      deleteVip: 'Das Löschen deines Kontos beendet dein VIP-Abo nicht. Kündige es zuerst in den Abo-Einstellungen des App Store oder von Google Play. Auch deine Token und Gegenstände gehen verloren.',
       deleteGo: 'Für immer löschen',
       keep: 'Konto behalten',
       appleNote: 'Behalte deine Chips und spiele auf anderen Geräten.',

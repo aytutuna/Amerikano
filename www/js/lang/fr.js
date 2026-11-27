@@ -472,6 +472,7 @@
       none: 'Aucun',
       delete: 'Supprimer le compte',
       deleteAsk: 'Cela supprime définitivement ton profil, tes jetons et tes statistiques. Impossible de revenir en arrière.',
+      deleteVip: 'Supprimer ton compte n’annule pas ton abonnement VIP. Résilie-le d’abord dans les réglages d’abonnement de l’App Store ou de Google Play. Tes gemmes et tes objets seront perdus aussi.',
       deleteGo: 'Supprimer définitivement',
       keep: 'Garder mon compte',
       appleNote: 'Garde tes jetons et joue sur d’autres appareils.',

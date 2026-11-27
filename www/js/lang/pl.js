@@ -473,6 +473,7 @@
       none: 'Brak',
       delete: 'Usuń konto',
       deleteAsk: 'To na zawsze usunie twój profil, żetony i statystyki. Nie można tego cofnąć.',
+      deleteVip: 'Usunięcie konta nie anuluje subskrypcji VIP. Najpierw anuluj ją w ustawieniach subskrypcji App Store lub Google Play. Stracisz też klejnoty i przedmioty.',
       deleteGo: 'Usuń na zawsze',
       keep: 'Zachowaj konto',
       appleNote: 'Zachowaj żetony i graj na innych urządzeniach.',

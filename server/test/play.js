@@ -3604,6 +3604,12 @@ async function vip(rc) {
   await sub('INITIAL_PURCHASE', cc, 'vtx-cc', now + M, { country_code: 'TR' });
   await hook(event('NON_RENEWING_PURCHASE', cc, PACK(80), 'ptx-cc', { country_code: 'tr' }));
   assert.deepStrictEqual(sql("SELECT tx, country FROM purchases WHERE tx IN ('vtx-cc', 'ptx-cc') ORDER BY tx"), [{ tx: 'ptx-cc', country: null }, { tx: 'vtx-cc', country: 'TR' }]);
+
+  // deleting an account says whether a subscription was running, for clients that did not warn first
+  const dv = await guest();
+  await sub('INITIAL_PURCHASE', dv, 'vtx-del', now + M);
+  assert.deepStrictEqual((await call('DELETE', '/api/me', dv)).body, { ok: true, vip: true });
+  assert.deepStrictEqual((await call('DELETE', '/api/me', await guest())).body, { ok: true, vip: false });
 }
 
 // sandbox purchases are marked, and a wipe takes back only what they gave

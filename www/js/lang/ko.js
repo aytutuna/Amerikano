@@ -471,6 +471,7 @@
       none: '없음',
       delete: '계정 삭제',
       deleteAsk: '프로필, 칩, 통계가 영구적으로 삭제돼요. 되돌릴 수 없어요.',
+      deleteVip: '계정을 삭제해도 VIP 구독은 해지되지 않아요. 먼저 App Store나 Google Play의 구독 설정에서 해지해 주세요. 토큰과 아이템도 함께 사라져요.',
       deleteGo: '영구 삭제',
       keep: '계정 유지',
       appleNote: '칩을 지키고 다른 기기에서도 플레이하세요.',

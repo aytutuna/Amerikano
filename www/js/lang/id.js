@@ -469,6 +469,7 @@
       none: 'Tidak ada',
       delete: 'Hapus akun',
       deleteAsk: 'Ini menghapus profil, chip, dan statistikmu selamanya. Tidak bisa dibatalkan.',
+      deleteVip: 'Menghapus akunmu tidak membatalkan langganan VIP. Batalkan dulu di pengaturan langganan App Store atau Google Play. Token dan itemmu juga ikut hilang.',
       deleteGo: 'Hapus selamanya',
       keep: 'Simpan akunku',
       appleNote: 'Simpan chip-mu dan main di perangkat lain.',

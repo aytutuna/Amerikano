@@ -472,6 +472,7 @@
       none: 'Nenhum',
       delete: 'Excluir conta',
       deleteAsk: 'Isso apaga seu perfil, suas fichas e suas estatísticas para sempre. Não dá para desfazer.',
+      deleteVip: 'Apagar sua conta não cancela sua assinatura VIP. Cancele antes nas configurações de assinaturas da App Store ou do Google Play. Você também perde suas gemas e seus itens.',
       deleteGo: 'Excluir para sempre',
       keep: 'Manter minha conta',
       appleNote: 'Guarde suas fichas e jogue em outros aparelhos.',

@@ -470,6 +470,7 @@
       none: '無',
       delete: '刪除帳號',
       deleteAsk: '這會永久刪除你的個人檔案、籌碼和統計資料，無法復原。',
+      deleteVip: '刪除帳號不會取消你的 VIP 訂閱。請先在 App Store 或 Google Play 的訂閱設定中取消。你的鑽石和物品也會一併消失。',
       deleteGo: '永久刪除',
       keep: '保留帳號',
       appleNote: '保住你的籌碼，也能在其他裝置上玩。',

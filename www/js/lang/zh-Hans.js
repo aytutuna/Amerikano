@@ -470,6 +470,7 @@
       none: '无',
       delete: '删除账号',
       deleteAsk: '这会永久删除你的资料、金币和统计数据，无法恢复。',
+      deleteVip: '删除账号不会取消你的 VIP 订阅。请先在 App Store 或 Google Play 的订阅设置中取消。你的钻石和物品也会一并丢失。',
       deleteGo: '永久删除',
       keep: '保留账号',
       appleNote: '保住你的金币，也能在其他设备上玩。',
