@@ -1,6 +1,7 @@
 import { json, fail, credit } from './account.js';
 import { middle } from './flow.js';
 import { releaseHeld, returnHeld } from './friend.js';
+import { wipe, sandboxers } from './shop.js';
 
 const KEYS = ['strong', 'chipsoff'];
 const STRONG = ['100', '500', '2500', '10000', '50000', 'cup1000', 'cup5000', 'cup25000'];
@@ -169,6 +170,31 @@ async function balance(env, b) {
   return json({ ok: true });
 }
 
+// Sandbox purchases off one account, or off every account but the ones to keep (App Review's, Aytu's own): the tokens they gave and
+// VIP that only sandbox paid for. Needs the confirmation, since it cannot be undone.
+async function wipeSandbox(env, b) {
+  if (b.confirm !== true) return fail('confirm');
+  let ids;
+  if (b.all === true) {
+    const keep = Array.isArray(b.keep) ? b.keep : [];
+    ids = (await sandboxers(env.DB)).filter(id => !keep.includes(id));
+  } else {
+    const p = await find(env.DB, b.id);
+    if (!p) return fail('nobody', 404);
+    ids = [p.id];
+  }
+  let tokens = 0;
+  let vip = 0;
+  for (const id of ids) {
+    const r = await wipe(env.DB, id);
+    if (!r.tokens && !r.vip) continue;
+    tokens += r.tokens;
+    vip += r.vip ? 1 : 0;
+    await logAdmin(env.DB, 'admin', 'wipe', id, r);
+  }
+  return json({ accounts: ids.length, tokens: tokens, vip: vip });
+}
+
 async function body(request) {
   const b = await request.json().catch(() => null);
   return b && typeof b === 'object' ? b : {};
@@ -190,7 +216,7 @@ export async function admin(request, env) {
   if (path === '/admin/api/flags' && request.method === 'GET') return flags(env);
   if (path === '/admin/api/overview' && request.method === 'GET') return overview(request, env);
   if (request.method === 'POST') {
-    const act = { mute: b => mute(env, b, true), unmute: b => mute(env, b, false), ban: b => ban(env, b), unban: b => unban(env, b), unsay: b => unsay(env, b), balance: b => balance(env, b), clear: b => clear(env, b), release: b => settle(env, b, false), return: b => settle(env, b, true) }[path.slice(11)];
+    const act = { mute: b => mute(env, b, true), unmute: b => mute(env, b, false), ban: b => ban(env, b), unban: b => unban(env, b), unsay: b => unsay(env, b), balance: b => balance(env, b), wipe: b => wipeSandbox(env, b), clear: b => clear(env, b), release: b => settle(env, b, false), return: b => settle(env, b, true) }[path.slice(11)];
     if (act) return act(await body(request));
   }
   return fail('nope', 404);
@@ -221,6 +247,10 @@ td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left;vertical-align:to
 <button data-do="balance">Correct balance</button>
 <input id="mid" placeholder="Message id" inputmode="numeric">
 <button data-do="unsay">Delete message</button>
+<h2>Sandbox purchases</h2>
+<button data-do="wipe">Wipe this player</button>
+<input id="keep" placeholder="Player ids to keep, separated by commas">
+<button data-do="wipeall">Wipe every sandbox account</button>
 <h2>Settings</h2><div id="settings"></div>
 <h2>Computer players, last 14 days</h2><table id="flow"></table>
 <h2>Rematches by day</h2><table id="days"></table>
@@ -299,10 +329,15 @@ document.querySelector('[data-do=mute]').parentNode.addEventListener('click', as
   const body = what === 'unsay' ? { id: Number($('mid').value) } : { id: $('pid').value.trim() };
   if (what === 'balance') Object.assign(body, { delta: Number($('amount').value), ref: $('ref').value.trim() });
   if (what === 'ban') body.why = prompt('Why?') || undefined;
+  if (what === 'wipe' || what === 'wipeall') {
+    if (!confirm(what === 'wipe' ? 'Wipe the sandbox purchases of this player?' : 'Wipe the sandbox purchases of every account except the ones kept?')) return;
+    body.confirm = true;
+    if (what === 'wipeall') Object.assign(body, { all: true, keep: $('keep').value.split(',').map(x => x.trim()).filter(Boolean) });
+  }
   try {
-    await api(what, body);
-    $('msg').textContent = '';
+    const done = await api(what === 'wipeall' ? 'wipe' : what, body);
     await show();
+    if (what.startsWith('wipe')) $('msg').textContent = done.accounts + ' account(s), ' + done.tokens + ' tokens, ' + done.vip + ' VIP';
   } catch (err) {
     $('msg').textContent = what + ': ' + err.message;
   }

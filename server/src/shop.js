@@ -160,6 +160,27 @@ async function lapse(db, id, until) {
   await db.prepare('UPDATE players SET vip_until = MIN(vip_until, ?1) WHERE id = ?2').bind(until, id).run();
 }
 
+// What sandbox purchases left on an account: the tokens they gave, as far as the account still holds them, and VIP when every month it
+// ever had was sandbox. Items it bought stay. The wipe row's ref comes from the grant, so a second run finds nothing to do.
+export async function wipe(db, id) {
+  const { results } = await db.prepare("SELECT t.ref, t.delta FROM token_log t WHERE t.player = ?1 AND t.env = 'SANDBOX' AND t.reason = 'purchase' AND NOT EXISTS (SELECT 1 FROM token_log r WHERE r.ref IN ('refund:' || substr(t.ref, 4), 'wipe:' || t.ref)) ORDER BY t.id").bind(id).all();
+  let tokens = 0;
+  for (const g of results) {
+    const p = await player(db, id);
+    if (!p) return { tokens: 0, vip: false };
+    const back = Math.min(g.delta, p.tokens);
+    if (back > 0 && await grantTokens(db, id, -back, 'wipe', 'wipe:' + g.ref)) tokens += back;
+  }
+  const months = (await db.prepare('SELECT env FROM purchases WHERE player = ? AND product = ? AND refunded = 0').bind(id, Catalog.VIP).all()).results;
+  let vip = false;
+  if (months.some(m => m.env === 'SANDBOX') && !months.some(m => m.env !== 'SANDBOX')) vip = (await db.prepare('UPDATE players SET vip_until = ?1 WHERE id = ?2 AND vip_until > ?1').bind(Date.now(), id).run()).meta.changes === 1;
+  return { tokens: tokens, vip: vip };
+}
+
+export async function sandboxers(db) {
+  return (await db.prepare("SELECT player FROM token_log WHERE env = 'SANDBOX' UNION SELECT player FROM purchases WHERE env = 'SANDBOX'").all()).results.map(r => r.player);
+}
+
 async function subscription(db, e) {
   const id = String(e.app_user_id);
   const tx = typeof e.transaction_id === 'string' ? e.transaction_id : '';

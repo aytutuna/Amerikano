@@ -3606,6 +3606,73 @@ async function vip(rc) {
   assert.deepStrictEqual(sql("SELECT tx, country FROM purchases WHERE tx IN ('vtx-cc', 'ptx-cc') ORDER BY tx"), [{ tx: 'ptx-cc', country: null }, { tx: 'vtx-cc', country: 'TR' }]);
 }
 
+// sandbox purchases are marked, and a wipe takes back only what they gave
+async function sandbox() {
+  const M = 30 * DAY;
+  const now = Date.now();
+  const prod = { environment: 'PRODUCTION' };
+  const tokens = async acc => (await shopOf(acc)).tokens;
+  const wipe = (body, ip) => adm('POST', 'wipe', ADMIN, body, ip);
+  const sub = (type, acc, tx, until, more) => hook(event(type, acc, VIP, tx, Object.assign({ expiration_at_ms: until }, more)));
+  const a = await guest();
+  await hook(event('NON_RENEWING_PURCHASE', a, PACK(500), 'sbx-a1'));
+  await hook(event('NON_RENEWING_PURCHASE', a, PACK(80), 'sbx-a2', prod));
+  assert.deepStrictEqual(sql('SELECT ref, env FROM token_log WHERE player = ' + who(a) + ' ORDER BY id'), [{ ref: 'rc:sbx-a1', env: 'SANDBOX' }, { ref: 'rc:sbx-a2', env: 'PRODUCTION' }], 'each grant is marked with where it came from');
+  assert.strictEqual(await tokens(a), 580, 'a sandbox purchase still credits');
+  const bare = await wipe({ id: a.id });
+  assert.deepStrictEqual([bare.status, bare.body.error], [400, 'confirm'], 'a wipe needs the confirmation');
+  assert.strictEqual((await wipe({ id: '0'.repeat(32), confirm: true })).status, 404);
+  assert.strictEqual((await wipe({ id: a.id, confirm: true })).status, 200);
+  assert.strictEqual(await tokens(a), 80, 'only the sandbox part goes');
+  assert.strictEqual((await wipe({ id: a.id, confirm: true })).status, 200);
+  assert.strictEqual(await tokens(a), 80, 'a second wipe changes nothing');
+  assert.deepStrictEqual(sql('SELECT delta, reason, ref FROM token_log WHERE player = ' + who(a) + " AND reason = 'wipe'"), [{ delta: -500, reason: 'wipe', ref: 'wipe:rc:sbx-a1' }]);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE action = 'wipe' AND target = " + who(a))[0].n, 1, 'and only the first is logged');
+
+  // what the account spent is gone: the wipe takes what is left, and the items stay
+  const b = await guest();
+  await hook(event('NON_RENEWING_PURCHASE', b, PACK(500), 'sbx-b1'));
+  assert.strictEqual((await call('POST', '/api/shop/buy', b, { item: 'frame-brass' })).status, 200);
+  await wipe({ id: b.id, confirm: true });
+  const sb = await shopOf(b);
+  assert.deepStrictEqual([sb.tokens, sb.owned], [0, ['frame-brass']]);
+
+  // a refunded sandbox purchase is not taken back twice
+  const r = await guest();
+  await hook(event('NON_RENEWING_PURCHASE', r, PACK(500), 'sbx-r1'));
+  await hook(event('NON_RENEWING_PURCHASE', r, PACK(80), 'sbx-r2'));
+  await hook(event('CANCELLATION', r, PACK(500), 'sbx-r1', { cancel_reason: 'CUSTOMER_SUPPORT' }));
+  assert.strictEqual(await tokens(r), 80);
+  await wipe({ id: r.id, confirm: true });
+  assert.strictEqual(await tokens(r), 0);
+
+  // VIP that only sandbox paid for ends, VIP with a production month in it stays
+  const [v1, v2, v3] = [await guest(), await guest(), await guest()];
+  await sub('INITIAL_PURCHASE', v1, 'sbx-v1', now + M);
+  await sub('INITIAL_PURCHASE', v2, 'sbx-v2', now + M);
+  await sub('RENEWAL', v2, 'sbx-v3', now + 2 * M, prod);
+  await sub('INITIAL_PURCHASE', v3, 'sbx-v4', now + M, prod);
+  assert.deepStrictEqual([(await shopOf(v1)).vipUntil, (await shopOf(v2)).vipUntil, (await shopOf(v3)).vipUntil], [now + M, now + 2 * M, now + M]);
+  for (const x of [v1, v2, v3]) await wipe({ id: x.id, confirm: true });
+  assert.deepStrictEqual([(await shopOf(v1)).vipUntil, (await shopOf(v2)).vipUntil, (await shopOf(v3)).vipUntil], [0, now + 2 * M, now + M]);
+  assert.deepStrictEqual([await tokens(v1), await tokens(v2), await tokens(v3)], [0, 500, 500], 'a sandbox month loses its tokens, a production one keeps them');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM purchases WHERE player = ' + who(v1))[0].n, 1, 'the purchase row stays, so the month is not credited again');
+  console.log('sandbox: grants are marked, a wipe takes the sandbox part once and leaves items and production months');
+
+  // every sandbox account at once, except the ones kept
+  const [w1, w2] = [await guest(), await guest()];
+  await hook(event('NON_RENEWING_PURCHASE', w1, PACK(500), 'sbx-w1'));
+  await hook(event('NON_RENEWING_PURCHASE', w2, PACK(500), 'sbx-w2'));
+  assert.strictEqual((await wipe({ all: true })).status, 400, 'every account needs the confirmation too');
+  const all = await wipe({ all: true, keep: [w2.id], confirm: true }, '10.9.0.5');
+  assert.strictEqual(all.status, 200);
+  assert(all.body.tokens >= 500 && all.body.accounts >= 1);
+  assert.deepStrictEqual([await tokens(w1), await tokens(w2)], [0, 500]);
+  assert.strictEqual((await wipe({ all: true, confirm: true }, '10.9.0.5')).body.tokens, 500, 'the kept account goes when it is chosen');
+  assert.strictEqual(await tokens(w2), 0);
+  console.log('sandbox: the wipe of every account skips the ones kept');
+}
+
 // the day's earnings stop at the cap, and a new UTC day starts again
 async function cap() {
   const acc = link(await guest());
@@ -6669,6 +6736,7 @@ process.on('unhandledRejection', e => {
   await rc.server.listening$;
   await sec('shop', () => shop(rc));
   await sec('vip', () => vip(rc));
+  await sec('sandbox', () => sandbox());
   await sec('cap', () => cap());
   rc.server.close();
   rs.server.close();
