@@ -14,7 +14,6 @@
     you: 'Jij',
     joker: 'Joker',
     rot: 'Houd je telefoon horizontaal',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -54,7 +53,6 @@
     gameOf: v => 'Spel ' + v.n + ' van ' + v.of,
     lastGame: v => 'Laatste spel ' + v.n + ' van ' + v.of,
 
-    playing: 'Speelt',
     opened: 'Uitgekomen',
     away: 'Afwezig',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', aan de beurt' : '') + (v.opened ? ', uitgekomen' : '') + (v.away ? ', afwezig' : '') + ', ' + num(v.score) + ' punten',
@@ -67,7 +65,6 @@
     pilesLabel: 'Stapels',
     stock: v => 'Trekstapel, ' + cards(v.n),
     stockDraw: v => 'Trekstapel, ' + cards(v.n) + '. Pak een kaart',
-    stockEmpty: 'De trekstapel is leeg',
     discardPile: v => v.card ? 'Aflegstapel, bovenaan ' + v.card : 'Aflegstapel, leeg',
     discardTake: v => 'Aflegstapel. Pak ' + v.card,
     discardPut: v => 'Aflegstapel. Leg de geselecteerde kaart af',
@@ -107,7 +104,6 @@
       canFinish: 'Je kunt uitgaan.',
       ready: 'Voeg kaarten toe, leg een nieuwe combinatie neer of leg een kaart af.',
       just: 'Je bent uitgekomen. Leg een kaart af om je beurt te beëindigen.',
-      sel: v => pl(v.n, { one: '# geselecteerd.', other: '# geselecteerd.' }),
       pickOne: 'Kies een kaart om af te leggen.',
       over: 'Einde van het spel.',
       matchOver: 'Einde van de partij.'
@@ -184,15 +180,12 @@
       saved: v => 'Spel ' + v.n + ' van ' + v.of + ', ' + v.players + ' spelers',
       how: 'Spelregels',
       settings: 'Instellingen',
-      fan: 'Kaarten',
       rejoin: 'Terug',
       rejoinNote: v => 'Kamer ' + v.code
     },
 
     setup: {
-      title: 'Nieuwe partij',
       players: 'Spelers',
-      nPlayers: v => v.n + ' spelers',
       games: 'Spellen',
       gamesNote: 'Een veelvoud van het aantal spelers, zodat iedereen even vaak de opdracht kiest.',
       level: 'Tegenstanders',
@@ -301,7 +294,6 @@
     },
 
     end: {
-      title: 'Einde van de partij',
       won: v => v.you ? 'Jij hebt de partij gewonnen' : v.name + ' heeft de partij gewonnen',
       place: 'Plek',
       player: 'Speler',
@@ -328,7 +320,6 @@
 
     net: {
       title: 'Online spelen',
-      create: 'Een tafel maken',
       createGo: 'Tafel maken',
       join: 'Meedoen met een code',
       code: 'Kamercode',
@@ -343,7 +334,6 @@
       free: 'Vrije plek',
       arrived: v => v.name + ' is aangeschoven, level ' + v.n + '.',
       you: '(jij)',
-      hostTag: 'Host',
       start: 'Starten',
       share: 'Delen',
       shareText: 'Speel Amerikano met me.',
@@ -380,7 +370,6 @@
 
     hall: {
       rooms: 'Kamers',
-      need: v => 'Vereist ' + v.n + ' fiches',
       playing: v => v.n + ' aan het spelen',
       pick: 'Kies een kamer',
       finding: 'Spelers zoeken',
@@ -647,7 +636,6 @@
       playing: 'Speelt',
       at: { lobby: 'In de lobby', training: 'Aan het oefenen', table: 'Aan een tafel' },
       lateNote: v => v.name + ' heeft je uitgenodigd',
-      invTitle: 'Uitnodiging',
       invText: v => v.name + ' nodigt je uit voor een tafel. Inzet van ' + v.n + ' fiches.',
       invFree: v => v.name + ' nodigt je uit voor een tafel. Er staan geen fiches op het spel.',
       join: 'Meedoen',

@@ -10,7 +10,6 @@
     you: 'あなた',
     joker: 'ジョーカー',
     rot: 'スマホを横向きにしてください',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => RANKS[v.r],
     suit: v => SUITS[v.s],
@@ -50,7 +49,6 @@
     gameOf: v => 'ゲーム ' + v.n + '/' + v.of,
     lastGame: v => '最終ゲーム ' + v.n + '/' + v.of,
 
-    playing: 'プレイ中',
     opened: 'オープン済み',
     away: '離席中',
     seat: v => v.name + '、' + cards(v.n) + (v.turn ? '、手番' : '') + (v.opened ? '、オープン済み' : '') + (v.away ? '、離席中' : '') + '、' + num(v.score) + '点',
@@ -63,7 +61,6 @@
     pilesLabel: '山札と捨て札',
     stock: v => '山札、' + cards(v.n),
     stockDraw: v => '山札、' + cards(v.n) + '。1枚引く',
-    stockEmpty: '山札がありません',
     discardPile: v => v.card ? '捨て札、一番上は' + v.card : '捨て札、なし',
     discardTake: v => '捨て札。' + v.card + 'を取る',
     discardPut: v => '捨て札。選択したカードを捨てる',
@@ -103,7 +100,6 @@
       canFinish: 'あがれます。',
       ready: 'カードを追加するか、新しい組を出すか、カードを捨ててください。',
       just: 'オープンしました。カードを1枚捨ててターンを終えましょう。',
-      sel: v => pl(v.n, { other: '#枚選択中。' }),
       pickOne: '捨てるカードを1枚選んでください。',
       over: 'ゲーム終了。',
       matchOver: '対戦終了。'
@@ -180,15 +176,12 @@
       saved: v => 'ゲーム ' + v.n + '/' + v.of + '・' + v.players + '人',
       how: '遊び方',
       settings: '設定',
-      fan: 'カード',
       rejoin: '戻る',
       rejoinNote: v => 'ルーム ' + v.code
     },
 
     setup: {
-      title: '新しい対戦',
       players: 'プレイヤー',
-      nPlayers: v => v.n + '人',
       games: 'ゲーム数',
       gamesNote: 'プレイヤー数の倍数にすると、全員が同じ回数ずつタスクを選べます。',
       level: '対戦相手',
@@ -297,7 +290,6 @@
     },
 
     end: {
-      title: '対戦終了',
       won: v => v.you ? 'あなたの勝ちです' : v.name + 'の勝ちです',
       place: '順位',
       player: 'プレイヤー',
@@ -324,7 +316,6 @@
 
     net: {
       title: 'オンライン対戦',
-      create: 'テーブルを作る',
       createGo: '作成',
       join: 'コードで参加',
       code: 'ルームコード',
@@ -339,7 +330,6 @@
       free: '空席',
       arrived: v => v.name + 'が着席しました（レベル' + v.n + '）。',
       you: '（あなた）',
-      hostTag: 'ホスト',
       start: 'スタート',
       share: '共有',
       shareText: 'Amerikanoで一緒に遊びましょう。',
@@ -376,7 +366,6 @@
 
     hall: {
       rooms: 'ルーム',
-      need: v => v.n + 'チップ必要',
       playing: v => v.n + '人がプレイ中',
       pick: 'ルームを選ぶ',
       finding: 'プレイヤーを探しています',
@@ -643,7 +632,6 @@
       playing: 'プレイ中',
       at: { lobby: 'ロビー', training: '練習中', table: 'テーブルにいます' },
       lateNote: v => v.name + 'から招待されました',
-      invTitle: '招待',
       invText: v => v.name + 'さんからテーブルへの招待です。参加費' + v.n + 'チップ。',
       invFree: v => v.name + 'さんからテーブルへの招待です。かけるチップはありません。',
       join: '参加',

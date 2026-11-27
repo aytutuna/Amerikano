@@ -13,7 +13,6 @@
     you: 'Tú',
     joker: 'Comodín',
     rot: 'Pon tu teléfono en horizontal',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -53,7 +52,6 @@
     gameOf: v => 'Mano ' + v.n + ' de ' + v.of,
     lastGame: v => 'Última mano ' + v.n + ' de ' + v.of,
 
-    playing: 'Jugando',
     opened: 'Abrió',
     away: 'Ausente',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', en turno' : '') + (v.opened ? ', abrió' : '') + (v.away ? ', ausente' : '') + ', ' + num(v.score) + ' puntos',
@@ -66,7 +64,6 @@
     pilesLabel: 'Mazos',
     stock: v => 'Mazo, ' + cards(v.n),
     stockDraw: v => 'Mazo, ' + cards(v.n) + '. Roba una carta',
-    stockEmpty: 'El mazo está vacío',
     discardPile: v => v.card ? 'Descarte, arriba ' + v.card : 'Descarte, vacío',
     discardTake: v => 'Descarte. Toma ' + v.card,
     discardPut: 'Descarte. Descarta la carta seleccionada',
@@ -106,7 +103,6 @@
       canFinish: 'Ya puedes cerrar.',
       ready: 'Agrega cartas, baja una combinación nueva o descarta una.',
       just: 'Abriste. Descarta una carta para terminar tu turno.',
-      sel: v => pl(v.n, { one: '# seleccionada.', other: '# seleccionadas.' }),
       pickOne: 'Elige una carta para descartar.',
       over: 'Fin de la mano.',
       matchOver: 'Fin de la partida.'
@@ -183,15 +179,12 @@
       saved: v => 'Mano ' + v.n + ' de ' + v.of + ', ' + v.players + ' jugadores',
       how: 'Cómo se juega',
       settings: 'Ajustes',
-      fan: 'Cartas',
       rejoin: 'Volver',
       rejoinNote: v => 'Sala ' + v.code
     },
 
     setup: {
-      title: 'Partida nueva',
       players: 'Jugadores',
-      nPlayers: v => v.n + ' jugadores',
       games: 'Manos',
       gamesNote: 'Un múltiplo de los jugadores, para que todos elijan el contrato las mismas veces.',
       level: 'Rivales',
@@ -300,7 +293,6 @@
     },
 
     end: {
-      title: 'Fin de la partida',
       won: v => v.you ? 'Ganaste la partida' : v.name + ' ganó la partida',
       place: 'Lugar',
       player: 'Jugador',
@@ -327,7 +319,6 @@
 
     net: {
       title: 'Jugar en línea',
-      create: 'Crear una mesa',
       createGo: 'Crear mesa',
       join: 'Entrar con un código',
       code: 'Código de la sala',
@@ -342,7 +333,6 @@
       free: 'Asiento libre',
       arrived: v => v.name + ' se sentó, nivel ' + v.n + '.',
       you: '(tú)',
-      hostTag: 'Anfitrión',
       start: 'Empezar',
       share: 'Compartir',
       shareText: 'Juega Amerikano conmigo.',
@@ -379,7 +369,6 @@
 
     hall: {
       rooms: 'Salas',
-      need: v => 'Requiere ' + v.n + ' fichas',
       playing: v => v.n + ' jugando',
       pick: 'Elige una sala',
       finding: 'Buscando jugadores',
@@ -646,7 +635,6 @@
       playing: 'Jugando',
       at: { lobby: 'En el lobby', training: 'En entrenamiento', table: 'En una mesa' },
       lateNote: v => v.name + ' te invitó',
-      invTitle: 'Invitación',
       invText: v => v.name + ' te invita a una mesa. Entrada de ' + v.n + ' fichas.',
       invFree: v => v.name + ' te invita a una mesa. Sin fichas en juego.',
       join: 'Unirme',

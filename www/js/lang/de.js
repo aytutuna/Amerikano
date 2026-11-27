@@ -12,7 +12,6 @@
     you: 'Du',
     joker: 'Joker',
     rot: 'Dreh dein Handy ins Querformat',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -52,7 +51,6 @@
     gameOf: v => 'Spiel ' + v.n + ' von ' + v.of,
     lastGame: v => 'Letztes Spiel ' + v.n + ' von ' + v.of,
 
-    playing: 'Am Zug',
     opened: 'Geöffnet',
     away: 'Abwesend',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', am Zug' : '') + (v.opened ? ', geöffnet' : '') + (v.away ? ', abwesend' : '') + ', ' + num(v.score) + ' Punkte',
@@ -65,7 +63,6 @@
     pilesLabel: 'Stapel',
     stock: v => 'Nachziehstapel, ' + cards(v.n),
     stockDraw: v => 'Nachziehstapel, ' + cards(v.n) + '. Karte ziehen',
-    stockEmpty: 'Der Nachziehstapel ist leer',
     discardPile: v => v.card ? 'Ablagestapel, oben ' + v.card : 'Ablagestapel, leer',
     discardTake: v => 'Ablagestapel. ' + v.card + ' nehmen',
     discardPut: 'Ablagestapel. Gewählte Karte ablegen',
@@ -105,7 +102,6 @@
       canFinish: 'Du kannst jetzt aussteigen.',
       ready: 'Lege Karten an, lege eine neue Kombination aus oder wirf eine Karte ab.',
       just: 'Du hast geöffnet. Wirf eine Karte ab, um deinen Zug zu beenden.',
-      sel: v => pl(v.n, { one: '# ausgewählt.', other: '# ausgewählt.' }),
       pickOne: 'Wähle eine Karte zum Ablegen.',
       over: 'Spiel beendet.',
       matchOver: 'Partie beendet.'
@@ -182,15 +178,12 @@
       saved: v => 'Spiel ' + v.n + ' von ' + v.of + ', ' + v.players + ' Spieler',
       how: 'Spielregeln',
       settings: 'Einstellungen',
-      fan: 'Karten',
       rejoin: 'Zurück',
       rejoinNote: v => 'Raum ' + v.code
     },
 
     setup: {
-      title: 'Neue Partie',
       players: 'Spieler',
-      nPlayers: v => v.n + ' Spieler',
       games: 'Spiele',
       gamesNote: 'Ein Vielfaches der Spielerzahl, damit alle gleich oft die Aufgabe wählen.',
       level: 'Gegner',
@@ -299,7 +292,6 @@
     },
 
     end: {
-      title: 'Ende der Partie',
       won: v => v.you ? 'Du hast die Partie gewonnen' : v.name + ' hat die Partie gewonnen',
       place: 'Platz',
       player: 'Spieler',
@@ -326,7 +318,6 @@
 
     net: {
       title: 'Online spielen',
-      create: 'Tisch erstellen',
       createGo: 'Tisch erstellen',
       join: 'Mit Code beitreten',
       code: 'Raumcode',
@@ -341,7 +332,6 @@
       free: 'Freier Platz',
       arrived: v => v.name + ' hat sich gesetzt, Level ' + v.n + '.',
       you: '(du)',
-      hostTag: 'Gastgeber',
       start: 'Start',
       share: 'Teilen',
       shareText: 'Spiel mit mir Amerikano.',
@@ -378,7 +368,6 @@
 
     hall: {
       rooms: 'Räume',
-      need: v => 'Ab ' + v.n + ' Chips',
       playing: v => v.n + ' spielen',
       pick: 'Wähle einen Raum',
       finding: 'Suche Spieler',
@@ -645,7 +634,6 @@
       playing: 'Spielt',
       at: { lobby: 'In der Lobby', training: 'Im Training', table: 'An einem Tisch' },
       lateNote: v => v.name + ' hat dich eingeladen',
-      invTitle: 'Einladung',
       invText: v => v.name + ' lädt dich an einen Tisch ein. Einsatz: ' + v.n + ' Chips.',
       invFree: v => v.name + ' lädt dich an einen Tisch ein. Es geht um keine Chips.',
       join: 'Beitreten',

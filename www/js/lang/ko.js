@@ -12,7 +12,6 @@
     you: '나',
     joker: '조커',
     rot: '휴대폰을 가로로 돌려 주세요',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => RANKS[v.r],
     suit: v => SUITS[v.s],
@@ -52,7 +51,6 @@
     gameOf: v => '게임 ' + v.n + '/' + v.of,
     lastGame: v => '마지막 게임 ' + v.n + '/' + v.of,
 
-    playing: '플레이 중',
     opened: '오픈함',
     away: '자리 비움',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', 차례' : '') + (v.opened ? ', 오픈함' : '') + (v.away ? ', 자리 비움' : '') + ', ' + num(v.score) + '점',
@@ -65,7 +63,6 @@
     pilesLabel: '카드 더미',
     stock: v => '카드 더미, ' + cards(v.n),
     stockDraw: v => '카드 더미, ' + cards(v.n) + '. 한 장 뽑기',
-    stockEmpty: '카드 더미가 비었어요',
     discardPile: v => v.card ? '버린 카드 더미, 맨 위는 ' + v.card : '버린 카드 더미, 비어 있음',
     discardTake: v => '버린 카드 더미. ' + v.card + ' 가져오기',
     discardPut: v => '버린 카드 더미. 선택한 카드 버리기',
@@ -105,7 +102,6 @@
       canFinish: '지금 끝낼 수 있어요.',
       ready: '카드를 추가하거나, 새 조합을 내려놓거나, 카드를 한 장 버리세요.',
       just: '오픈했어요. 카드를 한 장 버리고 차례를 마치세요.',
-      sel: v => pl(v.n, { other: '#장 선택됨.' }),
       pickOne: '버릴 카드를 한 장 골라 주세요.',
       over: '게임이 끝났어요.',
       matchOver: '대전이 끝났어요.'
@@ -182,15 +178,12 @@
       saved: v => '게임 ' + v.n + '/' + v.of + ', ' + v.players + '명',
       how: '게임 방법',
       settings: '설정',
-      fan: '카드',
       rejoin: '돌아가기',
       rejoinNote: v => '방 ' + v.code
     },
 
     setup: {
-      title: '새 대전',
       players: '플레이어',
-      nPlayers: v => v.n + '명',
       games: '게임 수',
       gamesNote: '플레이어 수의 배수로 하면 모두가 같은 횟수만큼 미션을 고를 수 있어요.',
       level: '상대',
@@ -299,7 +292,6 @@
     },
 
     end: {
-      title: '대전 종료',
       won: v => v.you ? '대전에서 이겼어요' : v.name + ' 님이 이겼어요',
       place: '순위',
       player: '플레이어',
@@ -326,7 +318,6 @@
 
     net: {
       title: '온라인 대전',
-      create: '테이블 만들기',
       createGo: '만들기',
       join: '코드로 입장',
       code: '방 코드',
@@ -341,7 +332,6 @@
       free: '빈자리',
       arrived: v => v.name + ' 님이 앉았어요. 레벨 ' + v.n + '.',
       you: '(나)',
-      hostTag: '방장',
       start: '시작',
       share: '공유',
       shareText: 'Amerikano를 같이 해요.',
@@ -378,7 +368,6 @@
 
     hall: {
       rooms: '방',
-      need: v => '칩 ' + v.n + '개 필요',
       playing: v => v.n + '명 플레이 중',
       pick: '방 고르기',
       finding: '플레이어를 찾는 중',
@@ -646,7 +635,6 @@
       playing: '플레이 중',
       at: { lobby: '로비', training: '연습 중', table: '테이블에 있음' },
       lateNote: v => v.name + ' 님이 초대했어요',
-      invTitle: '초대',
       invText: v => v.name + ' 님이 테이블에 초대했어요. 참가비 칩 ' + v.n + '개.',
       invFree: v => v.name + ' 님이 테이블에 초대했어요. 걸린 칩은 없어요.',
       join: '참여',

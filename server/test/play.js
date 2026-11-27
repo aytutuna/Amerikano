@@ -471,13 +471,9 @@ async function tables() {
 
   const a = await hub(accA);
   const b = await hub(accB);
-  b.send({ t: 'watch', stake: 100 });
   const sa = a.next(m => m.t === 'seated');
-  const seen = b.next(m => m.t === 'tables' && m.tables.some(x => x.seats.filter(Boolean).length === 1));
   a.send({ t: 'quick', stake: 100 });
   const A = await sa;
-  const listed = await seen;
-  assert(listed.tables.some(x => x.code === A.code), 'the new table is listed for watchers');
   const sb = b.next(m => m.t === 'seated');
   b.send({ t: 'quick', stake: 100 });
   const B = await sb;
@@ -519,9 +515,6 @@ async function tables() {
   const keys = sql("SELECT ref FROM chip_log WHERE player = '" + accA.id + "' AND reason = 'escrow'");
   assert.throws(() => sql("INSERT INTO chip_log (player, delta, reason, at, ref) VALUES ('" + accA.id + "', -100, 'escrow', 0, '" + keys[0].ref + "')"));
   console.log('a second escrow with the same ref is refused');
-  const after = b.next(m => m.t === 'tables');
-  b.send({ t: 'watch', stake: 100 });
-  assert(!(await after).tables.some(x => x.code === A.code), 'a finished match is not listed');
   ra.ws.close();
   rb.ws.close();
   a.ws.close();
@@ -1831,6 +1824,16 @@ async function silent() {
     await sleep(100);
   }
   console.log('hub: a socket without hello is closed');
+
+  // the lobby list that a watch message used to ask for is gone, and the message is ignored
+  const h = await hub(await guest());
+  const seen = [];
+  h.handlers.push(m => seen.push(m.t));
+  h.send({ t: 'watch', stake: 100 });
+  await sleep(500);
+  assert(!seen.includes('tables') && h.ws.readyState === 1, 'a watch message does nothing: ' + seen);
+  h.ws.close();
+  console.log('hub: an old watch message is ignored');
 }
 
 // personas are shared by id: busy at one table, chips and stats settled, only the ones who can cover the stake
@@ -2156,12 +2159,9 @@ async function openRoom() {
   await sleep(400);
   assert(rooms.every(m => m.finding === 0 && m.seats.filter(Boolean).length === 1), 'nobody comes before the host starts');
   const hx = await hub(x);
-  hx.send({ t: 'watch', stake: 500 });
-  const listed = hx.next(m => m.t === 'tables' && m.tables.some(t => t.code === ja.code));
   const open = c.next(m => m.t === 'room' && m.finding === 3);
   c.send({ t: 'start' });
   await open;
-  assert((await listed).tables.find(t => t.code === ja.code).seats.filter(Boolean).length >= 1, 'listed once opened');
   const sx = hx.next(m => m.t === 'seated');
   hx.send({ t: 'quick', stake: 500 });
   const S = await sx;
@@ -2478,17 +2478,12 @@ async function regions() {
 
   // quick play never crosses regions and a public list shows its own region only
   // the table fills with computer players after 80 to 160 ms, so on a slow machine the second one can land at the next table
-  let lists, A, B;
+  let A, B;
   const hubs = [];
   for (let i = 0; ; i++) {
     const [a, c, b, w] = [await from('DE', 'EU'), await from('FR', 'EU'), await from('TR', 'AS'), await from('TR', 'AS')];
     const [ha, hc, hb, hw] = [await hub(a), await hub(c), await hub(b), await hub(w)];
     hubs.push(ha, hc, hb, hw);
-    lists = [new Set(), new Set()];
-    for (const [h, set] of [[hc, lists[0]], [hw, lists[1]]]) {
-      h.handlers.push(m => m.t === 'tables' && m.tables.forEach(x => set.add(x.code)));
-      h.send({ t: 'watch', stake: 100 });
-    }
     const sa = ha.next(m => m.t === 'seated');
     ha.send({ t: 'quick', stake: 100 });
     A = await sa;
@@ -2503,10 +2498,7 @@ async function regions() {
     assert(i < 4, 'the same region still matches');
     console.log('regions: the second player was seated at another table, trying again');
   }
-  await sleep(300);
-  assert(lists[0].has(A.code) && !lists[0].has(B.code), 'a European watcher sees European tables only');
-  assert(lists[1].has(B.code) && !lists[1].has(A.code), 'a Turkish watcher sees Turkish tables only');
-  console.log('regions: quick play and public lists stay inside the region');
+  console.log('regions: quick play stays inside the region');
 
   // the list and the next quick play follow a change of region
   for (let i = 0; ; i++) {
@@ -2517,18 +2509,11 @@ async function regions() {
     const sx = hx.next(m => m.t === 'seated');
     hx.send({ t: 'quick', stake: 500 });
     const X = await sx;
-    const empty = hy.next(m => m.t === 'tables');
-    hy.send({ t: 'watch', stake: 500 });
-    assert.strictEqual((await empty).tables.length, 0, 'the other region has no table');
-    const shown = hy.next(m => m.t === 'tables' && m.tables.some(t => t.code === X.code));
     await call('POST', '/api/region', y, { region: 'eu' });
-    // a table that filled up in the meantime is no longer listed
-    const listed = await Promise.race([shown.then(() => true), sleep(1500).then(() => false)]);
     const sy = hy.next(m => m.t === 'seated');
-    if (listed) {
-      hy.send({ t: 'quick', stake: 500 });
-      if ((await sy).code === X.code) break;
-    }
+    hy.send({ t: 'quick', stake: 500 });
+    // a table that filled up in the meantime is not the one quick play finds
+    if ((await sy).code === X.code) break;
     assert(i < 4, 'quick play follows the new region');
     console.log('regions: the table filled before the second player came, trying again');
   }

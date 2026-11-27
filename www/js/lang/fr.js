@@ -13,7 +13,6 @@
     you: 'Toi',
     joker: 'Joker',
     rot: 'Mets ton téléphone à l’horizontale',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -53,7 +52,6 @@
     gameOf: v => 'Manche ' + v.n + ' sur ' + v.of,
     lastGame: v => 'Dernière manche ' + v.n + ' sur ' + v.of,
 
-    playing: 'En jeu',
     opened: 'A ouvert',
     away: 'Absent',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', à son tour' : '') + (v.opened ? ', a ouvert' : '') + (v.away ? ', absent' : '') + ', ' + num(v.score) + ' points',
@@ -66,7 +64,6 @@
     pilesLabel: 'Piles',
     stock: v => 'Pioche, ' + cards(v.n),
     stockDraw: v => 'Pioche, ' + cards(v.n) + '. Piocher une carte',
-    stockEmpty: 'La pioche est vide',
     discardPile: v => v.card ? 'Défausse, dessus : ' + v.card : 'Défausse, vide',
     discardTake: v => 'Défausse. Prendre ' + v.card,
     discardPut: v => 'Défausse. Défausser la carte sélectionnée',
@@ -106,7 +103,6 @@
       canFinish: 'Tu peux fermer.',
       ready: 'Ajoute des cartes, pose une nouvelle combinaison ou défausse une carte.',
       just: 'Tu as ouvert. Défausse une carte pour finir ton tour.',
-      sel: v => pl(v.n, { one: '# sélectionnée.', other: '# sélectionnées.' }),
       pickOne: 'Choisis une carte à défausser.',
       over: 'Fin de la manche.',
       matchOver: 'Fin de la partie.'
@@ -183,15 +179,12 @@
       saved: v => 'Manche ' + v.n + ' sur ' + v.of + ', ' + v.players + ' joueurs',
       how: 'Règles',
       settings: 'Réglages',
-      fan: 'Cartes',
       rejoin: 'Revenir',
       rejoinNote: v => 'Salle ' + v.code
     },
 
     setup: {
-      title: 'Nouvelle partie',
       players: 'Joueurs',
-      nPlayers: v => v.n + ' joueurs',
       games: 'Manches',
       gamesNote: 'Un multiple du nombre de joueurs, pour que chacun choisisse le contrat autant de fois.',
       level: 'Adversaires',
@@ -300,7 +293,6 @@
     },
 
     end: {
-      title: 'Fin de la partie',
       won: v => v.you ? 'Tu as gagné la partie' : v.name + ' a gagné la partie',
       place: 'Place',
       player: 'Joueur',
@@ -327,7 +319,6 @@
 
     net: {
       title: 'Jouer en ligne',
-      create: 'Créer une table',
       createGo: 'Créer la table',
       join: 'Rejoindre avec un code',
       code: 'Code de la salle',
@@ -342,7 +333,6 @@
       free: 'Place libre',
       arrived: v => v.name + ' s’installe, niveau ' + v.n + '.',
       you: '(toi)',
-      hostTag: 'Hôte',
       start: 'Lancer',
       share: 'Partager',
       shareText: 'Joue à Amerikano avec moi.',
@@ -379,7 +369,6 @@
 
     hall: {
       rooms: 'Salles',
-      need: v => 'Il faut ' + v.n + ' jetons',
       playing: v => v.n + ' en jeu',
       pick: 'Choisis une salle',
       finding: 'Recherche de joueurs',
@@ -646,7 +635,6 @@
       playing: 'En jeu',
       at: { lobby: 'Dans le salon', training: 'À l’entraînement', table: 'À une table' },
       lateNote: v => v.name + ' t’a invité',
-      invTitle: 'Invitation',
       invText: v => v.name + ' t’invite à une table. Entrée de ' + v.n + ' jetons.',
       invFree: v => v.name + ' t’invite à une table. Aucun jeton en jeu.',
       join: 'Rejoindre',

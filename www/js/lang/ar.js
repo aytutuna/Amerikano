@@ -11,7 +11,6 @@
     you: 'أنت',
     joker: 'جوكر',
     rot: 'أدر هاتفك بشكل أفقي',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -51,7 +50,6 @@
     gameOf: v => 'الجولة ' + v.n + ' من ' + v.of,
     lastGame: v => 'الجولة الأخيرة ' + v.n + ' من ' + v.of,
 
-    playing: 'يلعب',
     opened: 'فتح',
     away: 'غائب',
     seat: v => v.name + '، ' + cards(v.n) + (v.turn ? '، دوره الآن' : '') + (v.opened ? '، فتح' : '') + (v.away ? '، غائب' : '') + '، النقاط ' + num(v.score),
@@ -64,7 +62,6 @@
     pilesLabel: 'الكومات',
     stock: v => 'كومة السحب، ' + cards(v.n),
     stockDraw: v => 'كومة السحب، ' + cards(v.n) + '. اسحب ورقة',
-    stockEmpty: 'كومة السحب فارغة',
     discardPile: v => v.card ? 'كومة الرمي، الورقة العلوية ' + v.card : 'كومة الرمي، فارغة',
     discardTake: v => 'كومة الرمي. خذ ' + v.card,
     discardPut: 'كومة الرمي. ارمِ الورقة المحددة',
@@ -104,7 +101,6 @@
       canFinish: 'يمكنك الإنهاء الآن.',
       ready: 'أضف أوراقاً أو أنزل تشكيلة جديدة أو ارمِ ورقة.',
       just: 'فتحت. ارمِ ورقة لإنهاء دورك.',
-      sel: v => pl(v.n, { one: 'ورقة محددة.', two: 'ورقتان محددتان.', few: '# أوراق محددة.', many: '# ورقة محددة.', other: '# ورقة محددة.' }),
       pickOne: 'اختر ورقة لترميها.',
       over: 'انتهت الجولة.',
       matchOver: 'انتهت المباراة.'
@@ -181,15 +177,12 @@
       saved: v => 'الجولة ' + v.n + ' من ' + v.of + '، ' + v.players + ' لاعبين',
       how: 'طريقة اللعب',
       settings: 'الإعدادات',
-      fan: 'الأوراق',
       rejoin: 'عودة',
       rejoinNote: v => 'الغرفة ' + v.code
     },
 
     setup: {
-      title: 'مباراة جديدة',
       players: 'اللاعبون',
-      nPlayers: v => v.n + ' لاعبين',
       games: 'الجولات',
       gamesNote: 'عدد من مضاعفات عدد اللاعبين، ليختار كل لاعب المهمة العدد نفسه من المرات.',
       level: 'الخصوم',
@@ -298,7 +291,6 @@
     },
 
     end: {
-      title: 'نهاية المباراة',
       won: v => v.you ? 'فزت بالمباراة' : v.name + ' فاز بالمباراة',
       place: 'المركز',
       player: 'اللاعب',
@@ -325,7 +317,6 @@
 
     net: {
       title: 'اللعب عبر الإنترنت',
-      create: 'إنشاء طاولة',
       createGo: 'إنشاء طاولة',
       join: 'الانضمام برمز',
       code: 'رمز الغرفة',
@@ -340,7 +331,6 @@
       free: 'مقعد شاغر',
       arrived: v => v.name + ' جلس، المستوى ' + v.n + '.',
       you: '(أنت)',
-      hostTag: 'المضيف',
       start: 'بدء',
       share: 'مشاركة',
       shareText: 'العب Amerikano معي.',
@@ -377,7 +367,6 @@
 
     hall: {
       rooms: 'الغرف',
-      need: v => 'يتطلب ' + chips(v.n),
       playing: v => pl(v.c, { zero: 'لا أحد يلعب', one: 'لاعب واحد يلعب', two: 'لاعبان يلعبان', few: '# لاعبين يلعبون', many: '# لاعباً يلعبون', other: '# لاعب يلعبون' }),
       pick: 'اختر غرفة',
       finding: 'جارٍ البحث عن لاعبين',
@@ -644,7 +633,6 @@
       playing: 'يلعب',
       at: { lobby: 'في الردهة', training: 'في التدريب', table: 'على طاولة' },
       lateNote: v => 'دعاك ' + v.name,
-      invTitle: 'دعوة',
       invText: v => 'يدعوك ' + v.name + ' إلى طاولة. قيمة الدخول ' + chips(v.n) + '.',
       invFree: v => 'يدعوك ' + v.name + ' إلى طاولة. لا رقائق على المحك.',
       join: 'انضمام',

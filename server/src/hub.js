@@ -98,7 +98,7 @@ export class Hub extends DurableObject {
     const now = Date.now();
     // only a test may ask for a longer wait before the hello
     const wait = this.env.PACE && Number(request.headers.get('X-Hello')) || this.hello;
-    server.serializeAttachment({ pid: '', stake: 0, at: 'lobby', born: now, due: now + wait, ip: ip });
+    server.serializeAttachment({ pid: '', at: 'lobby', born: now, due: now + wait, ip: ip });
     const at = await this.ctx.storage.getAlarm();
     if (!at || at > now + wait) await this.ctx.storage.setAlarm(now + wait);
     return new Response(null, { status: 101, webSocket: client });
@@ -148,7 +148,7 @@ export class Hub extends DurableObject {
         w.send(JSON.stringify({ t: 'error', k: 'replaced' }));
         w.close(4000, 'replaced');
       }
-      ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, stake: 0, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
+      ws.serializeAttachment({ pid: p.id, session: p.session, ip: a.ip, region: reg(p), at: m.at === 'training' ? 'training' : 'lobby' });
       this.put(ws, { t: 'hub', stakes: STAKES, entry: ENTRY, ...gates(), voice: on(this.env) });
       const c = this.inCall(p.id);
       if (c) {
@@ -163,10 +163,6 @@ export class Hub extends DurableObject {
       return this.tell();
     }
     if (!a.pid) return;
-    if (m.t === 'watch') {
-      ws.serializeAttachment(Object.assign({}, a, { stake: STAKES.includes(m.stake) ? m.stake : 0 }));
-      return this.tell();
-    }
     if (m.t === 'at') return ws.serializeAttachment(Object.assign({}, a, { at: m.at === 'training' ? 'training' : 'lobby' }));
     if (m.t === 'sit') return this.queue(() => this.sit(ws, a.pid, m.code));
     if (m.t === 'quick') return this.queue(() => this.quick(ws, a.pid, m.stake, m.scale));
@@ -243,7 +239,6 @@ export class Hub extends DurableObject {
       if (w.readyState !== 1 || a.pid !== pid) continue;
       w.serializeAttachment(Object.assign({}, a, { region: r }));
       w.send(JSON.stringify(this.counts(r)));
-      if (a.stake) w.send(JSON.stringify({ t: 'tables', stake: a.stake, tables: this.list(a.stake, r) }));
     }
   }
 
@@ -406,19 +401,11 @@ export class Hub extends DurableObject {
     return Object.entries(this.tables).filter(([, t]) => pool(t) && !t.started && t.seats.some(x => !x));
   }
 
-  list(stake, r) {
-    return this.open().filter(([, t]) => t.region === r && t.stake === stake).map(([code, t]) => ({ code: code, seats: t.seats }));
-  }
-
   // Seated people count too, and a table fills its empty seats on its own, so these include those.
   counts(r) {
     const all = Object.values(this.tables).filter(t => t.region === r);
-    const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().region === r);
     const out = { t: 'rooms', n: {} };
-    for (const s of STAKES) {
-      const here = socks.map(w => w.deserializeAttachment()).filter(a => a.stake === s);
-      out.n[s] = people(all, s) + here.length;
-    }
+    for (const s of STAKES) out.n[s] = people(all, s);
     return out;
   }
 
@@ -426,10 +413,9 @@ export class Hub extends DurableObject {
     const socks = this.ctx.getWebSockets().filter(w => w.readyState === 1 && w.deserializeAttachment().pid);
     const now = {};
     for (const w of socks) {
-      const { stake, region } = w.deserializeAttachment();
+      const { region } = w.deserializeAttachment();
       const n = now[region] || (now[region] = JSON.stringify(this.counts(region)));
       if (n !== this.rooms[region]) w.send(n);
-      if (stake) w.send(JSON.stringify({ t: 'tables', stake: stake, tables: this.list(stake, region) }));
     }
     this.rooms = now;
   }

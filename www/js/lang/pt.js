@@ -13,7 +13,6 @@
     you: 'Você',
     joker: 'Coringa',
     rot: 'Coloque o celular na horizontal',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -53,7 +52,6 @@
     gameOf: v => 'Rodada ' + v.n + ' de ' + v.of,
     lastGame: v => 'Última rodada ' + v.n + ' de ' + v.of,
 
-    playing: 'Jogando',
     opened: 'Abriu',
     away: 'Ausente',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', na vez' : '') + (v.opened ? ', abriu' : '') + (v.away ? ', ausente' : '') + ', ' + num(v.score) + ' pontos',
@@ -66,7 +64,6 @@
     pilesLabel: 'Montes',
     stock: v => 'Monte, ' + cards(v.n),
     stockDraw: v => 'Monte, ' + cards(v.n) + '. Compre uma carta',
-    stockEmpty: 'O monte está vazio',
     discardPile: v => v.card ? 'Descarte, no topo ' + v.card : 'Descarte, vazio',
     discardTake: v => 'Descarte. Pegue ' + v.card,
     discardPut: v => 'Descarte. Descarte a carta selecionada',
@@ -106,7 +103,6 @@
       canFinish: 'Você já pode bater.',
       ready: 'Adicione cartas, baixe um jogo novo ou descarte uma carta.',
       just: 'Você abriu. Descarte uma carta para encerrar a vez.',
-      sel: v => pl(v.n, { one: '# selecionada.', other: '# selecionadas.' }),
       pickOne: 'Escolha uma carta para descartar.',
       over: 'Fim da rodada.',
       matchOver: 'Fim da partida.'
@@ -183,15 +179,12 @@
       saved: v => 'Rodada ' + v.n + ' de ' + v.of + ', ' + v.players + ' jogadores',
       how: 'Como jogar',
       settings: 'Ajustes',
-      fan: 'Cartas',
       rejoin: 'Voltar',
       rejoinNote: v => 'Sala ' + v.code
     },
 
     setup: {
-      title: 'Nova partida',
       players: 'Jogadores',
-      nPlayers: v => v.n + ' jogadores',
       games: 'Rodadas',
       gamesNote: 'Um múltiplo do número de jogadores, para todo mundo escolher o objetivo o mesmo número de vezes.',
       level: 'Adversários',
@@ -300,7 +293,6 @@
     },
 
     end: {
-      title: 'Fim da partida',
       won: v => v.you ? 'Você ganhou a partida' : v.name + ' ganhou a partida',
       place: 'Lugar',
       player: 'Jogador',
@@ -327,7 +319,6 @@
 
     net: {
       title: 'Jogar online',
-      create: 'Criar uma mesa',
       createGo: 'Criar mesa',
       join: 'Entrar com um código',
       code: 'Código da sala',
@@ -342,7 +333,6 @@
       free: 'Lugar livre',
       arrived: v => v.name + ' sentou, nível ' + v.n + '.',
       you: '(você)',
-      hostTag: 'Anfitrião',
       start: 'Começar',
       share: 'Compartilhar',
       shareText: 'Jogue Amerikano comigo.',
@@ -379,7 +369,6 @@
 
     hall: {
       rooms: 'Salas',
-      need: v => 'Requer ' + v.n + ' fichas',
       playing: v => v.n + ' jogando',
       pick: 'Escolha uma sala',
       finding: 'Procurando jogadores',
@@ -646,7 +635,6 @@
       playing: 'Jogando',
       at: { lobby: 'No lobby', training: 'No treino', table: 'Em uma mesa' },
       lateNote: v => v.name + ' convidou você',
-      invTitle: 'Convite',
       invText: v => v.name + ' convidou você para uma mesa. Entrada de ' + v.n + ' fichas.',
       invFree: v => v.name + ' convidou você para uma mesa. Sem fichas em jogo.',
       join: 'Entrar',

@@ -14,7 +14,6 @@
     you: 'Ty',
     joker: 'Joker',
     rot: 'Obróć telefon poziomo',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -54,7 +53,6 @@
     gameOf: v => 'Rozdanie ' + v.n + ' z ' + v.of,
     lastGame: v => 'Ostatnie rozdanie ' + v.n + ' z ' + v.of,
 
-    playing: 'Gra',
     opened: 'Po otwarciu',
     away: 'AFK',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', teraz gra' : '') + (v.opened ? ', po otwarciu' : '') + (v.away ? ', AFK' : '') + ', ' + num(v.score) + ' pkt',
@@ -67,7 +65,6 @@
     pilesLabel: 'Stosy',
     stock: v => 'Stos, ' + cards(v.n),
     stockDraw: v => 'Stos, ' + cards(v.n) + '. Dobierz kartę',
-    stockEmpty: 'Stos jest pusty',
     discardPile: v => v.card ? 'Stos odrzuconych, na wierzchu: ' + v.card : 'Stos odrzuconych, pusty',
     discardTake: v => 'Stos odrzuconych. Weź kartę: ' + v.card,
     discardPut: 'Stos odrzuconych. Odrzuć wybraną kartę',
@@ -107,7 +104,6 @@
       canFinish: 'Możesz już wyjść z ręki.',
       ready: 'Dołóż karty, wyłóż nowy układ albo odrzuć kartę.',
       just: 'Otwarcie zrobione. Odrzuć kartę, aby zakończyć turę.',
-      sel: v => 'Wybrano: ' + v.n + '.',
       pickOne: 'Wybierz kartę do odrzucenia.',
       over: 'Koniec rozdania.',
       matchOver: 'Koniec partii.'
@@ -184,15 +180,12 @@
       saved: v => 'Rozdanie ' + v.n + ' z ' + v.of + ', ' + pl(v.players, { one: '# gracz', few: '# graczy', many: '# graczy', other: '# gracza' }),
       how: 'Zasady gry',
       settings: 'Ustawienia',
-      fan: 'Karty',
       rejoin: 'Wróć',
       rejoinNote: v => 'Pokój ' + v.code
     },
 
     setup: {
-      title: 'Nowa partia',
       players: 'Gracze',
-      nPlayers: v => pl(v.n, { one: '# gracz', few: '# graczy', many: '# graczy', other: '# gracza' }),
       games: 'Rozdania',
       gamesNote: 'Wielokrotność liczby graczy, żeby każdy wybierał zadanie tyle samo razy.',
       level: 'Rywale',
@@ -301,7 +294,6 @@
     },
 
     end: {
-      title: 'Koniec partii',
       won: v => v.you ? 'Wygrywasz partię' : v.name + ' wygrywa partię',
       place: 'Miejsce',
       player: 'Gracz',
@@ -328,7 +320,6 @@
 
     net: {
       title: 'Gra online',
-      create: 'Utwórz stół',
       createGo: 'Utwórz stół',
       join: 'Dołącz z kodem',
       code: 'Kod pokoju',
@@ -343,7 +334,6 @@
       free: 'Wolne miejsce',
       arrived: v => v.name + ' siada przy stole, poziom ' + v.n + '.',
       you: '(ty)',
-      hostTag: 'Gospodarz',
       start: 'Start',
       share: 'Udostępnij',
       shareText: 'Zagraj ze mną w Amerikano.',
@@ -380,7 +370,6 @@
 
     hall: {
       rooms: 'Pokoje',
-      need: v => 'Od ' + v.n + ' żetonów',
       playing: v => 'Gra: ' + v.n,
       pick: 'Wybierz pokój',
       finding: 'Szukamy graczy',
@@ -647,7 +636,6 @@
       playing: 'Gra',
       at: { lobby: 'W lobby', training: 'Na treningu', table: 'Przy stole' },
       lateNote: v => v.name + ' zaprasza cię',
-      invTitle: 'Zaproszenie',
       invText: v => v.name + ' zaprasza cię do stołu. Stawka: ' + v.n + ' żetonów.',
       invFree: v => v.name + ' zaprasza cię do stołu. Bez żetonów w grze.',
       join: 'Dołącz',

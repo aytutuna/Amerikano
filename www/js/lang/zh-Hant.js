@@ -11,7 +11,6 @@
     you: '你',
     joker: '鬼牌',
     rot: '請把手機橫過來',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => RANKS[v.r],
     suit: v => SUITS[v.s],
@@ -51,7 +50,6 @@
     gameOf: v => '第' + v.n + '局，共' + v.of + '局',
     lastGame: v => '最後一局（' + v.n + '/' + v.of + '）',
 
-    playing: '遊戲中',
     opened: '已開牌',
     away: '暫離',
     seat: v => v.name + '，' + cards(v.n) + (v.turn ? '，目前回合' : '') + (v.opened ? '，已開牌' : '') + (v.away ? '，暫離' : '') + '，' + num(v.score) + '分',
@@ -64,7 +62,6 @@
     pilesLabel: '牌堆',
     stock: v => '牌堆，' + cards(v.n),
     stockDraw: v => '牌堆，' + cards(v.n) + '。摸一張牌',
-    stockEmpty: '牌堆已空',
     discardPile: v => v.card ? '棄牌堆，最上面是' + v.card : '棄牌堆，空的',
     discardTake: v => '棄牌堆。拿走' + v.card,
     discardPut: v => '棄牌堆。棄掉選取的牌',
@@ -104,7 +101,6 @@
       canFinish: '可以出完了。',
       ready: '加牌、擺新牌組，或是棄一張牌。',
       just: '已開牌。棄一張牌來結束回合。',
-      sel: v => pl(v.n, { other: '已選取#張。' }),
       pickOne: '請選一張要棄的牌。',
       over: '這局結束了。',
       matchOver: '比賽結束了。'
@@ -181,15 +177,12 @@
       saved: v => '第' + v.n + '局，共' + v.of + '局，' + v.players + '人',
       how: '玩法',
       settings: '設定',
-      fan: '撲克牌',
       rejoin: '返回',
       rejoinNote: v => '房間 ' + v.code
     },
 
     setup: {
-      title: '新牌局',
       players: '玩家',
-      nPlayers: v => v.n + '人',
       games: '局數',
       gamesNote: '設為玩家人數的倍數，每個人選任務的次數就會一樣多。',
       level: '對手',
@@ -298,7 +291,6 @@
     },
 
     end: {
-      title: '比賽結束',
       won: v => v.you ? '你贏得了比賽' : v.name + '贏得了比賽',
       place: '名次',
       player: '玩家',
@@ -325,7 +317,6 @@
 
     net: {
       title: '線上對戰',
-      create: '建立牌桌',
       createGo: '建立',
       join: '輸入代碼加入',
       code: '房間代碼',
@@ -340,7 +331,6 @@
       free: '空位',
       arrived: v => v.name + '入座了，' + v.n + '級。',
       you: '（你）',
-      hostTag: '房主',
       start: '開始',
       share: '分享',
       shareText: '來跟我一起玩 Amerikano 吧。',
@@ -377,7 +367,6 @@
 
     hall: {
       rooms: '房間',
-      need: v => '需要' + v.n + '籌碼',
       playing: v => v.n + '人正在玩',
       pick: '選擇房間',
       finding: '正在尋找玩家',
@@ -645,7 +634,6 @@
       playing: '遊戲中',
       at: { lobby: '在大廳', training: '在練習', table: '在牌桌上' },
       lateNote: v => v.name + '邀請了你',
-      invTitle: '邀請',
       invText: v => v.name + '邀請你加入牌桌，參加費' + v.n + '籌碼。',
       invFree: v => v.name + '邀請你加入牌桌，這桌不涉及籌碼。',
       join: '加入',

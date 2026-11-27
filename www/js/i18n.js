@@ -19,7 +19,6 @@ var I18n = (function () {
     you: 'You',
     joker: 'Joker',
     rot: 'Turn your phone sideways',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => PLURAL[v.r],
     suit: v => SUITS[v.s],
@@ -43,7 +42,6 @@ var I18n = (function () {
     gameOf: v => 'Game ' + v.n + ' of ' + v.of,
     lastGame: v => 'Last game ' + v.n + ' of ' + v.of,
 
-    playing: 'Playing',
     opened: 'Opened',
     away: 'Away',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', playing' : '') + (v.opened ? ', opened' : '') + (v.away ? ', away' : '') + ', score ' + num(v.score),
@@ -56,7 +54,6 @@ var I18n = (function () {
     pilesLabel: 'Piles',
     stock: v => 'Stock, ' + cards(v.n),
     stockDraw: v => 'Stock, ' + cards(v.n) + '. Draw a card',
-    stockEmpty: 'Stock is empty',
     discardPile: v => v.card ? 'Discard pile, top card ' + v.card : 'Discard pile, empty',
     discardTake: v => 'Discard pile. Take the ' + v.card,
     discardPut: v => 'Discard pile. Discard the selected card',
@@ -96,7 +93,6 @@ var I18n = (function () {
       canFinish: 'You can go out now.',
       ready: 'Add cards, lay a new meld, or discard one.',
       just: 'You opened. Discard a card to end your turn.',
-      sel: v => v.n + ' selected.',
       pickOne: 'Pick a card to discard.',
       over: 'Game over.',
       matchOver: 'Match over.'
@@ -173,15 +169,12 @@ var I18n = (function () {
       saved: v => 'Game ' + v.n + ' of ' + v.of + ', ' + v.players + ' players',
       how: 'How to play',
       settings: 'Settings',
-      fan: 'Playing cards',
       rejoin: 'Rejoin',
       rejoinNote: v => 'Room ' + v.code
     },
 
     setup: {
-      title: 'New match',
       players: 'Players',
-      nPlayers: v => v.n + ' players',
       games: 'Games',
       gamesNote: 'A multiple of the players, so everyone picks the task equally often.',
       level: 'Opponents',
@@ -290,7 +283,6 @@ var I18n = (function () {
     },
 
     end: {
-      title: 'Match over',
       won: v => v.you ? 'You won the match' : v.name + ' won the match',
       place: 'Place',
       player: 'Player',
@@ -317,7 +309,6 @@ var I18n = (function () {
 
     net: {
       title: 'Play online',
-      create: 'Create a table',
       createGo: 'Create table',
       join: 'Join with a code',
       code: 'Room code',
@@ -332,7 +323,6 @@ var I18n = (function () {
       free: 'Free seat',
       arrived: v => v.name + ' sat down, level ' + v.n + '.',
       you: '(you)',
-      hostTag: 'Host',
       start: 'Start',
       share: 'Share',
       shareText: 'Play Amerikano with me.',
@@ -369,7 +359,6 @@ var I18n = (function () {
 
     hall: {
       rooms: 'Rooms',
-      need: v => 'Needs ' + v.n + ' chips',
       playing: v => v.n + ' playing',
       pick: 'Pick a room',
       finding: 'Finding players',
@@ -636,7 +625,6 @@ var I18n = (function () {
       playing: 'Playing',
       at: { lobby: 'In the lobby', training: 'In training', table: 'At a table' },
       lateNote: v => v.name + ' invited you',
-      invTitle: 'Invitation',
       invText: v => v.name + ' invites you to a table. Stake ' + v.n + ' chips.',
       invFree: v => v.name + ' invites you to a table. No chips at stake.',
       join: 'Join',
@@ -705,7 +693,6 @@ var I18n = (function () {
   const tr = {
     you: 'Sen',
     joker: 'Joker',
-    cards: trCards,
     rank: v => TR_RANK[v.r],
     plural: v => TR_RANK[v.r],
     suit: v => TR_SUIT[v.s],
@@ -726,7 +713,6 @@ var I18n = (function () {
     gameOf: v => 'Oyun ' + v.n + ' / ' + v.of,
     lastGame: v => 'Son oyun ' + v.n + ' / ' + v.of,
 
-    playing: 'Sırada',
     opened: 'El açtı',
     away: 'Uzakta',
     seat: v => v.name + ', ' + trCards(v.n) + (v.turn ? ', sırada' : '') + (v.opened ? ', el açtı' : '') + (v.away ? ', uzakta' : '') + ', ' + num(v.score) + ' puan',
@@ -739,7 +725,6 @@ var I18n = (function () {
     pilesLabel: 'Desteler',
     stock: v => 'Deste, ' + trCards(v.n),
     stockDraw: v => 'Deste, ' + trCards(v.n) + '. Bir kağıt çek',
-    stockEmpty: 'Deste bitti',
     discardPile: v => v.card ? 'Yerdeki deste, üstte ' + v.card : 'Yerdeki deste, boş',
     discardTake: v => 'Yerdeki deste. ' + up(acc(v.card)) + ' al',
     discardPut: 'Yerdeki deste. Seçili kağıdı at',
@@ -779,7 +764,6 @@ var I18n = (function () {
       canFinish: 'Eli bitirebilirsin.',
       ready: 'Kağıt ekle, yeni küt ya da seri indir, ya da bir kağıt at.',
       just: 'El açtın. Sırayı bitirmek için bir kağıt at.',
-      sel: v => v.n + ' seçili.',
       pickOne: 'Atacağın kağıdı seç.',
       over: 'Oyun bitti.',
       matchOver: 'Maç bitti.'
@@ -858,15 +842,12 @@ var I18n = (function () {
       saved: v => 'Oyun ' + v.n + ' / ' + v.of + ', ' + v.players + ' oyuncu',
       how: 'Nasıl oynanır',
       settings: 'Ayarlar',
-      fan: 'İskambil kağıtları',
       rejoin: 'Maça dön',
       rejoinNote: v => 'Oda ' + v.code
     },
 
     setup: {
-      title: 'Yeni maç',
       players: 'Oyuncular',
-      nPlayers: v => v.n + ' oyuncu',
       games: 'Oyun sayısı',
       gamesNote: 'Oyuncu sayısının katı, böylece herkes görevi eşit sayıda seçer.',
       level: 'Rakipler',
@@ -975,7 +956,6 @@ var I18n = (function () {
     },
 
     end: {
-      title: 'Maç bitti',
       won: v => v.you ? 'Maçı sen kazandın' : v.name + ' maçı kazandı',
       place: 'Sıra',
       player: 'Oyuncu',
@@ -1003,7 +983,6 @@ var I18n = (function () {
 
     net: {
       title: 'Çevrimiçi oyna',
-      create: 'Masa kur',
       createGo: 'Masayı kur',
       join: 'Kodla katıl',
       code: 'Oda kodu',
@@ -1018,7 +997,6 @@ var I18n = (function () {
       free: 'Boş koltuk',
       arrived: v => v.name + ' oturdu, ' + v.n + '. seviye.',
       you: '(sen)',
-      hostTag: 'Kurucu',
       start: 'Başlat',
       share: 'Paylaş',
       shareText: 'Benimle Amerikano oyna.',
@@ -1055,7 +1033,6 @@ var I18n = (function () {
 
     hall: {
       rooms: 'Odalar',
-      need: v => v.n + ' çip gerekir',
       playing: v => v.n + ' kişi oynuyor',
       pick: 'Bir oda seç',
       finding: 'Oyuncular aranıyor',
@@ -1322,7 +1299,6 @@ var I18n = (function () {
       playing: 'Oynuyor',
       at: { lobby: 'Lobide', training: 'Antrenmanda', table: 'Bir masada' },
       lateNote: v => v.name + ' seni davet etti',
-      invTitle: 'Davet',
       invText: v => v.name + ' seni bir masaya davet ediyor. Masa değeri ' + v.n + ' çip.',
       invFree: v => v.name + ' seni bir masaya davet ediyor. Masada çip yok.',
       join: 'Katıl',

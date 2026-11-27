@@ -10,7 +10,6 @@
     you: 'Kamu',
     joker: 'Joker',
     rot: 'Miringkan ponselmu',
-    cards: cards,
     rank: v => RANKS[v.r],
     plural: v => RANKS[v.r],
     suit: v => SUITS[v.s],
@@ -50,7 +49,6 @@
     gameOf: v => 'Ronde ' + v.n + ' dari ' + v.of,
     lastGame: v => 'Ronde terakhir ' + v.n + ' dari ' + v.of,
 
-    playing: 'Bermain',
     opened: 'Sudah buka',
     away: 'Tidak aktif',
     seat: v => v.name + ', ' + cards(v.n) + (v.turn ? ', gilirannya' : '') + (v.opened ? ', sudah buka' : '') + (v.away ? ', tidak aktif' : '') + ', skor ' + num(v.score),
@@ -63,7 +61,6 @@
     pilesLabel: 'Tumpukan',
     stock: v => 'Tumpukan kartu, ' + cards(v.n),
     stockDraw: v => 'Tumpukan kartu, ' + cards(v.n) + '. Ambil satu kartu',
-    stockEmpty: 'Tumpukan kartu kosong',
     discardPile: v => v.card ? 'Tumpukan buangan, kartu teratas ' + v.card : 'Tumpukan buangan, kosong',
     discardTake: v => 'Tumpukan buangan. Ambil ' + v.card,
     discardPut: 'Tumpukan buangan. Buang kartu yang dipilih',
@@ -103,7 +100,6 @@
       canFinish: 'Kamu sudah bisa tutup.',
       ready: 'Tambah kartu, turunkan kombinasi baru, atau buang satu kartu.',
       just: 'Kamu sudah buka. Buang satu kartu untuk mengakhiri giliran.',
-      sel: v => v.n + ' dipilih.',
       pickOne: 'Pilih kartu yang mau dibuang.',
       over: 'Ronde selesai.',
       matchOver: 'Pertandingan selesai.'
@@ -180,15 +176,12 @@
       saved: v => 'Ronde ' + v.n + ' dari ' + v.of + ', ' + v.players + ' pemain',
       how: 'Cara main',
       settings: 'Pengaturan',
-      fan: 'Kartu',
       rejoin: 'Kembali',
       rejoinNote: v => 'Ruang ' + v.code
     },
 
     setup: {
-      title: 'Pertandingan baru',
       players: 'Pemain',
-      nPlayers: v => v.n + ' pemain',
       games: 'Ronde',
       gamesNote: 'Kelipatan jumlah pemain, supaya semua pemain memilih tantangan sama banyak.',
       level: 'Lawan',
@@ -297,7 +290,6 @@
     },
 
     end: {
-      title: 'Pertandingan selesai',
       won: v => v.you ? 'Kamu menang pertandingan' : v.name + ' menang pertandingan',
       place: 'Peringkat',
       player: 'Pemain',
@@ -324,7 +316,6 @@
 
     net: {
       title: 'Main online',
-      create: 'Buat meja',
       createGo: 'Buat meja',
       join: 'Gabung dengan kode',
       code: 'Kode ruang',
@@ -339,7 +330,6 @@
       free: 'Kursi kosong',
       arrived: v => v.name + ' duduk, level ' + v.n + '.',
       you: '(kamu)',
-      hostTag: 'Tuan rumah',
       start: 'Mulai',
       share: 'Bagikan',
       shareText: 'Main Amerikano bareng aku.',
@@ -376,7 +366,6 @@
 
     hall: {
       rooms: 'Ruang',
-      need: v => 'Butuh ' + chips(v.n),
       playing: v => v.n + ' bermain',
       pick: 'Pilih ruang',
       finding: 'Mencari pemain',
@@ -643,7 +632,6 @@
       playing: 'Bermain',
       at: { lobby: 'Di lobi', training: 'Sedang latihan', table: 'Di sebuah meja' },
       lateNote: v => v.name + ' mengundangmu',
-      invTitle: 'Undangan',
       invText: v => v.name + ' mengundangmu ke sebuah meja. Modal ' + chips(v.n) + '.',
       invFree: v => v.name + ' mengundangmu ke sebuah meja. Tidak ada chip yang dipertaruhkan.',
       join: 'Gabung',
