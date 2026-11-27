@@ -731,7 +731,7 @@ export class Room extends DurableObject {
     const r = this.r;
     if (r.started) {
       const { token, gone, auto, misses, cover, ...s } = r.seats[i];
-      const live = !!r.id && !r.over && !!s.esc && !!this.st;
+      const live = !!r.id && !r.over && !!s.esc;
       r.seats[i] = Object.assign(s, { bot: true, left: live || undefined });
       if (this.st) {
         this.st.players[i].bot = true;
