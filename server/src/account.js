@@ -530,6 +530,8 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM purchases WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
+      // a mail still waiting for the hourly digest holds the report's text, so it goes with the report
+      db.prepare('DELETE FROM mail_log WHERE sent = 0 AND report IN (SELECT id FROM reports WHERE reporter = ?1 OR reported = ?1)').bind(p.id),
       db.prepare('DELETE FROM reports WHERE reporter = ?1 OR reported = ?1').bind(p.id),
       db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),

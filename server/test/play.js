@@ -5784,7 +5784,7 @@ async function friendLimits() {
     const c = client('/ws/new');
     await c.ready;
     const r = c.next(m => m.t === 'joined' || m.t === 'error');
-    c.send({ t: 'create', auth: acc.auth, players: players, games: players, stake: stake });
+    c.send({ t: 'create', auth: acc.auth, players: players, games: players, stake: stake, scale: scale });
     return [await r, c];
   };
   const ask = async (acc, o) => {
@@ -5940,6 +5940,18 @@ async function heldWins() {
   const left = t => sql('SELECT count(*) AS n FROM ' + t + ' WHERE player = ' + who(first.acc))[0].n;
   assert.deepStrictEqual([left('held'), left('friend_day')], [0, 0]);
   console.log('heldWins: deleting the account removes them');
+}
+
+// a deleted account takes its unsent report mail along
+async function reviewMail() {
+  const t0 = Date.now();
+  const [a, b] = [await guest(), await guest()];
+  sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES (" + who(a) + ', ' + who(b) + ", 'x', 'table', " + t0 + ')');
+  const id = sql('SELECT id FROM reports WHERE reporter = ' + who(a))[0].id;
+  sql("INSERT INTO mail_log (at, kind, report, subject, body, sent) VALUES (" + t0 + ", 'report', " + id + ", 's', 'reported text', 0)");
+  assert.strictEqual((await call('DELETE', '/api/me', b)).status, 200);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM mail_log WHERE report = ' + id)[0].n, 0, 'the waiting mail goes with the report');
+  console.log('review: an unsent report mail is removed with the account');
 }
 
 // A pair that moves chips one way is flagged and held out of the rankings until the admin clears it.
@@ -6882,6 +6894,7 @@ process.on('unhandledRejection', e => {
   await sec('typedOff', () => typedOff());
   await sec('trade', () => trade());
   await sec('reports', () => reports());
+  await sec('reviewMail', () => reviewMail());
   await sec('reportMail', () => reportMail(rs));
   await sec('personas', () => personas());
   await sec('pool', () => pool());
