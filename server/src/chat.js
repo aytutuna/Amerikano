@@ -1,4 +1,4 @@
-import { verify, who, json, fail } from './account.js';
+import { verify, denied, who, json, fail } from './account.js';
 import { rel } from './social.js';
 import { clean, mask, contact, trade } from './filter.js';
 import { mail } from './mail.js';
@@ -103,7 +103,7 @@ async function report(env, ctx, p, request) {
 
 export async function chat(request, env, ctx) {
   const p = await verify(env.DB, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
-  if (!p) return fail('auth', 401);
+  if (!p) return denied(env.DB, request);
   const url = new URL(request.url);
   const [, , what, arg] = url.pathname.split('/');
   const m = request.method;

@@ -126,7 +126,7 @@ async function mute(env, b, on) {
   return json({ ok: true });
 }
 
-// The account is shut out everywhere: sessions and devices go, the hub closes its sockets and a started match settles the seat
+// The account is shut out everywhere: verify refuses it (the sessions stay, so an unban restores the key), the devices go, the hub closes its sockets and a started match settles the seat
 // as for a leaver. Only the account is banned, nothing about its address or its purchases.
 async function ban(env, b) {
   const p = await find(env.DB, b.id);
@@ -136,7 +136,6 @@ async function ban(env, b) {
   const why = typeof b.why === 'string' ? b.why.slice(0, 200) : null;
   await env.DB.batch([
     env.DB.prepare('UPDATE players SET banned = 1, banned_why = ?, banned_at = ? WHERE id = ?').bind(why, now, p.id),
-    env.DB.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
     env.DB.prepare('DELETE FROM devices WHERE player = ?').bind(p.id)
   ]);
   await logAdmin(env.DB, 'admin', 'ban', p.id, { why: why });

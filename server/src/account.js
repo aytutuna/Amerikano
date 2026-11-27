@@ -196,12 +196,25 @@ export async function grantTokens(db, id, delta, reason, ref, cap, opts = {}) {
   }
 }
 
-export async function verify(db, token) {
+// A banned player is refused unless any is set (deleting the account stays possible). The sessions of a banned player are kept,
+// so an unban needs nothing from them and the client keeps its key.
+export async function verify(db, token, any) {
   const m = TOKEN.exec(token || '');
   if (!m) return null;
   const h = await hash(m[2]);
-  const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2 AND p.banned = 0').bind(m[1], h).first();
+  const p = await db.prepare('SELECT p.* FROM players p JOIN sessions s ON s.player = p.id WHERE p.id = ?1 AND s.secret_hash = ?2' + (any ? '' : ' AND p.banned = 0')).bind(m[1], h).first();
   return p && Object.assign(p, { session: h });
+}
+
+// the error for a key that verify refused: a banned player is told so and keeps the key, anything else is a dead login
+export async function refusal(db, token) {
+  const p = await verify(db, token, true);
+  return p && p.banned ? 'banned' : 'auth';
+}
+
+export async function denied(db, request) {
+  const k = await refusal(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
+  return fail(k, k === 'banned' ? 403 : 401);
 }
 
 export function player(db, id) {
@@ -487,8 +500,8 @@ export async function api(request, env, ctx) {
     return json({ nonce: raw });
   }
   if (path === '/api/apple' && method === 'POST') return signIn(env, request);
-  const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
-  if (!p) return fail('auth', 401);
+  const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''), path === '/api/me' && method === 'DELETE');
+  if (!p) return denied(db, request);
   if (!p.region) {
     p.region = guess(env, request);
     await db.prepare('UPDATE players SET region = ?1 WHERE id = ?2 AND region IS NULL').bind(p.region, p.id).run();

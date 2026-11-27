@@ -1,4 +1,4 @@
-import { verify, player, json, fail } from './account.js';
+import { verify, denied, player, json, fail } from './account.js';
 import { rel } from './social.js';
 import { hint } from './region.js';
 
@@ -107,7 +107,7 @@ export async function act(env, st, op, pid, b, ok) {
 export async function voice(request, env) {
   if (!on(env) || request.method !== 'POST') return fail('nope', 404);
   const p = await verify(env.DB, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
-  if (!p) return fail('auth', 401);
+  if (!p) return denied(env.DB, request);
   const op = new URL(request.url).pathname.split('/')[3];
   if (!OPS.includes(op)) return fail('nope', 404);
   let b = null;

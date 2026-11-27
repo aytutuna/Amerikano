@@ -246,6 +246,11 @@ var Net = (function () {
       hubClose();
       return UI.retry();
     }
+    if (m.k === 'banned') {
+      hubDone = true;
+      hubClose();
+      return UI.notice(msg(m.k, m));
+    }
     if (m.k === 'cupoff') {
       UI.cupEnd();
       if (App.online() && App.state() && App.state().cup) App.leave(true);

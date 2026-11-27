@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, player, award, seat, credit, charge, strike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
+import { verify, refusal, player, award, seat, credit, charge, strike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -331,7 +331,7 @@ export class Room extends DurableObject {
     if (!Number.isInteger(g) || g < n || g > 16 || g % n) return this.fail(ws, 'opts');
     const p = await verify(this.env.DB, m.auth);
     if (ws.readyState !== 1) return;
-    if (!p) return this.refuse(ws, 'auth');
+    if (!p) return this.refuse(ws, await refusal(this.env.DB, m.auth));
     if (this.r) return this.refuse(ws, 'taken');
     const no = barred(p, stake, false);
     if (no) return this.refuse(ws, no.k, no);
@@ -349,7 +349,7 @@ export class Room extends DurableObject {
     if (!m.token && !p) {
       p = await verify(this.env.DB, m.auth);
       if (ws.readyState !== 1) return;
-      if (!p) return this.miss(ws, a, null, 'auth');
+      if (!p) return this.miss(ws, a, null, await refusal(this.env.DB, m.auth));
       if (await this.hub().probing(p.id, a.ip).catch(() => false)) return this.refuse(ws, 'nocode');
     }
     if (!this.r || this.r.pub && !m.token) return this.miss(ws, a, p);

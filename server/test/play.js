@@ -853,10 +853,11 @@ async function apple() {
   const bn = await post('/api/apple', null, await cred({}, null, 'ban1'));
   assert.strictEqual(bn.status, 200);
   assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bn.body.id }, '10.9.2.1')).status, 200);
-  assert.strictEqual((await call('GET', '/api/me', bn.body)).status, 401);
+  assert.strictEqual((await call('GET', '/api/me', bn.body)).status, 403);
+  const had = sessions(bn.body.id);
   const barred = await post('/api/apple', null, await cred({ sub: row(bn.body.id).apple }, null, 'ban2'));
   assert.deepStrictEqual([barred.status, barred.body.error], [403, 'banned']);
-  assert.strictEqual(sessions(bn.body.id), 0, 'no session was made');
+  assert.strictEqual(sessions(bn.body.id), had, 'no session was made');
   assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: bn.body.id }, '10.9.2.1')).status, 200);
   assert.strictEqual((await post('/api/apple', null, await cred({ sub: row(bn.body.id).apple }, null, 'ban3'))).status, 200);
   console.log('apple: a banned account is refused until it is unbanned');
@@ -5281,16 +5282,16 @@ async function adminActions() {
   await gone(r, 5000);
   const row = sql('SELECT banned, banned_why, banned_at FROM players WHERE id = ' + who(c))[0];
   assert.deepStrictEqual([row.banned, row.banned_why, row.banned_at > Date.now() - 60000], [1, 'test ban', true]);
-  assert.strictEqual(sql('SELECT count(*) AS n FROM sessions WHERE player = ' + who(c))[0].n, 0, 'the sessions are gone');
-  for (const [method, path] of [['GET', '/api/me'], ['POST', '/api/daily'], ['GET', '/api/friends'], ['GET', '/api/shop'], ['POST', '/api/report']]) assert.strictEqual((await call(method, path, c, method === 'POST' ? {} : undefined)).status, 401, path);
+  assert.strictEqual(sql('SELECT count(*) AS n FROM sessions WHERE player = ' + who(c))[0].n, 1, 'the session stays, so an unban restores the key');
+  for (const [method, path] of [['GET', '/api/me'], ['POST', '/api/daily'], ['GET', '/api/friends'], ['GET', '/api/shop'], ['POST', '/api/report']]) assert.strictEqual((await call(method, path, c, method === 'POST' ? {} : undefined)).status, 403, path);
   const [h2, e] = await hello({ auth: c.auth }, m => m.t === 'error');
-  assert.strictEqual(e.k, 'auth', 'the hub refuses it');
+  assert.strictEqual(e.k, 'banned', 'the hub refuses it, and the client keeps its key');
   h2.ws.close();
   const n = client('/ws/new');
   await n.ready;
   const refusal = n.next(m => m.t === 'error');
   n.send({ t: 'create', auth: c.auth, players: 3, games: 3 });
-  assert.strictEqual((await refusal).k, 'auth', 'so does a room');
+  assert.strictEqual((await refusal).k, 'banned', 'so does a room');
   n.ws.close();
   assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(c))[0].n, 0, 'no leave penalty');
   assert.strictEqual(sql('SELECT gone FROM match_seat WHERE player = ' + who(c))[0].gone, 1, 'the seat is marked left');
@@ -5301,11 +5302,18 @@ async function adminActions() {
   assert.strictEqual(rows('ban', c.id).length, 1);
   assert.strictEqual((await act('unban', { id: c.id }, ip5)).status, 200);
   assert.strictEqual(sql('SELECT banned FROM players WHERE id = ' + who(c))[0].banned, 0);
-  // signing in again makes a session; Apple's case is in the apple section
-  sql("INSERT INTO sessions (player, secret_hash, created) VALUES (" + who(c) + ", '" + crypto.createHash('sha256').update(c.secret).digest('hex') + "', " + Date.now() + ')');
   assert.strictEqual((await call('GET', '/api/me', c)).status, 200, 'unbanned');
   assert.strictEqual(rows('unban', c.id).length, 1);
   console.log('admin: a ban closes every way in, frees the seat without a leave and can be undone');
+
+  // a banned player can still delete the account, and is told it is banned rather than that the key is dead
+  const gone1 = await guest();
+  assert.strictEqual((await act('ban', { id: gone1.id }, ip5)).status, 200);
+  const refused = await call('GET', '/api/me', gone1);
+  assert.deepStrictEqual([refused.status, refused.body.error], [403, 'banned']);
+  assert.strictEqual((await call('DELETE', '/api/me', gone1)).status, 200, 'a banned account can be deleted');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM players WHERE id = ' + who(gone1))[0].n, 0);
+  console.log('admin: a banned account can still be deleted');
 
   // a started match settles a banned player's seat by its real result, as for a leaver
   const ip6 = '10.9.1.6';

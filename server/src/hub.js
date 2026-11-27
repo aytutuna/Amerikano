@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { freeCode, stub, pick } from './room.js';
-import { verify, player, seat, credit, barred, cupBarred, gates, STAKES, ENTRY, BUYINS, prizes } from './account.js';
+import { verify, refusal, player, seat, credit, barred, cupBarred, gates, STAKES, ENTRY, BUYINS, prizes } from './account.js';
 import { rel, won, personaWeek } from './social.js';
 import { look, claim, release, keep, giveBack, spend, grant } from './persona.js';
 import { ring } from './push.js';
@@ -139,7 +139,7 @@ export class Hub extends DurableObject {
     if (m.t === 'hello') {
       if (a.pid) return;
       const p = await verify(this.env.DB, m.auth);
-      if (!p) return this.refuse(ws, 'auth');
+      if (!p) return this.refuse(ws, await refusal(this.env.DB, m.auth));
       if (a.ip && this.ctx.getWebSockets().filter(w => w !== ws && w.readyState === 1 && w.deserializeAttachment().ip === a.ip && w.deserializeAttachment().pid && w.deserializeAttachment().pid !== p.id).length >= this.known) return this.refuse(ws, 'slow');
       this.ctx.waitUntil(this.env.DB.prepare('INSERT OR IGNORE INTO active (player, day) VALUES (?, ?)').bind(p.id, Math.floor(Date.now() / 86400000)).run().catch(() => {}));
       // the newest socket of an account wins

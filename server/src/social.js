@@ -1,5 +1,5 @@
 import { look } from './persona.js';
-import { verify, who, worn, isVip, json, fail } from './account.js';
+import { verify, denied, who, worn, isVip, json, fail } from './account.js';
 import { setting } from './admin.js';
 import { notHeld, onHold } from './friend.js';
 
@@ -185,7 +185,7 @@ export function decline(env, now) {
 export async function social(request, env, ctx) {
   const db = env.DB;
   const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
-  if (!p) return fail('auth', 401);
+  if (!p) return denied(db, request);
   const [, , what, arg] = new URL(request.url).pathname.split('/');
   const m = request.method;
   if (what === 'top' && m === 'GET') return top(db, p);

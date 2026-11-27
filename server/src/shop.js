@@ -1,5 +1,5 @@
 import Catalog from '../../www/js/catalog.js';
-import { verify, placed, player, grantTokens, worn, isVip, rcBase, json, fail } from './account.js';
+import { verify, denied, placed, player, grantTokens, worn, isVip, rcBase, json, fail } from './account.js';
 
 const DAY = 86400000;
 const SYNC_GAP = 10000;
@@ -291,7 +291,7 @@ export async function shop(request, env) {
   const method = request.method;
   if (path === '/api/rc' && method === 'POST') return hook(env, request);
   const p = await verify(env.DB, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
-  if (!p) return fail('auth', 401);
+  if (!p) return denied(env.DB, request);
   await placed(env, p, request);
   if (path === '/api/shop' && method === 'GET') return view(env, p.id);
   if (method !== 'POST') return fail('nope', 404);
