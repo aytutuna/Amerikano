@@ -128,6 +128,7 @@
       blocked: 'Je kunt geen cadeau sturen naar deze speler.',
       mute: 'Je kunt nu geen berichten sturen.',
       typedoff: 'Getypte chat staat uit. Je kunt dit aanzetten in Instellingen.',
+      banned: 'Dit account is geblokkeerd.',
       other: 'Dat is niet gelukt.'
     },
 

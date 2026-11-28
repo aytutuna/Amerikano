@@ -127,6 +127,7 @@
       blocked: 'No puedes enviarle un regalo a este jugador.',
       mute: 'Por ahora no puedes escribir mensajes.',
       typedoff: 'El chat escrito está desactivado. Puedes activarlo en Ajustes.',
+      banned: 'Esta cuenta ha sido suspendida.',
       other: 'No funcionó.'
     },
 

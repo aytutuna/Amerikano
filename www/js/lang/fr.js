@@ -127,6 +127,7 @@
       blocked: 'Tu ne peux pas envoyer de cadeau à ce joueur.',
       mute: 'Tu ne peux pas écrire de messages pour le moment.',
       typedoff: 'Le chat écrit est désactivé. Tu peux l’activer dans les réglages.',
+      banned: 'Ce compte a été suspendu.',
       other: 'Ça n’a pas marché.'
     },
 

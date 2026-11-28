@@ -124,6 +124,7 @@
       blocked: 'Kamu tidak bisa mengirim hadiah ke pemain ini.',
       mute: 'Kamu sedang tidak bisa menulis pesan.',
       typedoff: 'Obrolan ketik sedang mati. Kamu bisa menyalakannya di Pengaturan.',
+      banned: 'Akun ini telah ditangguhkan.',
       other: 'Tidak berhasil.'
     },
 

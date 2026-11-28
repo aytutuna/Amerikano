@@ -128,6 +128,7 @@
       blocked: 'Nie możesz wysłać prezentu temu graczowi.',
       mute: 'Na razie nie możesz pisać wiadomości.',
       typedoff: 'Czat tekstowy jest wyłączony. Włączysz go w ustawieniach.',
+      banned: 'To konto zostało zawieszone.',
       other: 'Nie udało się.'
     },
 

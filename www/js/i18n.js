@@ -118,6 +118,7 @@ var I18n = (function () {
       blocked: 'You cannot send a gift to this player.',
       mute: 'You cannot type messages for now.',
       typedoff: 'Typed chat is off. You can turn it on in Settings.',
+      banned: 'This account has been suspended.',
       other: 'That did not work.'
     },
 
@@ -789,6 +790,7 @@ var I18n = (function () {
       blocked: 'Bu oyuncuya hediye gönderemezsin.',
       mute: 'Şu an mesaj yazamazsın.',
       typedoff: 'Yazılı sohbet kapalı. Ayarlar bölümünden açabilirsin.',
+      banned: 'Bu hesap askıya alındı.',
       other: 'Bu işlem yapılamadı. Biraz sonra tekrar dene.'
     },
 

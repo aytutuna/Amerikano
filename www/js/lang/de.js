@@ -126,6 +126,7 @@
       blocked: 'Du kannst diesem Spieler kein Geschenk schicken.',
       mute: 'Du kannst im Moment keine Nachrichten schreiben.',
       typedoff: 'Der getippte Chat ist ausgeschaltet. Du kannst ihn in den Einstellungen einschalten.',
+      banned: 'Dieses Konto wurde gesperrt.',
       other: 'Das hat nicht geklappt.'
     },
 
