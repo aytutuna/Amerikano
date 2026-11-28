@@ -878,11 +878,14 @@ async function apple() {
   const evidence = id => ['chip_log', 'match_seat', 'leaves', 'trade_hits'].map(t => sql('SELECT count(*) AS n FROM ' + t + " WHERE player = '" + id + "'")[0].n).concat(sql("SELECT count(*) AS n FROM reports WHERE reported = '" + id + "'")[0].n);
   sql("INSERT INTO trade_hits (player, ctx, term, at) VALUES ('" + bd.body.id + "', 'dm', 'iban', " + Date.now() + ")");
   sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('" + '1'.repeat(32) + "', '" + bd.body.id + "', 'rude', 'dm', " + Date.now() + ")");
+  sql("INSERT INTO held (player, amount, match, at) VALUES ('" + bd.body.id + "', 500, 'bdm', " + Date.now() + ')');
+  const heldRows = () => sql("SELECT count(*) AS n FROM held WHERE player = '" + bd.body.id + "'")[0].n;
   const before = evidence(bd.body.id);
   assert(before[0] > 0 && before[3] === 1 && before[4] === 1);
   assert.strictEqual((await call('DELETE', '/api/me', bd.body)).status, 200);
   assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE id = '" + bd.body.id + "'")[0].n, 0);
   assert.deepStrictEqual(evidence(bd.body.id), before, 'the records behind the ban stay');
+  assert.strictEqual(heldRows(), 1, 'so do the chips held for the admin');
   assert.strictEqual(sql("SELECT count(*) AS n FROM sessions WHERE player = '" + bd.body.id + "'")[0].n, 0, 'the rest is gone');
   const relog = await post('/api/apple', null, await cred({ sub: bdSub }, null, 'bd2'));
   assert.deepStrictEqual([relog.status, relog.body.error], [403, 'banned'], 'the same Apple ID cannot start over');
@@ -900,6 +903,7 @@ async function apple() {
   sql("UPDATE kept SET until = " + (Date.now() - 1000) + " WHERE player = '" + bd.body.id + "'");
   await tick(dayStart + 2 * DAY + 3 * 3600000);
   assert.deepStrictEqual(evidence(bd.body.id), [0, 0, 0, 0, 0], 'after a year they are purged');
+  assert.strictEqual(heldRows(), 0, 'and the held chips');
   assert.strictEqual(sql("SELECT count(*) AS n FROM kept WHERE player = '" + bd.body.id + "'")[0].n, 1, 'the ban itself stays until it is lifted');
   assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: bd.body.id }, '10.9.2.1')).status, 200, 'and can still be lifted after the year');
   assert.strictEqual((await post('/api/apple', null, await cred({ sub: bdSub }, null, 'bd5'))).status, 200, 'the same Apple ID can start over');

@@ -565,7 +565,7 @@ export async function api(request, env, ctx) {
       ...(keep ? [] : [db.prepare('DELETE FROM trade_hits WHERE player = ?').bind(p.id)]),
       db.prepare('DELETE FROM persona_flow WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friend_day WHERE player = ?').bind(p.id),
-      db.prepare('DELETE FROM held WHERE player = ?').bind(p.id),
+      ...(keep ? [] : [db.prepare('DELETE FROM held WHERE player = ?').bind(p.id)]),
       db.prepare('DELETE FROM players WHERE id = ?').bind(p.id)
     ]);
     // RevenueCat keeps the purchase history by account id, so it goes too; a failure there never stops the deletion
