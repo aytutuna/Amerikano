@@ -5680,6 +5680,59 @@ async function probe() {
   console.log('probe: ordinary refusals do not count against an address');
 
   // a table can only be made at a code /ws/new handed out
+  // an invite tapped after a public table started or filled is charged to the account only, through the hub as through a room
+  const four = [];
+  for (let i = 0; i < 4; i++) four.push(await guest());
+  const socks = [];
+  const states = [];
+  let pubCode;
+  for (const x of four) {
+    const h = await hub(x);
+    const sat = h.next(m => m.t === 'seated');
+    h.send({ t: 'quick', stake: 100 });
+    const m = await sat;
+    pubCode = m.code;
+    const r = seated(m);
+    states.push(r.next(m2 => m2.t === 'state'));
+    socks.push(h, r);
+  }
+  await Promise.all(states);
+  const Z = { 'X-Addr': addr() };
+  for (let i = 0; i < 8; i++) {
+    const c = client('/ws/hub', null, Z);
+    await c.ready;
+    const w = c.next(m => m.t === 'hub');
+    c.send({ t: 'hello', auth: (await guest()).auth });
+    await w;
+    const e = c.next(m => m.t === 'error');
+    c.send({ t: 'sit', code: pubCode });
+    assert.strictEqual((await e).k, 'nocode', 'a started public table');
+    c.ws.close();
+  }
+  const [pl2, pcode2] = await made(await guest(), 3);
+  const [okZ, jz] = await tryJoin(await guest(), pcode2, Z);
+  assert.strictEqual(okZ, 'joined', 'the address is not shut by late invites');
+  jz.ws.close();
+  pl2.ws.close();
+  for (const c of socks) c.ws.close();
+  console.log('probe: late invites to a public table do not count against an address');
+
+  // a rejoin with a seat token that no longer matches (the seat was released, say by a ban) is not a guess at a code
+  const W = { 'X-Addr': addr() };
+  const [pl3, pcode3] = await made(await guest(), 3);
+  for (let i = 0; i < 8; i++) {
+    const c = client('/ws/' + pcode3, null, W);
+    await c.ready;
+    const e = c.next(m => m.t === 'error');
+    c.send({ t: 'join', token: crypto.randomBytes(16).toString('hex') });
+    assert.strictEqual((await e).k, 'nocode');
+  }
+  const [okW, jw] = await tryJoin(await guest(), pcode3, W);
+  assert.strictEqual(okW, 'joined', 'the address is not shut by stale tokens');
+  jw.ws.close();
+  pl3.ws.close();
+  console.log('probe: stale seat tokens do not count against an address');
+
   const acc = await guest();
   const fake = client('/ws/' + unknownCode());
   await fake.ready;

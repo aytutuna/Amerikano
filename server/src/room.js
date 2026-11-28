@@ -353,7 +353,8 @@ export class Room extends DurableObject {
       if (!p) return this.miss(ws, a, null, await refusal(this.env.DB, m.auth));
       if (await this.hub().probing(p.id, a.ip).catch(() => false)) return this.refuse(ws, 'nocode');
     }
-    if (!this.r || this.r.pub && !m.token) return this.miss(ws, a, p);
+    // a token is a seat's own secret and cannot be guessed, so a rejoin that finds nothing is no probe of the address
+    if (!this.r || this.r.pub && !m.token) return this.miss(ws, a, p, null, null, !!m.token);
     const rejoin = typeof m.token === 'string' && this.r.seats.some(s => s && s.token === m.token);
     // an opened room takes a seat from the same pool as a public table
     if (!rejoin && !m.token && this.r.open && !this.r.started && await this.hub().holds(p.id, this.r.code)) return this.miss(ws, a, p, 'busy');
@@ -361,7 +362,7 @@ export class Room extends DurableObject {
     if (!r) return this.miss(ws, a, p);
     let i = typeof m.token === 'string' ? r.seats.findIndex(s => s && s.token === m.token) : -1;
     if (i < 0) {
-      if (m.token) return this.miss(ws, a, p);
+      if (m.token) return this.miss(ws, a, p, null, null, true);
       i = r.seats.findIndex(s => s && s.pid === p.id);
       // a seat the player left is played on by a stand-in and is not theirs any more
       if (i >= 0 && r.seats[i].bot && !r.seats[i].fake) return this.refuse(ws, 'left');

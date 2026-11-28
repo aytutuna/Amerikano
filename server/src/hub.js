@@ -478,10 +478,11 @@ export class Hub extends DurableObject {
     return (this.misses.get(pid) || []).filter(t => now - t < MISS_SPAN).length >= MISSES || !!ip && (this.shut.get(ip) || 0) > now;
   }
 
-  async stray(ws, pid, k) {
+  // late: an invite tapped after the table started or filled, charged to the account alone like Room.miss does
+  async stray(ws, pid, k, late) {
     const ip = ws.deserializeAttachment().ip;
-    const over = k === 'nocode' && !!ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: ip })).success;
-    this.miss(pid, ip, over);
+    const over = !late && k === 'nocode' && !!ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: ip })).success;
+    this.miss(pid, late ? null : ip, over);
     this.put(ws, { t: 'error', k: k });
   }
 
@@ -489,8 +490,8 @@ export class Hub extends DurableObject {
     if (this.probing(pid, ws.deserializeAttachment().ip)) return this.put(ws, { t: 'error', k: 'nocode' });
     const t = this.tables[code];
     if (!t || !pool(t)) return this.stray(ws, pid, 'nocode');
-    if (t.started) return this.stray(ws, pid, 'nocode');
-    if (await this.seated(ws, pid, t.stake, code) === false) await this.stray(ws, pid, 'nocode');
+    if (t.started) return this.stray(ws, pid, 'nocode', true);
+    if (await this.seated(ws, pid, t.stake, code) === false) await this.stray(ws, pid, 'nocode', true);
   }
 
   // sign-out: the sockets of that device (or of every device) are closed
