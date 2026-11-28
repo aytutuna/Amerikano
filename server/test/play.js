@@ -6134,6 +6134,8 @@ async function fee() {
   // a public table: the fee of the stake, from the human and from all three computer players
   // the 500 table takes computer players of level 4 and up only
   sql('UPDATE personas SET chips = 100000, level = 4 WHERE created = 1');
+  // an older persona of level 4 or more may be drawn too, so it needs the same bank
+  sql('UPDATE personas SET chips = 100000 WHERE level >= 4');
   const hh = await hub(level(4, link(await guest())));
   const ss = hh.next(m => m.t === 'seated');
   hh.send({ t: 'quick', stake: 500 });
