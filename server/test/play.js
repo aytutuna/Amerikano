@@ -5832,7 +5832,7 @@ async function dealfail() {
   g.x.ws.close();
   console.log('dealfail: a deal that never works returns every stake and leaves the table usable');
 
-  // a player who leaves while the deal is busy with their seat is not charged
+  // a player who leaves while the deal is busy with their seat is still charged, and the stand-in plays the stake out
   g = await full(await pair(3, 3));
   breakDeal({ kind: 'friend', n: 1, seat: 1, wait: 1500 });
   const started = Promise.all([g.a.next(state), g.x.next(state)]);
@@ -5840,12 +5840,13 @@ async function dealfail() {
   await sleep(400);
   g.b.send({ t: 'leave' });
   await within(started, 20000, 'the table deals without the leaver');
-  assert.deepStrictEqual([rows(g.accB, ':in'), rows(g.accB, ':fee'), await chips(g.accB)], [[], [], 5000], 'the leaver paid nothing');
+  assert.deepStrictEqual([rows(g.accB, ':in'), rows(g.accB, ':fee'), await chips(g.accB)], [[-220], [-5], 4775], 'the leaver is charged, so the stand-in plays with chips that exist');
+  assert.strictEqual(sql('SELECT gone FROM match_seat WHERE player = ' + who(g.accB))[0].gone, 1, 'and the seat is marked as left');
   mendDeal();
   g.a.ws.close();
   g.b.ws.close();
   g.x.ws.close();
-  console.log('dealfail: a leave during the deal costs nothing');
+  console.log('dealfail: a leave during the deal is charged and settles by the real result');
 
   // a public table with computer players: the human is refunded, the computer players' banks come back, the table is gone
   const t0 = Date.now();
@@ -5883,8 +5884,27 @@ async function dealfail() {
   mendDeal();
   ch.ws.close();
   sql("DELETE FROM personas WHERE id LIKE 'dealfail%'");
-  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
   console.log('dealfail: a tournament table that cannot deal refunds the tournament');
+
+  // a counted leave at a public table while the deal is busy with its seat is charged and struck, and a deal that then gives up takes both back
+  breakDeal({ kind: 'pub', n: 1, seat: 0, wait: 10000 });
+  const lacc = await guest();
+  const lh = await hub(lacc);
+  const lsat = lh.next(m => m.t === 'seated');
+  lh.send({ t: 'quick', stake: 100 });
+  const lr = seated(await lsat);
+  await lr.ready;
+  for (let i = 0; i < 300 && JSON.parse(sql("SELECT value FROM settings WHERE key = 'faildeal'")[0].value).n > 0; i++) await sleep(100);
+  lr.send({ t: 'leave' });
+  await settle(() => rows(lacc, ':in').length === 1);
+  for (let i = 0; i < 100 && !sql('SELECT 1 AS x FROM leaves WHERE player = ' + who(lacc)).length; i++) await sleep(100);
+  assert.deepStrictEqual(rows(lacc, ':in'), [-260], 'charged');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(lacc))[0].n, 1, 'and the leave is counted');
+  mendDeal();
+  lr.ws.close();
+  lh.ws.close();
+  console.log('dealfail: a public leave during the deal is charged and counted');
+  sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
 }
 
 // Friend tables with a stake are for accounts with 10 finished public matches, whichever way they come in.

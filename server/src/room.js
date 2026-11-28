@@ -621,27 +621,34 @@ export class Room extends DurableObject {
         }
         continue;
       }
-      if (!s.pid || s.bot || s.esc) continue;
+      // a seat that left before its charge is still owed: it plays on as a stand-in, so its stake is taken all the same
+      if (!s.pid || s.esc || s.bot && !s.due) continue;
       await this.broken(i);
       // what is held and the fee go together; a player who can no longer cover both is replaced by a bot and pays nothing
       // a ban lands while the table waits, when match_seat holds no row yet: the seat is taken out here and costs nothing
       const banned = await this.env.DB.prepare('SELECT banned FROM players WHERE id = ?').bind(s.pid).first();
-      // a leave swaps the seat for a copy, so after every wait the seat is looked up again; one already left is not charged
-      if (r.seats[i] !== s) continue;
+      // a leave swaps the seat for a copy, so after every wait the seat is looked up again
       if (!(banned && banned.banned) && await charge(this.env.DB, s.pid, held, fee, r.id)) {
         // saved at once: if the next read fails for good, the refund still knows what was taken
         const cur = r.seats[i];
         Object.assign(cur, { esc: true, held: held, fee: fee });
-        if (cur !== s) {
-          // the player left while the charge was in flight: the stand-in settles the real result and the row is written now
+        if (cur.due) {
+          // the player left before or during the charge: the stand-in settles the real result, the row is written now and a public leave counts
+          const count = cur.due === 'strike';
+          delete cur.due;
           cur.left = true;
-          this.ctx.waitUntil(this.gone(cur, i, false).catch(e => console.error('leave', e)));
+          this.ctx.waitUntil(this.gone(cur, i, count).catch(e => console.error('leave', e)));
         }
         this.save();
         const p = await player(this.env.DB, s.pid);
-        cur.bank = p ? p.chips : 0;
-        cur.from = p ? p.xp : 0;
+        const now = r.seats[i];
+        now.bank = p ? p.chips : 0;
+        now.from = p ? p.xp : 0;
         this.save();
+        continue;
+      }
+      if (r.seats[i].due) {
+        delete r.seats[i].due;
         continue;
       }
       if (r.seats[i] !== s) continue;
@@ -747,7 +754,9 @@ export class Room extends DurableObject {
     if (r.started) {
       const { token, gone, auto, misses, cover, ...s } = r.seats[i];
       const live = !!r.id && !r.over && !!s.esc;
-      r.seats[i] = Object.assign(s, { bot: true, left: live || undefined });
+      // a seat not charged yet is owed: the deal charges it when it gets there, and a counted leave is struck then
+      const due = !live && !!r.id && !r.over && !!s.pid && !s.fake && !s.bot ? (count ? 'strike' : 'free') : undefined;
+      r.seats[i] = Object.assign(s, { bot: true, left: live || undefined, due: due });
       if (this.st) {
         this.st.players[i].bot = true;
         this.st.players[i].level = 'relaxed';
