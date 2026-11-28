@@ -6183,10 +6183,13 @@ async function fee() {
   const mk = async () => level(4, link(await guest()));
   let [a, b, c] = [await mk(), await mk(), await mk()];
   const now = Date.now();
-  sql('DELETE FROM personas WHERE created = 1');
+  const fresh = () => {
+    sql('DELETE FROM personas WHERE created = 1');
+    sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
+      "SELECT lower(hex(randomblob(16))), i, '1,1,1,0', 1, 0, 0, 0, 100000, " + now + ', NULL, 0, 1 FROM n');
+  };
   sql('UPDATE personas SET chips = 100, topup = ' + now + ', busy = NULL');
-  sql('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19) INSERT INTO personas (id, name_seed, avatar, level, xp, games, wins, chips, topup, busy, busy_at, created) ' +
-    "SELECT lower(hex(randomblob(16))), i, '1,1,1,0', 1, 0, 0, 0, 100000, " + now + ', NULL, 0, 1 FROM n');
+  fresh();
   const sit = async (code, acc) => {
     const x = client('/ws/' + code);
     await x.ready;
@@ -6267,6 +6270,9 @@ async function fee() {
   for (const x of [xa, xb, xc]) x.ws.close();
 
   // a public table: the fee of the stake, from the human and from all three computer players
+  // the earlier tables are still being played to the end by their computer players, and a payout landing on a bank set here would
+  // change it, so the table gets computer players that none of them knows
+  fresh();
   // the 500 table takes computer players of level 4 and up only
   sql('UPDATE personas SET chips = 100000, level = 4 WHERE created = 1');
   // an older persona of level 4 or more may be drawn too, so it needs the same bank
