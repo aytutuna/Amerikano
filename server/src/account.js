@@ -173,7 +173,10 @@ export async function strike(db, id, match, code, stake, now = Date.now()) {
 
 // Takes a strike back for a match that never started. The cooldown it may have set is left to run out.
 export async function unstrike(db, id, match) {
-  await db.prepare('DELETE FROM leaves WHERE player = ? AND match = ?').bind(id, match).run();
+  await db.batch([
+    db.prepare('DELETE FROM leaves WHERE player = ? AND match = ?').bind(id, match),
+    db.prepare("DELETE FROM flags WHERE kind = 'leave' AND a = ? AND b = ?").bind(id, match)
+  ]);
   const paid = await db.prepare("SELECT delta FROM chip_log WHERE player = ? AND ref = ?").bind(id, match + ':leave').first();
   if (paid && paid.delta < 0) await credit(db, id, -paid.delta, 'leave', match + ':leaveback');
 }

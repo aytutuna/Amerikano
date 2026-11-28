@@ -109,6 +109,8 @@ export class Room extends DurableObject {
     this.lines = [];
     this.vx = {};
     this.limit = new Map();
+    // the leave of each seat that is being written, so giveUp can wait for a strike before it takes one back
+    this.leaving = new Map();
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     ctx.blockConcurrencyWhile(async () => {
       this.r = (await ctx.storage.get('r')) || null;
@@ -559,7 +561,10 @@ export class Room extends DurableObject {
           await credit(this.env.DB, s.pid, this.heldOf(s), 'escrow', r.id + ':back');
           await credit(this.env.DB, s.pid, this.feeOf(s), 'fee', r.id + ':feeback');
           // a leave during a deal that failed never was a leave: its row goes and an extra stake it cost comes back
-          if (s.left) await unstrike(this.env.DB, s.pid, r.id);
+          if (s.left) {
+            await this.leaving.get(s.pid);
+            await unstrike(this.env.DB, s.pid, r.id);
+          }
           s.back = true;
           this.save();
         }
@@ -637,7 +642,7 @@ export class Room extends DurableObject {
           const count = cur.due === 'strike';
           delete cur.due;
           cur.left = true;
-          this.ctx.waitUntil(this.gone(cur, i, count).catch(e => console.error('leave', e)));
+          this.leaveRow(cur, i, count);
         }
         this.save();
         const p = await player(this.env.DB, s.pid);
@@ -761,7 +766,7 @@ export class Room extends DurableObject {
         this.st.players[i].bot = true;
         this.st.players[i].level = 'relaxed';
       }
-      if (live) this.ctx.waitUntil(this.gone(r.seats[i], i, count).catch(e => console.error('leave', e)));
+      if (live) this.leaveRow(r.seats[i], i, count);
     } else {
       r.seats[i] = null;
       if (r.host === i) r.host = this.firstHuman();
@@ -779,6 +784,12 @@ export class Room extends DurableObject {
     this.release(i, false);
     for (const w of mine) w.close(4002, 'banned');
     this.left(mine[0]);
+  }
+
+  leaveRow(s, i, count) {
+    const p = this.gone(s, i, count).catch(e => console.error('leave', e));
+    this.leaving.set(s.pid, p);
+    this.ctx.waitUntil(p);
   }
 
   // The row is made too, in case the deal had not recorded it yet. A leave from a public table is counted and may cost chips.
