@@ -341,6 +341,7 @@
       retry: 'Verbindung verloren. Verbinde dich neu.',
       waitNext: 'Warte auf die anderen.',
       err: {
+        banned: 'Dieses Konto wurde gesperrt.',
         nocode: 'Einen Raum mit diesem Code gibt es nicht.',
         started: 'Diese Partie hat schon begonnen.',
         full: 'Dieser Raum ist voll.',

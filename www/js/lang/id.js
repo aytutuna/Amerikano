@@ -339,6 +339,7 @@
       retry: 'Koneksi terputus. Menyambung ulang.',
       waitNext: 'Menunggu yang lain.',
       err: {
+        banned: 'Akun ini telah ditangguhkan.',
         nocode: 'Tidak ada ruang dengan kode itu.',
         started: 'Pertandingan itu sudah dimulai.',
         full: 'Ruang itu sudah penuh.',

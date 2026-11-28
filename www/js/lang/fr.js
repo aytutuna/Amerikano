@@ -342,6 +342,7 @@
       retry: 'Connexion perdue. Reconnexion en cours.',
       waitNext: 'En attente des autres joueurs.',
       err: {
+        banned: 'Ce compte a été suspendu.',
         nocode: 'Aucune salle ne porte ce code.',
         started: 'Cette partie a déjà commencé.',
         full: 'Cette salle est pleine.',

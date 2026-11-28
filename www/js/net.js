@@ -93,6 +93,8 @@ var Net = (function () {
     sock = null;
     // 4000 means the seat was taken over from another window, 1000 that the server ended it
     if (e.code === 4000) return gone('replaced');
+    // a ban closes with 4002 and the seat is already gone, so there is nothing to rejoin
+    if (e.code === 4002) return gone('banned');
     // a finished tournament table is wiped while its end sheet may still be up, and there is nothing to rejoin
     if (e.code === 1000) {
       if (ses && App.cupOver()) drop();

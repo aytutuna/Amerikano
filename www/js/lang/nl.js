@@ -343,6 +343,7 @@
       retry: 'Verbinding verbroken. Opnieuw verbinden.',
       waitNext: 'Wachten op de anderen.',
       err: {
+        banned: 'Dit account is geblokkeerd.',
         nocode: 'Er is geen kamer met deze code.',
         started: 'Die partij is al begonnen.',
         full: 'Die kamer is vol.',

@@ -342,6 +342,7 @@
       retry: 'Se perdió la conexión. Reconectando.',
       waitNext: 'Esperando a los demás.',
       err: {
+        banned: 'Esta cuenta ha sido suspendida.',
         nocode: 'No existe una sala con ese código.',
         started: 'Esa partida ya empezó.',
         full: 'Esa sala está llena.',

@@ -333,6 +333,7 @@ var I18n = (function () {
       retry: 'Connection lost. Reconnecting.',
       waitNext: 'Waiting for the others.',
       err: {
+        banned: 'This account has been suspended.',
         nocode: 'There is no room with that code.',
         started: 'That match has already started.',
         full: 'That room is full.',
@@ -1008,6 +1009,7 @@ var I18n = (function () {
       retry: 'Bağlantı koptu. Yeniden bağlanılıyor.',
       waitNext: 'Diğerleri bekleniyor.',
       err: {
+        banned: 'Bu hesap askıya alındı.',
         nocode: 'Bu kodla bir oda yok.',
         started: 'Bu maç çoktan başladı.',
         full: 'Oda dolu.',

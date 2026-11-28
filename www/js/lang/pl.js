@@ -343,6 +343,7 @@
       retry: 'Utracono połączenie. Łączenie ponownie.',
       waitNext: 'Czekamy na pozostałych.',
       err: {
+        banned: 'To konto zostało zawieszone.',
         nocode: 'Nie ma pokoju z takim kodem.',
         started: 'Ta partia już się zaczęła.',
         full: 'Ten pokój jest pełny.',

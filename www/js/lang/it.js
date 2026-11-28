@@ -342,6 +342,7 @@
       retry: 'Connessione persa. Riconnessione in corso.',
       waitNext: 'In attesa degli altri.',
       err: {
+        banned: 'Questo account è stato sospeso.',
         nocode: 'Non esiste una sala con questo codice.',
         started: 'Questa partita è già iniziata.',
         full: 'Questa sala è piena.',
