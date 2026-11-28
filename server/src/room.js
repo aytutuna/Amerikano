@@ -1200,14 +1200,24 @@ export class Room extends DurableObject {
         await this.net(x.pid, x.net);
         continue;
       }
-      if (x.pay < 0) {
-        const p = await player(this.env.DB, x.pid);
-        x.pay = Math.max(x.pay, -(p ? p.chips : 0));
-        this.save();
+      // a loss is taken from the balance, never past it; if the balance moves between the read and the credit the credit is refused,
+      // so the read is done again, and the net follows what was really taken
+      const want = x.pay;
+      let paid = false;
+      for (let t = 0; t < 3 && !paid; t++) {
+        if (want < 0) {
+          const p = await player(this.env.DB, x.pid);
+          const pay = Math.max(want, -(p ? p.chips : 0));
+          x.net += pay - x.pay;
+          x.pay = pay;
+          this.save();
+        }
+        // a friend table's winnings count toward the day's cap, and what is over it waits for the admin
+        if (r.stake && !r.pub && !r.cup) paid = await friendPay(this.env.DB, x.pid, x.pay, x.net, r.id);
+        else paid = await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
+        if (want >= 0) break;
       }
-      // a friend table's winnings count toward the day's cap, and what is over it waits for the admin
-      if (r.stake && !r.pub && !r.cup) await friendPay(this.env.DB, x.pid, x.pay, x.net, r.id);
-      else await credit(this.env.DB, x.pid, x.pay, 'match', r.id + ':out');
+      if (!paid && want < 0) throw new Error('the loss of ' + x.pid + ' was not collected');
       await this.net(x.pid, x.net);
       x.done = true;
       this.save();
