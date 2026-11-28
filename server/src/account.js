@@ -370,6 +370,7 @@ async function link(env, request, p) {
   const b = await body(request);
   const a = await appleToken(env, b);
   if (!a) return fail('apple', 401);
+  if (await env.DB.prepare('SELECT 1 FROM banned_ids WHERE hash = ?').bind(await hash('apple:' + a.sub)).first()) return fail('banned', 403);
   const token = await refresh(env, typeof b.code === 'string' ? b.code : null, a.aud);
   try {
     const r = await env.DB.prepare('UPDATE players SET apple = ?1, apple_refresh = COALESCE(?2, apple_refresh), apple_client = CASE WHEN ?2 IS NULL THEN apple_client ELSE ?4 END WHERE id = ?3 AND (apple IS NULL OR apple = ?1)').bind(a.sub, token, p.id, a.aud).run();
