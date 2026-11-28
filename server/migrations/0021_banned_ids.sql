@@ -1,0 +1,4 @@
+CREATE TABLE banned_ids (
+  hash TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);

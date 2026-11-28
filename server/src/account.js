@@ -171,6 +171,13 @@ export async function strike(db, id, match, code, stake, now = Date.now()) {
   return n;
 }
 
+// Takes a strike back for a match that never started. The cooldown it may have set is left to run out.
+export async function unstrike(db, id, match) {
+  await db.prepare('DELETE FROM leaves WHERE player = ? AND match = ?').bind(id, match).run();
+  const paid = await db.prepare("SELECT delta FROM chip_log WHERE player = ? AND ref = ?").bind(id, match + ':leave').first();
+  if (paid && paid.delta < 0) await credit(db, id, -paid.delta, 'leave', match + ':leaveback');
+}
+
 // The only way tokens change, with the same ref rule as credit(). A cap makes it an earning: the day's total may not pass it.
 // opts is for a store purchase: env marks the log row, pre and post are statements in the same batch around the grant, and
 // guard (sql with ? marks, args) lets the grant through only while the purchase row stands unrefunded.
@@ -339,6 +346,7 @@ async function signIn(env, request) {
 async function enter(env, request, a) {
   const db = env.DB;
   const old = await db.prepare('SELECT id, banned FROM players WHERE apple = ?').bind(a.sub).first();
+  if (!old && await db.prepare('SELECT 1 FROM banned_ids WHERE hash = ?').bind(await hash('apple:' + a.sub)).first()) return fail('banned', 403);
   if (old) {
     if (old.banned) return fail('banned', 403);
     const secret = random(32);
@@ -500,7 +508,7 @@ export async function api(request, env, ctx) {
     return json({ nonce: raw });
   }
   if (path === '/api/apple' && method === 'POST') return signIn(env, request);
-  const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''), path === '/api/me' && method === 'DELETE');
+  const p = await verify(db, (request.headers.get('Authorization') || '').replace(/^Bearer /, ''), (path === '/api/me' && method === 'DELETE') || (path === '/api/signout' && method === 'POST'));
   if (!p) return denied(db, request);
   if (!p.region) {
     p.region = guess(env, request);
@@ -520,7 +528,9 @@ export async function api(request, env, ctx) {
       client = a.aud;
     }
     await revoke(env, token, client);
+    // deleting must not undo a ban: the Apple identity is kept as a hash so the same ID cannot start over
     await db.batch([
+      ...(p.banned && p.apple ? [db.prepare('INSERT OR IGNORE INTO banned_ids (hash, at) VALUES (?, ?)').bind(await hash('apple:' + p.apple), Date.now())] : []),
       db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),

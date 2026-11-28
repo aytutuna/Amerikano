@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, refusal, player, award, seat, credit, charge, strike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
+import { verify, refusal, player, award, seat, credit, charge, strike, unstrike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -307,12 +307,13 @@ export class Room extends DurableObject {
     return this.env.HUB.get(this.env.HUB.idFromName('h'));
   }
 
-  // A join that failed counts against the account and the address; past the budget even a good code is refused. Whatever
-  // the reason, a stranger is told the same thing.
-  async miss(ws, a, p, k, more) {
-    // only a code that is unknown, full or started is a probe; a refusal for level, games, chips or a busy account is an ordinary
-    // one, charged to the account alone so people sharing an address are not shut out by each other
-    const probe = !k || ['nocode', 'auth', 'banned'].includes(k);
+  // A join that failed counts against the account and the address; past the budget even a good code is refused. An unknown, full
+  // or started table gets the same answer. A code that exists says why its seat is refused (level, chips), since the invited need
+  // to know; guessing codes is held back by the address budget on the misses.
+  async miss(ws, a, p, k, more, late) {
+    // only an unknown code is a probe; a full or started table (an invite tapped too late) and a refusal for level, games, chips or
+    // a busy account are ordinary ones, charged to the account alone so people sharing an address are not shut out by each other
+    const probe = !late && (!k || ['nocode', 'auth', 'banned'].includes(k));
     const over = probe && !!a.ip && !!this.env.PROBES && !(await this.env.PROBES.limit({ key: a.ip })).success;
     await this.hub().miss(p ? p.id : null, probe ? a.ip : null, over).catch(() => {});
     this.refuse(ws, k || 'nocode', more);
@@ -365,12 +366,12 @@ export class Room extends DurableObject {
       // a seat the player left is played on by a stand-in and is not theirs any more
       if (i >= 0 && r.seats[i].bot && !r.seats[i].fake) return this.refuse(ws, 'left');
       if (i < 0) {
-        if (r.started) return this.miss(ws, a, p);
+        if (r.started) return this.miss(ws, a, p, 'nocode', null, true);
         const no = barred(p, r.stake, false);
         if (no) return this.miss(ws, a, p, no.k, no);
         if (p.chips < ENTRY * r.stake) return this.miss(ws, a, p, 'poor');
         i = r.seats.indexOf(null);
-        if (i < 0) return this.miss(ws, a, p);
+        if (i < 0) return this.miss(ws, a, p, 'nocode', null, true);
         r.seats[i] = human(seat(p), 0);
         if (r.host < 0) r.host = i;
       }
@@ -535,6 +536,8 @@ export class Room extends DurableObject {
     const kind = this.r.cup ? 'cup' : this.r.pub ? 'pub' : 'friend';
     if (!h || h.n <= 0 || h.kind !== kind || h.seat !== i) return;
     await this.env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'faildeal'").bind(JSON.stringify(Object.assign({}, h, { n: h.n - 1 }))).run();
+    // a wait stalls the deal at this seat, for a test that acts while it is in flight
+    if (h.wait) return new Promise(res => setTimeout(res, h.wait));
     throw new Error('forced failure');
   }
 
@@ -554,6 +557,8 @@ export class Room extends DurableObject {
         } else {
           await credit(this.env.DB, s.pid, this.heldOf(s), 'escrow', r.id + ':back');
           await credit(this.env.DB, s.pid, this.feeOf(s), 'fee', r.id + ':feeback');
+          // a leave during a deal that failed never was a leave: its row goes and an extra stake it cost comes back
+          if (s.left) await unstrike(this.env.DB, s.pid, r.id);
           s.back = true;
           this.save();
         }
@@ -620,16 +625,25 @@ export class Room extends DurableObject {
       // what is held and the fee go together; a player who can no longer cover both is replaced by a bot and pays nothing
       // a ban lands while the table waits, when match_seat holds no row yet: the seat is taken out here and costs nothing
       const banned = await this.env.DB.prepare('SELECT banned FROM players WHERE id = ?').bind(s.pid).first();
+      // a leave swaps the seat for a copy, so after every wait the seat is looked up again; one already left is not charged
+      if (r.seats[i] !== s) continue;
       if (!(banned && banned.banned) && await charge(this.env.DB, s.pid, held, fee, r.id)) {
         // saved at once: if the next read fails for good, the refund still knows what was taken
-        Object.assign(s, { esc: true, held: held, fee: fee });
+        const cur = r.seats[i];
+        Object.assign(cur, { esc: true, held: held, fee: fee });
+        if (cur !== s) {
+          // the player left while the charge was in flight: the stand-in settles the real result and the row is written now
+          cur.left = true;
+          this.ctx.waitUntil(this.gone(cur, i, false).catch(e => console.error('leave', e)));
+        }
         this.save();
         const p = await player(this.env.DB, s.pid);
-        s.bank = p ? p.chips : 0;
-        s.from = p ? p.xp : 0;
+        cur.bank = p ? p.chips : 0;
+        cur.from = p ? p.xp : 0;
         this.save();
         continue;
       }
+      if (r.seats[i] !== s) continue;
       r.seats[i] = { pid: s.pid, name: s.name, seed: s.seed, av: s.av, level: s.level, wear: s.wear, vip: !!s.vip, bot: true };
       for (const w of this.socks()) {
         if (w.deserializeAttachment().seat !== i) continue;
@@ -1129,7 +1143,8 @@ export class Room extends DurableObject {
       const fee = this.feeOf(s);
       let pay = held + st.players[i].chips * r.stake / 10;
       // what is held covers the worst loss, so this is only a guard
-      if (pay < 0) {
+      // a match dealt before the hold took only the stake and charged the rest of a loss from the balance (see pay())
+      if (pay < 0 && s.held !== undefined) {
         console.error('loss past the hold', r.code, s.pid, pay);
         pay = 0;
       }
@@ -1163,6 +1178,11 @@ export class Room extends DurableObject {
         if (r.pub && !r.cup) await personaWeek(this.env.DB, x.pid, x.won, x.xp);
         await this.net(x.pid, x.net);
         continue;
+      }
+      if (x.pay < 0) {
+        const p = await player(this.env.DB, x.pid);
+        x.pay = Math.max(x.pay, -(p ? p.chips : 0));
+        this.save();
       }
       // a friend table's winnings count toward the day's cap, and what is over it waits for the admin
       if (r.stake && !r.pub && !r.cup) await friendPay(this.env.DB, x.pid, x.pay, x.net, r.id);

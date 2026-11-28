@@ -862,6 +862,22 @@ async function apple() {
   assert.strictEqual((await post('/api/apple', null, await cred({ sub: row(bn.body.id).apple }, null, 'ban3'))).status, 200);
   console.log('apple: a banned account is refused until it is unbanned');
 
+  // a banned player can sign out, and deleting the account does not lift the ban for the same Apple ID
+  const bo = await post('/api/apple', null, await cred({}, null, 'bo1'));
+  assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bo.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await call('POST', '/api/signout', bo.body, {})).status, 200, 'a banned key can sign out');
+  assert.strictEqual(sessions(bo.body.id), 0, 'and the session is gone on the server');
+  const bd = await post('/api/apple', null, await cred({}, null, 'bd1'));
+  const bdSub = row(bd.body.id).apple;
+  assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bd.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await call('DELETE', '/api/me', bd.body)).status, 200);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE id = '" + bd.body.id + "'")[0].n, 0);
+  const relog = await post('/api/apple', null, await cred({ sub: bdSub }, null, 'bd2'));
+  assert.deepStrictEqual([relog.status, relog.body.error], [403, 'banned'], 'the same Apple ID cannot start over');
+  const fresh = await post('/api/apple', null, await cred({}, null, 'bd3'));
+  assert.strictEqual(fresh.status, 200, 'another Apple ID still can');
+  console.log('apple: a banned player can sign out, and deleting does not lift the ban');
+
   // sign-out ends that device's session, its device row and its hub socket, and nothing else
   const so = 'out.' + t.sub;
   const au = b => Object.assign(b, { auth: b.id + '.' + b.secret });
@@ -5732,6 +5748,21 @@ async function dealfail() {
   g.b.ws.close();
   g.x.ws.close();
   console.log('dealfail: a deal that never works returns every stake and leaves the table usable');
+
+  // a player who leaves while the deal is busy with their seat is not charged
+  g = await full(await pair(3, 3));
+  breakDeal({ kind: 'friend', n: 1, seat: 1, wait: 1500 });
+  const started = Promise.all([g.a.next(state), g.x.next(state)]);
+  g.a.send({ t: 'start' });
+  await sleep(400);
+  g.b.send({ t: 'leave' });
+  await within(started, 20000, 'the table deals without the leaver');
+  assert.deepStrictEqual([rows(g.accB, ':in'), rows(g.accB, ':fee'), await chips(g.accB)], [[], [], 5000], 'the leaver paid nothing');
+  mendDeal();
+  g.a.ws.close();
+  g.b.ws.close();
+  g.x.ws.close();
+  console.log('dealfail: a leave during the deal costs nothing');
 
   // a public table with computer players: the human is refunded, the computer players' banks come back, the table is gone
   const t0 = Date.now();
