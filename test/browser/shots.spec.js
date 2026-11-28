@@ -89,7 +89,11 @@ for (const v of variants) {
     await shot('table');
     // an online table the player does not touch: the banner that says the seat is being played for them
     await page.evaluate(() => App.leave(false));
-    await page.click('[data-k=quick]');
+    // a quick play can be refused for a moment while the lobby loads, so the click is tried again until the table shows
+    await expect(async () => {
+      await page.click('[data-k=quick]');
+      await expect(page.locator('#game')).toBeVisible({ timeout: 15000 });
+    }).toPass({ timeout: 60000 });
     await expect(page.locator('#idle')).toBeVisible({ timeout: 90000 });
     await shot('away');
 
