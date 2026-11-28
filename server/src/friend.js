@@ -25,7 +25,9 @@ export async function friendPay(db, id, pay, net, match) {
   const sum = await db.prepare('SELECT coalesce(sum(net), 0) AS n FROM friend_day WHERE player = ? AND day = ?').bind(id, day).first();
   const over = Math.max(0, Math.min(net, sum.n + net - DAY_CAP));
   // one tally row per match, so a repeat adds nothing; a payout of nothing leaves no log row, so the tally cannot lean on it
-  const also = [db.prepare('INSERT OR IGNORE INTO friend_day (player, day, match, net) VALUES (?, ?, ?, ?)').bind(id, day, match, net)];
+  // a loss the balance could not cover is refused and read again, so the tally waits for the credit that landed
+  const landed = pay - over ? ' WHERE EXISTS (SELECT 1 FROM chip_log WHERE player = ?1 AND ref = ?5)' : '';
+  const also = [db.prepare('INSERT OR IGNORE INTO friend_day (player, day, match, net) SELECT ?1, ?2, ?3, ?4' + landed).bind(...(landed ? [id, day, match, net, ref] : [id, day, match, net]))];
   if (over) also.push(db.prepare('INSERT INTO held (player, amount, match, at) SELECT ?1, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM chip_log WHERE player = ?1 AND ref = ?2)').bind(id, ref, over, match, Date.now()));
   return credit(db, id, pay - over, 'match', ref, { set: {}, where: '1', args: [], also: also });
 }
