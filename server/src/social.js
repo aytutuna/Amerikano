@@ -177,12 +177,12 @@ export async function simulate(env, now) {
   const { results } = await env.DB.prepare('SELECT id, xp, factor FROM personas WHERE (busy IS NULL OR busy_at < ?1) AND busy_at >= ?2').bind(now - 3 * 3600000, now - 14 * 86400000).all();
   if (!results.length) return;
   // the games, wins, profile xp and the week's xp move together, so a card never shows more matches than its xp pays for; a match
-  // is worth 40 to 75 xp, as real ones are, so no board shows a fixed step. A persona that was taken for a table meanwhile is skipped.
+  // pays as a real one does (40, 30 more for a win, 5 for each first finish), so every total stays a multiple of 5 and no board shows a fixed step. A persona that was taken for a table meanwhile is skipped.
   const stmts = results.map(q => {
     const games = Math.floor(rate.xp * q.factor / MATCH_XP + Math.random());
     const wins = Math.floor(rate.xp * q.factor / 180 + Math.random());
-    let gain = 0;
-    for (let i = 0; i < games; i++) gain += 40 + Math.floor(Math.random() * 36);
+    let gain = wins * 30;
+    for (let i = 0; i < games; i++) gain += 40 + 5 * Math.floor(Math.random() * 5);
     return env.DB.prepare('UPDATE personas SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, ' +
       'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + ?2, week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + ?3, ' +
       'games = games + ?4, wins = wins + ?5, xp = xp + ?3, level = max(level, ?6), week = ?1 WHERE id = ?7 AND (busy IS NULL OR busy_at < ?8)')

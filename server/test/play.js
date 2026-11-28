@@ -1752,7 +1752,9 @@ async function boards() {
   assert.strictEqual(d.week, w, 'the week turns over');
   assert.deepStrictEqual([d.prev_week, d.prev_won], [0, 77], 'last week moves to the prev columns');
   assert(d.week_won >= 1000 * 0.5 * 0.7 && d.week_won <= 1000 * 0.5 * 1.3, 'inside the band of its factor: ' + d.week_won);
-  assert(d.week_xp >= 3 * 40 && d.week_xp <= 4 * 75, 'xp too, three or four matches of 40 to 75: ' + d.week_xp);
+  const dg = sql("SELECT games - 9 AS g, wins - 3 AS w FROM personas WHERE id = '" + hex('d') + "'")[0];
+  assert(d.week_xp >= 40 * dg.g + 30 * dg.w && d.week_xp <= 60 * dg.g + 30 * dg.w, 'xp too, paid as a real match pays: ' + d.week_xp);
+  assert.strictEqual(d.week_xp % 5, 0, 'in steps of 5, as real xp is');
   assert.strictEqual(sql("SELECT xp FROM personas WHERE id = '" + hex('d') + "'")[0].xp, 300 + d.week_xp, 'the profile gains what the week does');
   assert.deepStrictEqual(row('e'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'not while it is at a table');
   assert.deepStrictEqual(row('g'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'nor one nobody has claimed for two weeks');
