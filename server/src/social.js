@@ -1,5 +1,5 @@
 import { look } from './persona.js';
-import { verify, denied, who, worn, isVip, json, fail } from './account.js';
+import { verify, denied, who, worn, isVip, json, fail, levelAt } from './account.js';
 import { setting } from './admin.js';
 import { notHeld, onHold } from './friend.js';
 
@@ -172,13 +172,20 @@ async function pace(env, now) {
 export async function simulate(env, now) {
   const set = env.PACE && await setting(env.DB, 'simrate');
   const rate = set ? JSON.parse(set) : await pace(env, now);
-  const jitter = '(0.7 + abs(random()) % 600 / 1000.0)';
-  await env.DB.prepare('UPDATE personas SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, ' +
-    'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + CAST(?2 * factor * ' + jitter + ' AS INTEGER), ' +
-    'week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + CAST(?3 * factor * ' + jitter + ' AS INTEGER), ' +
-    'games = games + CAST(?3 * factor / 45 + abs(random()) % 1000 / 1000.0 AS INTEGER), wins = wins + CAST(?3 * factor / 180 + abs(random()) % 1000 / 1000.0 AS INTEGER), ' +
-    'week = ?1 WHERE (busy IS NULL OR busy_at < ?4) AND busy_at >= ?5')
-    .bind(week(now), Math.round(rate.won), Math.round(rate.xp), now - 3 * 3600000, now - 14 * 86400000).run();
+  const jitter = () => 0.7 + Math.random() * 0.6;
+  const w = week(now);
+  const { results } = await env.DB.prepare('SELECT id, xp, factor FROM personas WHERE (busy IS NULL OR busy_at < ?1) AND busy_at >= ?2').bind(now - 3 * 3600000, now - 14 * 86400000).all();
+  if (!results.length) return;
+  // the games, wins and profile xp move together, so a card never shows more matches than its xp pays for
+  await env.DB.batch(results.map(q => {
+    const games = Math.floor(rate.xp * q.factor / MATCH_XP + Math.random());
+    const wins = Math.floor(rate.xp * q.factor / 180 + Math.random());
+    const xp = q.xp + games * MATCH_XP;
+    return env.DB.prepare('UPDATE personas SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, ' +
+      'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + ?2, week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + ?3, ' +
+      'games = games + ?4, wins = wins + ?5, xp = ?6, level = max(level, ?7), week = ?1 WHERE id = ?8')
+      .bind(w, Math.floor(rate.won * q.factor * jitter()), Math.floor(rate.xp * q.factor * jitter()), games, wins, xp, levelAt(xp), q.id);
+  }));
 }
 
 // the requests to computer players whose time has come are dropped, as a person declining would
