@@ -1737,7 +1737,7 @@ async function boards() {
   }
 
   // the hourly job: a free computer player gains inside its band, one at a table nothing; the rate can be set by a test
-  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('simrate', '{\"won\":1000,\"xp\":100}')");
+  sql("INSERT OR REPLACE INTO settings (key, value) VALUES ('simrate', '{\"won\":1000,\"xp\":400}')");
   bot('d', 0, 3, 300, 0.5);
   sql("UPDATE personas SET week = 0, week_won = 77, week_xp = 5 WHERE id = '" + hex('d') + "'");
   bot('e', 0, 3, 300, 1.5);
@@ -1752,14 +1752,15 @@ async function boards() {
   assert.strictEqual(d.week, w, 'the week turns over');
   assert.deepStrictEqual([d.prev_week, d.prev_won], [0, 77], 'last week moves to the prev columns');
   assert(d.week_won >= 1000 * 0.5 * 0.7 && d.week_won <= 1000 * 0.5 * 1.3, 'inside the band of its factor: ' + d.week_won);
-  assert(d.week_xp >= 100 * 0.5 * 0.7 && d.week_xp <= 100 * 0.5 * 1.3, 'xp too: ' + d.week_xp);
+  assert(d.week_xp >= 3 * 40 && d.week_xp <= 4 * 75, 'xp too, three or four matches of 40 to 75: ' + d.week_xp);
+  assert.strictEqual(sql("SELECT xp FROM personas WHERE id = '" + hex('d') + "'")[0].xp, 300 + d.week_xp, 'the profile gains what the week does');
   assert.deepStrictEqual(row('e'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'not while it is at a table');
   assert.deepStrictEqual(row('g'), { week: w, week_won: 0, week_xp: 0, prev_week: 0, prev_won: 0 }, 'nor one nobody has claimed for two weeks');
   const gw = c => sql("SELECT games, wins FROM personas WHERE id = '" + hex(c) + "'")[0];
   assert.deepStrictEqual(gw('g'), { games: 9, wins: 3 }, 'its games and wins stay too');
-  assert(gw('f').games >= 11 && gw('f').games <= 12 && gw('f').wins >= 3 && gw('f').wins <= 4, 'a free one gains the games and wins that go with its xp: ' + JSON.stringify(gw('f')));
+  assert(gw('f').games >= 16 && gw('f').games <= 17 && gw('f').wins >= 5 && gw('f').wins <= 6, 'a free one gains the games and wins that go with its xp: ' + JSON.stringify(gw('f')));
   const fr1 = row('f');
-  assert(fr1.week_won >= 700 && fr1.week_won <= 1300 && fr1.week_xp >= 70 && fr1.week_xp <= 130, 'a factor of one: ' + fr1.week_won + ' ' + fr1.week_xp);
+  assert(fr1.week_won >= 700 && fr1.week_won <= 1300 && fr1.week_xp >= 7 * 40 && fr1.week_xp <= 8 * 75, 'a factor of one: ' + fr1.week_won + ' ' + fr1.week_xp);
   await tick(hour);
   assert(row('f').week_won > fr1.week_won, 'every hour adds');
   sql("DELETE FROM settings WHERE key = 'simrate'");

@@ -153,7 +153,7 @@ async function top(db, p) {
 
 // per hour when no person has played enough to go by
 const START = { won: 60, xp: 30 };
-const MATCH_XP = 45;
+const MATCH_XP = 57;
 
 // The middle of what people with 5 or more public or tournament matches this week have won and earned per hour so far.
 async function pace(env, now) {
@@ -176,16 +176,19 @@ export async function simulate(env, now) {
   const w = week(now);
   const { results } = await env.DB.prepare('SELECT id, xp, factor FROM personas WHERE (busy IS NULL OR busy_at < ?1) AND busy_at >= ?2').bind(now - 3 * 3600000, now - 14 * 86400000).all();
   if (!results.length) return;
-  // the games, wins and profile xp move together, so a card never shows more matches than its xp pays for
-  await env.DB.batch(results.map(q => {
+  // the games, wins, profile xp and the week's xp move together, so a card never shows more matches than its xp pays for; a match
+  // is worth 40 to 75 xp, as real ones are, so no board shows a fixed step. A persona that was taken for a table meanwhile is skipped.
+  const stmts = results.map(q => {
     const games = Math.floor(rate.xp * q.factor / MATCH_XP + Math.random());
     const wins = Math.floor(rate.xp * q.factor / 180 + Math.random());
-    const xp = q.xp + games * MATCH_XP;
+    let gain = 0;
+    for (let i = 0; i < games; i++) gain += 40 + Math.floor(Math.random() * 36);
     return env.DB.prepare('UPDATE personas SET prev_week = CASE WHEN week = ?1 THEN prev_week ELSE week END, prev_won = CASE WHEN week = ?1 THEN prev_won ELSE week_won END, ' +
       'week_won = CASE WHEN week = ?1 THEN week_won ELSE 0 END + ?2, week_xp = CASE WHEN week = ?1 THEN week_xp ELSE 0 END + ?3, ' +
-      'games = games + ?4, wins = wins + ?5, xp = ?6, level = max(level, ?7), week = ?1 WHERE id = ?8')
-      .bind(w, Math.floor(rate.won * q.factor * jitter()), Math.floor(rate.xp * q.factor * jitter()), games, wins, xp, levelAt(xp), q.id);
-  }));
+      'games = games + ?4, wins = wins + ?5, xp = xp + ?3, level = max(level, ?6), week = ?1 WHERE id = ?7 AND (busy IS NULL OR busy_at < ?8)')
+      .bind(w, Math.floor(rate.won * q.factor * jitter()), gain, games, wins, levelAt(q.xp + gain), q.id, now - 3 * 3600000);
+  });
+  for (let i = 0; i < stmts.length; i += 200) await env.DB.batch(stmts.slice(i, i + 200));
 }
 
 // the requests to computer players whose time has come are dropped, as a person declining would
