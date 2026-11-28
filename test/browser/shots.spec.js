@@ -91,7 +91,7 @@ for (const v of variants) {
     await page.evaluate(() => App.leave(false));
     // a quick play can be refused for a moment while the lobby loads, so the click is tried again until the table shows
     await expect(async () => {
-      await page.click('[data-k=quick]');
+      if (!await page.locator('#game').isVisible()) await page.click('[data-k=quick]');
       await expect(page.locator('#game')).toBeVisible({ timeout: 15000 });
     }).toPass({ timeout: 60000 });
     await expect(page.locator('#idle')).toBeVisible({ timeout: 90000 });
