@@ -489,8 +489,8 @@ export class Hub extends DurableObject {
     if (this.probing(pid, ws.deserializeAttachment().ip)) return this.put(ws, { t: 'error', k: 'nocode' });
     const t = this.tables[code];
     if (!t || !pool(t)) return this.stray(ws, pid, 'nocode');
-    if (t.started) return this.stray(ws, pid, 'full');
-    if (await this.seated(ws, pid, t.stake, code) === false) await this.stray(ws, pid, 'full');
+    if (t.started) return this.stray(ws, pid, 'nocode');
+    if (await this.seated(ws, pid, t.stake, code) === false) await this.stray(ws, pid, 'nocode');
   }
 
   // sign-out: the sockets of that device (or of every device) are closed

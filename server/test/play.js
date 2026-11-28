@@ -2548,7 +2548,7 @@ async function regions() {
     h2.send({ t: 'sit', code: F.code });
     const got = await s2;
     if (got.code === F.code) break;
-    assert(got.k === 'full' && i < 4, 'a friend from another region sits at the table: ' + JSON.stringify(got));
+    assert(got.k === 'nocode' && i < 4, 'a friend from another region sits at the table: ' + JSON.stringify(got));
     console.log('regions: the table filled before the friend came, trying again');
   }
   console.log('regions: friends invite and join across regions');
