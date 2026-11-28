@@ -4006,7 +4006,7 @@ async function mate(match, code, games, at) {
 
 async function reports() {
   // a long match, so the table is still there after the many slow sql calls below
-  const g = await pair(5, 5);
+  const g = await pair(5, 15);
   const [sa, sb] = await begin(g);
   const seatB = sa.players.findIndex(p => p.pid === g.accB.id);
   await befriend(g.accA, g.accB);
@@ -5680,7 +5680,6 @@ async function probe() {
   stakeTable.ws.close();
   console.log('probe: ordinary refusals do not count against an address');
 
-  // a table can only be made at a code /ws/new handed out
   // an invite tapped after a public table started or filled is charged to the account only, through the hub as through a room
   const four = [];
   for (let i = 0; i < 4; i++) four.push(await guest());
@@ -5734,6 +5733,7 @@ async function probe() {
   pl3.ws.close();
   console.log('probe: stale seat tokens do not count against an address');
 
+  // a table can only be made at a code /ws/new handed out
   const acc = await guest();
   const fake = client('/ws/' + unknownCode());
   await fake.ready;
@@ -5884,7 +5884,6 @@ async function dealfail() {
   assert.strictEqual(spent.length, 0, 'the computer players got their buy-ins back');
   mendDeal();
   ch.ws.close();
-  sql("DELETE FROM personas WHERE id LIKE 'dealfail%'");
   console.log('dealfail: a tournament table that cannot deal refunds the tournament');
 
   // a counted leave at a public table while the deal is busy with its seat is charged and struck, and a deal that then gives up takes both back
@@ -5905,6 +5904,7 @@ async function dealfail() {
   lr.ws.close();
   lh.ws.close();
   console.log('dealfail: a public leave during the deal is charged and counted');
+  sql("DELETE FROM personas WHERE id LIKE 'dealfail%'");
   sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
 }
 
