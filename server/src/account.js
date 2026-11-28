@@ -28,6 +28,15 @@ export const hold = (stake, games) => stake * maxLoss(games) / 10;
 // the held amount back plus the match chips at stake/10 each
 export const payout = (stake, games, chips) => hold(stake, games) + chips * stake / 10;
 
+// What a seat is paid above its hold, given the chips it won or lost. A seat that could not be charged plays on without a bank, so
+// what it lost (ghost, in chips) is nobody's to win: the winners' gains shrink together by that much.
+export function gainOf(chips, all, ghost, stake) {
+  const wins = all.reduce((n, c) => n + Math.max(0, c), 0);
+  const cut = ghost > 0 && wins > 0 ? Math.max(0, (wins - ghost) / wins) : 1;
+  const gain = chips * stake / 10;
+  return gain > 0 && cut < 1 ? Math.floor(gain * cut) : gain;
+}
+
 // Level needed for each public table and each cup; a friend table takes the gate of the highest public stake at or below its own.
 const GATES = { 100: 1, 500: 4, 2500: 10, 10000: 20, 50000: 30 };
 const CUP_GATES = { 1000: 1, 5000: 10, 25000: 20 };

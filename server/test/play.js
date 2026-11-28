@@ -12,7 +12,7 @@ const Names = require('../../www/js/names.js');
 const crypto = require('crypto');
 const Catalog = require('../../www/js/catalog.js');
 const httpServer = require('http');
-let payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor;
+let payout, gainOf, hold, feeFor, maxLoss, barred, cupBarred, strongFor;
 // what a seat's chips change by over a whole match: the payout less what was held and the fee
 const change = (stake, games, chips) => payout(stake, games, chips) - hold(stake, games) - feeFor(stake);
 
@@ -355,7 +355,7 @@ async function friends() {
 }
 
 async function math() {
-  ({ payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
+  ({ payout, gainOf, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
   // what is held is the stake plus a tenth of it for each chip the match can cost: 10 + 4 per game
   assert.strictEqual(maxLoss(4), 26);
   assert.strictEqual(maxLoss(15), 70);
@@ -368,6 +368,11 @@ async function math() {
   assert.strictEqual(payout(500, 4, -26), 0, 'the worst match pays nothing back');
   assert.strictEqual(payout(2500, 4, 40), 16500);
   assert.strictEqual(payout(50000, 5, -30), 0);
+  // chips lost by a seat nobody paid for are not paid out to the winners
+  assert.strictEqual(gainOf(6, [6, -6], 0, 100), 60, 'no ghost keeps the gain');
+  assert.deepStrictEqual([6, 2].map(c => gainOf(c, [6, 2], 4, 100)), [30, 10], 'a ghost loss comes off the gains');
+  assert.strictEqual(gainOf(3, [3, 2], 8, 100), 0, 'more than all the gains pays nothing');
+  assert.strictEqual(gainOf(-4, [6, -4], 5, 100), -40, 'a loss is never cut');
   assert.deepStrictEqual([100, 500, 2500, 10000, 50000, 3000, 70, 20, 0].map(feeFor), [5, 25, 125, 700, 4000, 125, 3, 1, 0], 'the fee of the highest public stake at or below, 5 % under 100');
   // whole matches between computer players: nobody ends below what is held, and the chips only move around
   let least = 0;
@@ -7003,7 +7008,7 @@ process.on('unhandledRejection', e => {
   process.exit(1);
 });
 (async () => {
-  ({ payout, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
+  ({ payout, gainOf, hold, feeFor, maxLoss, barred, cupBarred, strongFor } = await import('../src/account.js'));
   await sec('schema', () => schema());
   await sec('math', () => math());
   await sec('accounts', () => accounts());

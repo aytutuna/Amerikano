@@ -3,7 +3,7 @@ import Game from '../../www/js/game.js';
 import Names from '../../www/js/names.js';
 import Chat from '../../www/js/chat.js';
 import Catalog from '../../www/js/catalog.js';
-import { verify, refusal, player, award, seat, credit, charge, strike, unstrike, grantTokens, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
+import { verify, refusal, player, award, seat, credit, charge, strike, unstrike, grantTokens, gainOf, hold, feeFor, barred, prizes, signedIn, stakeOk, strongFor, ENTRY } from './account.js';
 import { owns } from './shop.js';
 import { won, personaWeek, rel, apart } from './social.js';
 import { clean, mask, contact } from './filter.js';
@@ -1157,12 +1157,15 @@ export class Room extends DurableObject {
     const free = !r.stake && !r.cup;
     // only public tables count for the weekly board; a tournament's prizes are counted by the Hub
     const board = r.pub && !r.cup;
+    // a seat that could not be charged plays on without a bank; what it lost is nobody's to win
+    const bank = r.seats.map((s, i) => s.pid && s.esc ? st.players[i].chips : null);
+    const ghost = -r.seats.reduce((n, s, i) => n + (s.pid && !s.esc ? st.players[i].chips : 0), 0);
     r.res = r.seats.map((s, i) => {
       if (!s.pid || !s.esc) return null;
       const win = st.final.low === i;
       const held = this.heldOf(s);
       const fee = this.feeOf(s);
-      let pay = held + st.players[i].chips * r.stake / 10;
+      let pay = held + gainOf(st.players[i].chips, bank.filter(c => c !== null), ghost, r.stake);
       // what is held covers the worst loss, so this is only a guard
       // a match dealt before the hold took only the stake and charged the rest of a loss from the balance (see pay())
       if (pay < 0 && s.held !== undefined) {
