@@ -5919,6 +5919,31 @@ async function dealfail() {
   lr.ws.close();
   lh.ws.close();
   console.log('dealfail: a public leave during the deal is charged and counted');
+
+  // the same third leave of the week, but the deal then fails for good: the stake, the fee and the extra stake come back and no leave is left
+  breakDeal({ kind: 'pub', n: 1, seat: 0, wait: 15000 });
+  const gacc = await guest();
+  const old = Date.now() - 3600000;
+  sql('INSERT INTO leaves (player, match, at, code, stake, kind) VALUES (' + who(gacc) + ", 'earlier1', " + old + ", 'zz1', 100, 'pub'), (" + who(gacc) + ", 'earlier2', " + (old + 1000) + ", 'zz2', 100, 'pub')");
+  const gh = await hub(gacc);
+  const gsat = gh.next(m => m.t === 'seated');
+  gh.send({ t: 'quick', stake: 100 });
+  const gr = seated(await within(gsat, 30000, 'seated for the failing deal'));
+  await gr.ready;
+  for (const end = Date.now() + 60000; Date.now() < end && JSON.parse(sql("SELECT value FROM settings WHERE key = 'faildeal'")[0].value).n > 0;) await sleep(300);
+  gr.send({ t: 'leave' });
+  // set while the deal still waits at the seat: once it is charged, the next seat fails every time
+  breakDeal({ kind: 'pub', n: 99, seat: 1 });
+  for (const end = Date.now() + 150000; Date.now() < end && !rows(gacc, ':leaveback').length;) await sleep(500);
+  assert.deepStrictEqual(rows(gacc, ':leave'), [-100], 'the third leave cost an extra stake');
+  assert.deepStrictEqual([rows(gacc, ':back'), rows(gacc, ':feeback'), rows(gacc, ':leaveback')], [[260], [5], [100]], 'everything taken comes back');
+  assert.strictEqual(sql('SELECT count(*) AS n FROM leaves WHERE player = ' + who(gacc))[0].n, 2, 'the leave of the failed match is gone');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM flags WHERE kind = 'leave' AND a = " + who(gacc))[0].n, 0, 'and its flag');
+  assert.strictEqual(await chips(gacc), 5000, 'the balance is whole again');
+  mendDeal();
+  gr.ws.close();
+  gh.ws.close();
+  console.log('dealfail: a counted leave in a deal that gives up is taken back');
   sql("DELETE FROM personas WHERE id LIKE 'dealfail%'");
   sql("UPDATE personas SET busy = NULL WHERE busy = 'hold'");
 }
