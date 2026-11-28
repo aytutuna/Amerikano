@@ -529,12 +529,16 @@ export async function api(request, env, ctx) {
       client = a.aud;
     }
     await revoke(env, token, client);
-    // deleting must not undo a ban: the Apple identity is kept as a hash so the same ID cannot start over
+    // deleting must not undo a ban: the Apple identity is kept as a hash so the same ID cannot start over, and the rows behind
+    // the ban stay for a year (reports, chips, matches, leaves, flags and trade phrases of the player)
+    const keep = !!p.banned;
+    const h = p.banned && p.apple ? await hash('apple:' + p.apple) : null;
     await db.batch([
-      ...(p.banned && p.apple ? [db.prepare('INSERT OR IGNORE INTO banned_ids (hash, at) VALUES (?, ?)').bind(await hash('apple:' + p.apple), Date.now())] : []),
+      ...(h ? [db.prepare('INSERT OR IGNORE INTO banned_ids (hash, at) VALUES (?, ?)').bind(h, Date.now())] : []),
+      ...(keep ? [db.prepare('INSERT OR REPLACE INTO kept (player, hash, until) VALUES (?, ?, ?)').bind(p.id, h, Date.now() + 365 * 86400000)] : []),
       db.prepare('DELETE FROM sessions WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM devices WHERE player = ?').bind(p.id),
-      db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id),
+      ...(keep ? [] : [db.prepare('DELETE FROM chip_log WHERE player = ?').bind(p.id)]),
       db.prepare('DELETE FROM token_log WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM owned WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM active WHERE player = ?').bind(p.id),
@@ -542,11 +546,11 @@ export async function api(request, env, ctx) {
       db.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(p.id),
       db.prepare('DELETE FROM messages WHERE sender = ?1 OR recipient = ?1').bind(p.id),
       // a mail still waiting for the hourly digest holds the report's text, so it goes with the report
-      db.prepare('DELETE FROM mail_log WHERE sent = 0 AND report IN (SELECT id FROM reports WHERE reporter = ?1 OR reported = ?1)').bind(p.id),
-      db.prepare('DELETE FROM reports WHERE reporter = ?1 OR reported = ?1').bind(p.id),
-      db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id),
-      db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id),
-      db.prepare('DELETE FROM trade_hits WHERE player = ?').bind(p.id),
+      ...(keep ? [] : [db.prepare('DELETE FROM mail_log WHERE sent = 0 AND report IN (SELECT id FROM reports WHERE reporter = ?1 OR reported = ?1)').bind(p.id)]),
+      ...(keep ? [] : [db.prepare('DELETE FROM reports WHERE reporter = ?1 OR reported = ?1').bind(p.id)]),
+      ...(keep ? [] : [db.prepare('DELETE FROM match_seat WHERE player = ?').bind(p.id)]),
+      ...(keep ? [] : [db.prepare('DELETE FROM leaves WHERE player = ?').bind(p.id)]),
+      ...(keep ? [] : [db.prepare('DELETE FROM trade_hits WHERE player = ?').bind(p.id)]),
       db.prepare('DELETE FROM persona_flow WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM friend_day WHERE player = ?').bind(p.id),
       db.prepare('DELETE FROM held WHERE player = ?').bind(p.id),

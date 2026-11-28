@@ -870,12 +870,42 @@ async function apple() {
   const bd = await post('/api/apple', null, await cred({}, null, 'bd1'));
   const bdSub = row(bd.body.id).apple;
   assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bd.body.id }, '10.9.2.1')).status, 200);
+  const evidence = id => ['chip_log', 'match_seat', 'leaves', 'trade_hits'].map(t => sql('SELECT count(*) AS n FROM ' + t + " WHERE player = '" + id + "'")[0].n).concat(sql("SELECT count(*) AS n FROM reports WHERE reported = '" + id + "'")[0].n);
+  sql("INSERT INTO trade_hits (player, ctx, term, at) VALUES ('" + bd.body.id + "', 'dm', 'iban', " + Date.now() + ")");
+  sql("INSERT INTO reports (reporter, reported, text, ctx, at) VALUES ('" + '1'.repeat(32) + "', '" + bd.body.id + "', 'rude', 'dm', " + Date.now() + ")");
+  const before = evidence(bd.body.id);
+  assert(before[0] > 0 && before[3] === 1 && before[4] === 1);
   assert.strictEqual((await call('DELETE', '/api/me', bd.body)).status, 200);
   assert.strictEqual(sql("SELECT count(*) AS n FROM players WHERE id = '" + bd.body.id + "'")[0].n, 0);
+  assert.deepStrictEqual(evidence(bd.body.id), before, 'the records behind the ban stay');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM sessions WHERE player = '" + bd.body.id + "'")[0].n, 0, 'the rest is gone');
   const relog = await post('/api/apple', null, await cred({ sub: bdSub }, null, 'bd2'));
   assert.deepStrictEqual([relog.status, relog.body.error], [403, 'banned'], 'the same Apple ID cannot start over');
   const fresh = await post('/api/apple', null, await cred({}, null, 'bd3'));
   assert.strictEqual(fresh.status, 200, 'another Apple ID still can');
+  // it cannot come back through a guest either
+  const gl = await guest();
+  const glink = await post('/api/apple/link', gl, await cred({ sub: bdSub }, null, 'bd4'));
+  assert.deepStrictEqual([glink.status, glink.body.error], [403, 'banned'], 'a guest cannot link the banned Apple ID');
+  assert.strictEqual(row(gl.id).apple, null);
+  // an old ban's records outlive the daily cleanup until their year is up, then go
+  const dayStart = Math.floor(Date.now() / DAY) * DAY;
+  await tick(dayStart + DAY + 3 * 3600000);
+  assert.deepStrictEqual(evidence(bd.body.id), before, 'a day later they are still there');
+  sql("UPDATE kept SET until = " + (Date.now() - 1000) + " WHERE player = '" + bd.body.id + "'");
+  await tick(dayStart + 2 * DAY + 3 * 3600000);
+  assert.deepStrictEqual(evidence(bd.body.id), [0, 0, 0, 0, 0], 'after a year they are purged');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM kept WHERE player = '" + bd.body.id + "'")[0].n, 0);
+  // lifting the ban of a deleted account takes the hash away, and is logged
+  const bl = await post('/api/apple', null, await cred({}, null, 'bl1'));
+  const blSub = row(bl.body.id).apple;
+  assert.strictEqual((await adm('POST', 'ban', ADMIN, { id: bl.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await call('DELETE', '/api/me', bl.body)).status, 200);
+  assert.strictEqual((await post('/api/apple', null, await cred({ sub: blSub }, null, 'bl2'))).status, 403);
+  assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: '2'.repeat(32) }, '10.9.2.1')).status, 404, 'an id that was never kept');
+  assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: bl.body.id }, '10.9.2.1')).status, 200);
+  assert.strictEqual((await post('/api/apple', null, await cred({ sub: blSub }, null, 'bl3'))).status, 200, 'the same Apple ID can start over');
+  assert.strictEqual(sql("SELECT count(*) AS n FROM admin_log WHERE action = 'unban' AND target = '" + bl.body.id + "'")[0].n, 1);
   console.log('apple: a banned player can sign out, and deleting does not lift the ban');
 
   // sign-out ends that device's session, its device row and its hub socket, and nothing else

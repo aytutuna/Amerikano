@@ -148,7 +148,17 @@ async function ban(env, b) {
 
 async function unban(env, b) {
   const p = await find(env.DB, b.id);
-  if (!p) return fail('nobody', 404);
+  if (!p) {
+    // a banned account that deleted itself leaves only the hash of its identity; lifting removes that
+    const k = ID.test(b.id) ? await env.DB.prepare('SELECT hash FROM kept WHERE player = ?').bind(b.id).first() : null;
+    if (!k || !k.hash) return fail('nobody', 404);
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM banned_ids WHERE hash = ?').bind(k.hash),
+      env.DB.prepare('UPDATE kept SET hash = NULL WHERE player = ?').bind(b.id)
+    ]);
+    await logAdmin(env.DB, 'admin', 'unban', b.id, { deleted: true });
+    return json({ ok: true });
+  }
   await env.DB.prepare('UPDATE players SET banned = 0, banned_why = NULL, banned_at = NULL WHERE id = ?').bind(p.id).run();
   await logAdmin(env.DB, 'admin', 'unban', p.id);
   return json({ ok: true });

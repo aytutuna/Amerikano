@@ -273,14 +273,25 @@ async function cleanup(env, now) {
     env.DB.prepare('DELETE FROM devices WHERE seen < ?').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM push_log WHERE at < ?').bind(now - DAY),
     env.DB.prepare('DELETE FROM messages WHERE at < ?').bind(now - 30 * DAY),
-    env.DB.prepare('DELETE FROM reports WHERE at < ?').bind(now - 180 * DAY),
-    env.DB.prepare('DELETE FROM match_seat WHERE at < ?').bind(now - 35 * DAY),
-    env.DB.prepare('DELETE FROM leaves WHERE at < ?').bind(now - 35 * DAY),
-    env.DB.prepare('DELETE FROM trade_hits WHERE at < ?').bind(now - 90 * DAY),
+    env.DB.prepare('DELETE FROM reports WHERE at < ?1 AND reporter NOT IN (SELECT player FROM kept) AND reported NOT IN (SELECT player FROM kept)').bind(now - 180 * DAY),
+    env.DB.prepare('DELETE FROM match_seat WHERE at < ? AND player NOT IN (SELECT player FROM kept)').bind(now - 35 * DAY),
+    env.DB.prepare('DELETE FROM leaves WHERE at < ? AND player NOT IN (SELECT player FROM kept)').bind(now - 35 * DAY),
+    env.DB.prepare('DELETE FROM trade_hits WHERE at < ? AND player NOT IN (SELECT player FROM kept)').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM persona_flow WHERE at < ?').bind(now - 90 * DAY),
     env.DB.prepare('DELETE FROM mail_log WHERE at < ?').bind(now - 7 * DAY),
     env.DB.prepare('DELETE FROM friend_day WHERE day < ?').bind(Math.floor(now / DAY) - 2),
     env.DB.prepare("DELETE FROM held WHERE state <> 'held' AND done < ?").bind(now - 35 * DAY)
+  ]);
+  // the records behind a ban stay for a year after the banned account was deleted
+  const due = 'SELECT player FROM kept WHERE until < ?1';
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM chip_log WHERE player IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM reports WHERE reporter IN (' + due + ') OR reported IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM match_seat WHERE player IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM leaves WHERE player IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM trade_hits WHERE player IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM flags WHERE a IN (' + due + ') OR b IN (' + due + ')').bind(now),
+    env.DB.prepare('DELETE FROM kept WHERE until < ?').bind(now)
   ]);
 }
 
