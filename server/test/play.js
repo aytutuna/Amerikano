@@ -895,7 +895,11 @@ async function apple() {
   sql("UPDATE kept SET until = " + (Date.now() - 1000) + " WHERE player = '" + bd.body.id + "'");
   await tick(dayStart + 2 * DAY + 3 * 3600000);
   assert.deepStrictEqual(evidence(bd.body.id), [0, 0, 0, 0, 0], 'after a year they are purged');
-  assert.strictEqual(sql("SELECT count(*) AS n FROM kept WHERE player = '" + bd.body.id + "'")[0].n, 0);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM kept WHERE player = '" + bd.body.id + "'")[0].n, 1, 'the ban itself stays until it is lifted');
+  assert.strictEqual((await adm('POST', 'unban', ADMIN, { id: bd.body.id }, '10.9.2.1')).status, 200, 'and can still be lifted after the year');
+  assert.strictEqual((await post('/api/apple', null, await cred({ sub: bdSub }, null, 'bd5'))).status, 200, 'the same Apple ID can start over');
+  await tick(dayStart + 3 * DAY + 3 * 3600000);
+  assert.strictEqual(sql("SELECT count(*) AS n FROM kept WHERE player = '" + bd.body.id + "'")[0].n, 0, 'a lifted ban leaves nothing behind');
   // lifting the ban of a deleted account takes the hash away, and is logged
   const bl = await post('/api/apple', null, await cred({}, null, 'bl1'));
   const blSub = row(bl.body.id).apple;

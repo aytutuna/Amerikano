@@ -291,7 +291,7 @@ async function cleanup(env, now) {
     env.DB.prepare('DELETE FROM leaves WHERE player IN (' + due + ')').bind(now),
     env.DB.prepare('DELETE FROM trade_hits WHERE player IN (' + due + ')').bind(now),
     env.DB.prepare('DELETE FROM flags WHERE a IN (' + due + ') OR b IN (' + due + ')').bind(now),
-    env.DB.prepare('DELETE FROM kept WHERE until < ?').bind(now)
+    env.DB.prepare('DELETE FROM kept WHERE until < ? AND hash IS NULL').bind(now)
   ]);
 }
 
